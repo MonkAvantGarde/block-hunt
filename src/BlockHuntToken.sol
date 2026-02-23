@@ -266,4 +266,19 @@ contract BlockHuntToken is ERC1155, ERC2981, Ownable, ReentrancyGuard, Pausable 
     {
         return super.supportsInterface(interfaceId);
     }
+    // ── TEST ONLY — remove before mainnet ─────────────────────────────────
+
+    bool public testMintEnabled = true;
+
+    function mintForTest(address player, uint256 tier, uint256 amount) external {
+        require(testMintEnabled, "Test mint disabled");
+        require(tier >= 1 && tier <= 7, "Invalid tier");
+        _mint(player, tier, amount, "");
+        tierTotalSupply[tier] += amount;
+        _checkCountdownTrigger(player);
+    }
+
+    function disableTestMint() external onlyOwner {
+        testMintEnabled = false;
+    }
 }

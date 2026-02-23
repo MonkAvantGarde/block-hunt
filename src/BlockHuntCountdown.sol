@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-interface IBlockHuntToken {
+interface IBlockHuntTokenCountdown {
     function hasAllTiers(address player) external view returns (bool);
 }
 
@@ -48,7 +48,7 @@ contract BlockHuntCountdown is Ownable {
 
     function checkHolderStatus() external {
         if (!isActive) return;
-        bool stillHolds = IBlockHuntToken(tokenContract).hasAllTiers(currentHolder);
+        bool stillHolds = IBlockHuntTokenCountdown(tokenContract).hasAllTiers(currentHolder);
         if (!stillHolds) {
             address former = currentHolder;
             _resetCountdown();

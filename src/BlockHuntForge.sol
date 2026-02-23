@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-interface IBlockHuntToken {
+interface IBlockHuntTokenForge {
     function executeForge(address player, uint256 fromTier, uint256 burnCount, bool success) external;
     function balanceOf(address account, uint256 id) external view returns (uint256);
 }
@@ -40,7 +40,7 @@ contract BlockHuntForge is Ownable, ReentrancyGuard {
         require(burnCount >= 10 && burnCount <= 99, "Burn count must be 10-99");
         require(msg.value >= forgeFee, "Insufficient forge fee");
         require(
-            IBlockHuntToken(tokenContract).balanceOf(msg.sender, fromTier) >= burnCount,
+            IBlockHuntTokenForge(tokenContract).balanceOf(msg.sender, fromTier) >= burnCount,
             "Insufficient blocks"
         );
 
@@ -54,10 +54,9 @@ contract BlockHuntForge is Ownable, ReentrancyGuard {
         });
 
         bool success = _pseudoRandom(msg.sender, fromTier, burnCount, requestNonce) < burnCount;
-
         forgeRequests[requestNonce].resolved = true;
 
-        IBlockHuntToken(tokenContract).executeForge(
+        IBlockHuntTokenForge(tokenContract).executeForge(
             msg.sender,
             fromTier,
             burnCount,

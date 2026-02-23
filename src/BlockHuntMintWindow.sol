@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-interface IBlockHuntToken {
+interface IBlockHuntTokenMint {
     function resetDailyWindow(uint256 newDay) external;
 }
 
@@ -74,7 +74,7 @@ contract BlockHuntMintWindow is Ownable {
         });
 
         if (tokenContract != address(0)) {
-            IBlockHuntToken(tokenContract).resetDailyWindow(currentDay);
+            IBlockHuntTokenMint(tokenContract).resetDailyWindow(currentDay);
         }
 
         _checkBatchAdvancement();
