@@ -281,4 +281,45 @@ contract BlockHuntToken is ERC1155, ERC2981, Ownable, ReentrancyGuard, Pausable 
     function disableTestMint() external onlyOwner {
         testMintEnabled = false;
     }
+// ── Migration support ─────────────────────────────────────────────────
+
+    address public migrationContract;
+
+    function setMigrationContract(address addr) external onlyOwner {
+        require(migrationContract == address(0), "Already set");
+        migrationContract = addr;
+    }
+
+    /**
+     * @notice Called by migration contract to burn a player's Season 1 blocks.
+     *         Only the migration contract can call this.
+     */
+    function burnForMigration(
+        address player,
+        uint256[] calldata ids,
+        uint256[] calldata amounts
+    ) external {
+        require(msg.sender == migrationContract, "Only migration contract");
+        _burnBatch(player, ids, amounts);
+        for (uint256 i = 0; i < ids.length; i++) {
+            tierTotalSupply[ids[i]] -= amounts[i];
+        }
+    }
+
+    /**
+     * @notice Called by migration contract to mint Season 2 starter blocks.
+     *         This same function lives on the Season 2 token contract.
+     *         Only the migration contract can call this.
+     */
+    function mintMigrationStarters(
+        address player,
+        uint256[] calldata ids,
+        uint256[] calldata amounts
+    ) external {
+        require(msg.sender == migrationContract, "Only migration contract");
+        _mintBatch(player, ids, amounts, "");
+        for (uint256 i = 0; i < ids.length; i++) {
+            tierTotalSupply[ids[i]] += amounts[i];
+        }
+    }
 }

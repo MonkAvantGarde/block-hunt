@@ -32,7 +32,10 @@ contract BlockHuntTreasury is Ownable, ReentrancyGuard {
         _;
     }
 
-    function setTokenContract(address addr) external onlyOwner { tokenContract = addr; }
+    function setTokenContract(address addr) external onlyOwner {
+    require(tokenContract == address(0), "Already set");
+    tokenContract = addr;
+    }
     function setCreatorWallet(address addr) external onlyOwner {
         require(addr != address(0), "Invalid address");
         creatorWallet = addr;
