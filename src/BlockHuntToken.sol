@@ -18,6 +18,11 @@ interface IBlockHuntMint {
     function recordMint(address minter, uint256 quantity) external;
 }
 
+interface IBlockHuntCountdown {
+    function startCountdown(address holder) external;
+    function syncReset() external;
+}
+
 contract BlockHuntToken is ERC1155, ERC2981, Ownable, ReentrancyGuard, Pausable {
 
     uint256 public constant TIER_ORIGIN   = 1;
@@ -28,21 +33,24 @@ contract BlockHuntToken is ERC1155, ERC2981, Ownable, ReentrancyGuard, Pausable 
     uint256 public constant TIER_RESTLESS = 6;
     uint256 public constant TIER_INERT    = 7;
 
-    uint256 public constant MINT_PRICE = 0.00025 ether;
-    uint256 public constant DAILY_CAP  = 50_000;
+    uint256 public constant MINT_PRICE         = 0.00025 ether;
+    uint256 public constant DAILY_CAP          = 50_000;
+    uint256 public constant COUNTDOWN_DURATION = 7 days;
 
     mapping(uint256 => uint256) public combineRatio;
 
     address public mintWindowContract;
     address public treasuryContract;
     address public forgeContract;
+    address public countdownContract;
 
     uint256 public currentWindowDay;
     uint256 public windowDayMinted;
     uint256[8] public tierTotalSupply;
 
-    bool public countdownActive;
+    bool    public countdownActive;
     address public countdownHolder;
+    uint256 public countdownStartTime;
 
     uint256 private _nonce;
 
@@ -52,6 +60,7 @@ contract BlockHuntToken is ERC1155, ERC2981, Ownable, ReentrancyGuard, Pausable 
     event CountdownTriggered(address indexed holder);
     event OriginClaimed(address indexed holder);
     event OriginSacrificed(address indexed holder);
+    event DefaultSacrificeExecuted(address indexed holder, address indexed executor);
 
     constructor(string memory uri_, address royaltyReceiver_, uint96 royaltyFee_)
         ERC1155(uri_) Ownable(msg.sender)
@@ -81,12 +90,15 @@ contract BlockHuntToken is ERC1155, ERC2981, Ownable, ReentrancyGuard, Pausable 
     }
 
     function setMintWindowContract(address addr) external onlyOwner { mintWindowContract = addr; }
-    function setTreasuryContract(address addr) external onlyOwner { treasuryContract = addr; }
-    function setForgeContract(address addr) external onlyOwner { forgeContract = addr; }
-    function setURI(string memory newuri) external onlyOwner { _setURI(newuri); }
+    function setTreasuryContract(address addr)   external onlyOwner { treasuryContract   = addr; }
+    function setForgeContract(address addr)      external onlyOwner { forgeContract       = addr; }
+    function setCountdownContract(address addr)  external onlyOwner { countdownContract   = addr; }
+    function setURI(string memory newuri)        external onlyOwner { _setURI(newuri); }
     function setRoyalty(address receiver, uint96 fee) external onlyOwner { _setDefaultRoyalty(receiver, fee); }
-    function pause() external onlyOwner { _pause(); }
+    function pause()   external onlyOwner { _pause(); }
     function unpause() external onlyOwner { _unpause(); }
+
+    // ── CORE GAME ACTIONS ─────────────────────────────────────────────
 
     function mint(uint256 quantity) external payable nonReentrant whenNotPaused notCountdown {
         require(mintWindowContract != address(0), "Mint not configured");
@@ -107,12 +119,12 @@ contract BlockHuntToken is ERC1155, ERC2981, Ownable, ReentrancyGuard, Pausable 
         IBlockHuntTreasury(treasuryContract).receiveMintFunds{value: totalCost}();
         windowDayMinted += allocated;
 
-        uint256[] memory ids = new uint256[](allocated);
+        uint256[] memory ids     = new uint256[](allocated);
         uint256[] memory amounts = new uint256[](allocated);
 
         for (uint256 i = 0; i < allocated; i++) {
             uint256 tier = _rollTier(i);
-            ids[i] = tier;
+            ids[i]     = tier;
             amounts[i] = 1;
             tierTotalSupply[tier]++;
         }
@@ -174,9 +186,20 @@ contract BlockHuntToken is ERC1155, ERC2981, Ownable, ReentrancyGuard, Pausable 
         if (success) _checkCountdownTrigger(player);
     }
 
+    // ── ENDGAME ───────────────────────────────────────────────────────
+
+    /**
+     * @notice Holder actively chooses to claim 100% of the treasury.
+     *         Only callable after the full 7-day countdown has expired.
+     *         Must be called by the countdown holder themselves.
+     */
     function claimTreasury() external nonReentrant {
         require(countdownActive, "No countdown active");
         require(msg.sender == countdownHolder, "Not the countdown holder");
+        require(
+            block.timestamp >= countdownStartTime + COUNTDOWN_DURATION,
+            "Countdown still running"
+        );
         _verifyHoldsAllTiers(msg.sender);
 
         for (uint256 tier = 2; tier <= 7; tier++) {
@@ -187,11 +210,24 @@ contract BlockHuntToken is ERC1155, ERC2981, Ownable, ReentrancyGuard, Pausable 
 
         IBlockHuntTreasury(treasuryContract).claimPayout(msg.sender);
         emit OriginClaimed(msg.sender);
+
+        _finaliseEndgame();
     }
 
+    /**
+     * @notice Holder actively chooses to sacrifice.
+     *         Receives The Origin NFT. Treasury splits 50/50 — holder gets half,
+     *         other half seeds Season 2.
+     *         Only callable after the full 7-day countdown has expired.
+     *         Must be called by the countdown holder themselves.
+     */
     function sacrifice() external nonReentrant {
         require(countdownActive, "No countdown active");
         require(msg.sender == countdownHolder, "Not the countdown holder");
+        require(
+            block.timestamp >= countdownStartTime + COUNTDOWN_DURATION,
+            "Countdown still running"
+        );
         _verifyHoldsAllTiers(msg.sender);
 
         for (uint256 tier = 2; tier <= 7; tier++) {
@@ -206,13 +242,64 @@ contract BlockHuntToken is ERC1155, ERC2981, Ownable, ReentrancyGuard, Pausable 
         IBlockHuntTreasury(treasuryContract).sacrificePayout(msg.sender);
         emit OriginSacrificed(msg.sender);
 
-        countdownActive = false;
-        countdownHolder = address(0);
+        _finaliseEndgame();
     }
 
-    function resetDailyWindow(uint256 newDay) external onlyMintWindow {
-        currentWindowDay = newDay;
-        windowDayMinted = 0;
+    /**
+     * @notice Executes Sacrifice automatically on behalf of the holder if they
+     *         took no action after the 7-day countdown expired.
+     *         Callable by anyone — the Gelato keeper calls this automatically at zero.
+     *         Sacrifice is the default: Claim (100% payout) requires an active choice.
+     *         Inaction should not reward the holder with the maximum outcome.
+     */
+    function executeDefaultOnExpiry() external nonReentrant {
+        require(countdownActive, "No countdown active");
+        require(
+            block.timestamp >= countdownStartTime + COUNTDOWN_DURATION,
+            "Countdown still running"
+        );
+
+        address holder = countdownHolder;
+        _verifyHoldsAllTiers(holder);
+
+        for (uint256 tier = 2; tier <= 7; tier++) {
+            uint256 bal = balanceOf(holder, tier);
+            _burn(holder, tier, bal);
+            tierTotalSupply[tier] -= bal;
+        }
+
+        _mint(holder, TIER_ORIGIN, 1, "");
+        tierTotalSupply[TIER_ORIGIN]++;
+
+        IBlockHuntTreasury(treasuryContract).sacrificePayout(holder);
+        emit OriginSacrificed(holder);
+        emit DefaultSacrificeExecuted(holder, msg.sender);
+
+        _finaliseEndgame();
+    }
+
+    /**
+     * @notice Allows a player who already holds all 6 tiers to activate their
+     *         countdown without needing to mint, combine, or forge first.
+     *         Needed when: the original holder loses a tier (countdown resets),
+     *         but another player already holds all 6 and wants to start their window.
+     */
+    function claimHolderStatus() external {
+        require(!countdownActive, "Countdown already active");
+        _checkCountdownTrigger(msg.sender);
+        require(countdownActive, "Does not hold all 6 tiers");
+    }
+
+    // ── INTERNAL ──────────────────────────────────────────────────────
+
+    function _finaliseEndgame() internal {
+        countdownActive    = false;
+        countdownHolder    = address(0);
+        countdownStartTime = 0;
+
+        if (countdownContract != address(0)) {
+            IBlockHuntCountdown(countdownContract).syncReset();
+        }
     }
 
     function _checkCountdownTrigger(address player) internal {
@@ -220,8 +307,14 @@ contract BlockHuntToken is ERC1155, ERC2981, Ownable, ReentrancyGuard, Pausable 
         for (uint256 tier = 2; tier <= 7; tier++) {
             if (balanceOf(player, tier) == 0) return;
         }
-        countdownActive = true;
-        countdownHolder = player;
+        countdownActive    = true;
+        countdownHolder    = player;
+        countdownStartTime = block.timestamp;
+
+        if (countdownContract != address(0)) {
+            IBlockHuntCountdown(countdownContract).startCountdown(player);
+        }
+
         emit CountdownTriggered(player);
     }
 
@@ -246,6 +339,8 @@ contract BlockHuntToken is ERC1155, ERC2981, Ownable, ReentrancyGuard, Pausable 
         return TIER_INERT;
     }
 
+    // ── VIEW HELPERS ──────────────────────────────────────────────────
+
     function balancesOf(address player) external view returns (uint256[8] memory) {
         uint256[8] memory bals;
         for (uint256 tier = 1; tier <= 7; tier++) {
@@ -261,12 +356,18 @@ contract BlockHuntToken is ERC1155, ERC2981, Ownable, ReentrancyGuard, Pausable 
         return true;
     }
 
+    function resetDailyWindow(uint256 newDay) external onlyMintWindow {
+        currentWindowDay = newDay;
+        windowDayMinted  = 0;
+    }
+
     function supportsInterface(bytes4 interfaceId)
         public view virtual override(ERC1155, ERC2981) returns (bool)
     {
         return super.supportsInterface(interfaceId);
     }
-    // ── TEST ONLY — remove before mainnet ─────────────────────────────────
+
+    // ── TEST ONLY — remove before mainnet ─────────────────────────────
 
     bool public testMintEnabled = true;
 
@@ -281,7 +382,8 @@ contract BlockHuntToken is ERC1155, ERC2981, Ownable, ReentrancyGuard, Pausable 
     function disableTestMint() external onlyOwner {
         testMintEnabled = false;
     }
-// ── Migration support ─────────────────────────────────────────────────
+
+    // ── Migration support ─────────────────────────────────────────────
 
     address public migrationContract;
 
@@ -290,10 +392,6 @@ contract BlockHuntToken is ERC1155, ERC2981, Ownable, ReentrancyGuard, Pausable 
         migrationContract = addr;
     }
 
-    /**
-     * @notice Called by migration contract to burn a player's Season 1 blocks.
-     *         Only the migration contract can call this.
-     */
     function burnForMigration(
         address player,
         uint256[] calldata ids,
@@ -306,11 +404,6 @@ contract BlockHuntToken is ERC1155, ERC2981, Ownable, ReentrancyGuard, Pausable 
         }
     }
 
-    /**
-     * @notice Called by migration contract to mint Season 2 starter blocks.
-     *         This same function lives on the Season 2 token contract.
-     *         Only the migration contract can call this.
-     */
     function mintMigrationStarters(
         address player,
         uint256[] calldata ids,

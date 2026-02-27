@@ -119,12 +119,12 @@ contract BlockHuntMintWindow is Ownable {
         );
     }
 
-    function recordMint(address, uint256 quantity) external {
+     function recordMint(address player, uint256 quantity) external {
         require(msg.sender == tokenContract, "Only token contract");
         Window storage w = windows[currentDay];
         w.minted += quantity;
         batches[currentBatch].totalMinted += quantity;
-        userDayMints[currentDay][tx.origin] += quantity;
+        userDayMints[currentDay][player] += quantity;
     }
 
     function getWindowInfo() external view returns (
