@@ -93,6 +93,8 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     event BlocksCombined(address indexed by, uint256 indexed fromTier, uint256 indexed toTier);
     event BlocksForged(address indexed by, uint256 indexed fromTier, bool success);
     event CountdownTriggered(address indexed holder);
+     // SESSION 3: emitted when holder loses a tier mid-countdown and Token state is reset
+    event CountdownHolderReset(address indexed formerHolder);
     event OriginClaimed(address indexed holder);
     event OriginSacrificed(address indexed holder);
     event DefaultSacrificeExecuted(address indexed holder, address indexed executor);
@@ -131,6 +133,13 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
 
     modifier onlyForge() {
         require(msg.sender == forgeContract, "Only forge contract");
+        _;
+    }
+
+    // SESSION 3: Countdown calls back into Token to clear its state after
+    // holder disqualification. This modifier gates that entry point.
+    modifier onlyCountdown() {
+        require(msg.sender == countdownContract, "Only countdown contract");
         _;
     }
 
@@ -510,7 +519,28 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         _checkCountdownTrigger(msg.sender);
         require(countdownActive, "Does not hold all 6 tiers");
     }
+    
+    // SESSION 3 ───────────────────────────────────────────────────────────────
 
+    /**
+     * @notice Called by BlockHuntCountdown when the countdown holder is
+     *         disqualified mid-countdown (e.g. they transfer away a required tier).
+     *         Resets Token's countdown state so a new countdown can start.
+     *
+     *         Only callable by the Countdown contract — mirrors the trust used
+     *         by Token calling startCountdown() on Countdown.
+     *
+     *         Silently no-ops if countdownActive is already false, to guard
+     *         against any unlikely state drift between the two contracts.
+     */
+    function resetExpiredHolder() external onlyCountdown {
+        if (!countdownActive) return;
+        address former = countdownHolder;
+        countdownActive    = false;
+        countdownHolder    = address(0);
+        countdownStartTime = 0;
+        emit CountdownHolderReset(former);
+    }
     // ── INTERNAL ──────────────────────────────────────────────────────────────
 
     function _finaliseEndgame() internal {
@@ -624,7 +654,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
 
     function mintForTest(address player, uint256 tier, uint256 amount) external {
         require(testMintEnabled, "Test mint disabled");
-        require(tier >= 1 && tier <= 7, "Invalid tier");
+        require(tier >= 2 && tier <= 7, "Invalid tier");
         _mint(player, tier, amount, "");
         tierTotalSupply[tier] += amount;
         _checkCountdownTrigger(player);
