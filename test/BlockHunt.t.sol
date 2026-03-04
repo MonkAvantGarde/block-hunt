@@ -502,7 +502,7 @@ contract BlockHuntTest is Test {
         vm.prank(owner);
         forge.setVrfConfig(
             1,                                                              // subscriptionId (any non-zero value)
-            bytes32(uint256(0x9e9e46732b32662b9adc6f3abdf6c5e926a666d174a4d6b8e39c4cca76a38897)), // Base Sepolia key hash
+            bytes32(uint256(0x9e1344a1247c8a1785d0a4681a27152bffdb43666ae5bf7d14d24a5efd44bf71)), // Base Sepolia key hash
             200_000                                                         // callbackGasLimit
         );
         vm.prank(owner);
@@ -1674,7 +1674,127 @@ contract BlockHuntTest is Test {
         vm.expectRevert("Only token contract");
         countdown.startCountdown(alice);
     }
+// ═════════════════════════════════════════════════════════════════════════
+    // 7c. COUNTDOWN RESET — HOLDER DISQUALIFICATION (Contract Session 3)
+    //
+    // Tests the resetExpiredHolder() path:
+    //   countdown.checkHolderStatus() detects holder no longer holds all tiers
+    //   → resets Countdown contract state
+    //   → calls token.resetExpiredHolder()
+    //   → resets Token contract state
+    //   → new player can now trigger a fresh countdown
+    // ═════════════════════════════════════════════════════════════════════════
 
+    function test_CheckHolderStatus_NoopWhenNotActive() public {
+        // No countdown running — should be a complete no-op
+        assertFalse(countdown.isActive());
+        countdown.checkHolderStatus();  // must not revert
+        assertFalse(countdown.isActive());
+        assertFalse(token.countdownActive());
+    }
+
+    function test_CheckHolderStatus_NoopWhenHolderStillQualified() public {
+        // Alice triggers countdown and still holds all tiers
+        _giveAllTiers(alice);
+        assertTrue(countdown.isActive());
+        assertTrue(token.countdownActive());
+
+        // Calling checkHolderStatus while holder still qualifies — should be a no-op
+        countdown.checkHolderStatus();
+
+        assertTrue(countdown.isActive(),    "Countdown should remain active");
+        assertTrue(token.countdownActive(), "Token countdown should remain active");
+        assertEq(countdown.currentHolder(), alice, "Holder should still be alice");
+        assertEq(token.countdownHolder(),   alice, "Token holder should still be alice");
+    }
+
+    function test_CheckHolderStatus_ResetsCountdownContractWhenHolderLosesTier() public {
+        _giveAllTiers(alice);
+        assertTrue(countdown.isActive());
+
+        // Alice transfers Tier-2 away — she no longer holds all 6 tiers
+        vm.prank(alice);
+        token.safeTransferFrom(alice, bob, 2, 1, "");
+        assertFalse(token.hasAllTiers(alice), "Alice should no longer have all tiers");
+
+        // Anyone can call checkHolderStatus (simulates Gelato keeper)
+        countdown.checkHolderStatus();
+
+        assertFalse(countdown.isActive(),           "Countdown contract should be reset");
+        assertEq(countdown.currentHolder(), address(0), "Holder should be cleared");
+        assertEq(countdown.countdownStartTime(), 0,     "Start time should be cleared");
+    }
+
+    function test_CheckHolderStatus_ResetsTokenWhenHolderLosesTier() public {
+        // This is the core bug fix — Token's countdownActive was NOT reset before Session 3
+        _giveAllTiers(alice);
+        assertTrue(token.countdownActive());
+
+        // Alice transfers Tier-7 away mid-countdown
+        vm.prank(alice);
+        token.safeTransferFrom(alice, bob, 7, 1, "");
+
+        countdown.checkHolderStatus();
+
+        // The fix: Token's state must now also be reset
+        assertFalse(token.countdownActive(),           "Token countdownActive must be reset");
+        assertEq(token.countdownHolder(),   address(0), "Token countdownHolder must be cleared");
+        assertEq(token.countdownStartTime(), 0,         "Token countdownStartTime must be cleared");
+    }
+
+    function test_CheckHolderStatus_AllowsNewCountdownAfterReset() public {
+        // Alice triggers countdown then loses a tier
+        _giveAllTiers(alice);
+        vm.prank(alice);
+        token.safeTransferFrom(alice, bob, 2, 1, "");
+        countdown.checkHolderStatus();
+
+        assertFalse(token.countdownActive(), "Precondition: countdown cleared");
+
+        // Bob collects all 6 tiers — a new countdown must be triggerable
+        // (bob already has alice's Tier-2 from the transfer above)
+        for (uint256 tier = 3; tier <= 7; tier++) {
+            _giveBlocks(bob, tier, 1);
+        }
+
+        assertTrue(token.countdownActive(),      "New countdown should start");
+        assertEq(token.countdownHolder(), bob,   "Bob should be new holder");
+        assertTrue(countdown.isActive(),          "Countdown contract should reflect new countdown");
+        assertEq(countdown.currentHolder(), bob, "Countdown contract holder should be bob");
+    }
+
+    function test_ResetExpiredHolder_RevertsIfNotCountdownContract() public {
+        _giveAllTiers(alice);
+
+        // Direct call from alice or any non-countdown address must revert
+        vm.prank(alice);
+        vm.expectRevert("Only countdown contract");
+        token.resetExpiredHolder();
+    }
+
+    function test_ResetExpiredHolder_NoopIfAlreadyInactive() public {
+        // No countdown is running — calling resetExpiredHolder via countdown should silently no-op
+        assertFalse(token.countdownActive());
+
+        // We call via the actual countdown contract path:
+        // checkHolderStatus returns early if !isActive, so call resetExpiredHolder directly
+        // from the countdown contract's address using prank
+        vm.prank(address(countdown));
+        token.resetExpiredHolder();  // must not revert
+
+        assertFalse(token.countdownActive(), "Should still be inactive");
+    }
+
+    function test_CheckHolderStatus_EmitsCountdownResetEvent() public {
+        _giveAllTiers(alice);
+        vm.prank(alice);
+        token.safeTransferFrom(alice, bob, 2, 1, "");
+
+        vm.expectEmit(true, false, false, false);
+        emit BlockHuntCountdown.CountdownReset(alice);
+
+        countdown.checkHolderStatus();
+    }
 
     // ═════════════════════════════════════════════════════════════════════════
     // 8. TOKEN ADMIN & SECURITY TESTS

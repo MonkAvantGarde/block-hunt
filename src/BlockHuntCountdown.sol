@@ -5,6 +5,8 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 
 interface IBlockHuntTokenCountdown {
     function hasAllTiers(address player) external view returns (bool);
+      // SESSION 3: called when this contract disqualifies a holder mid-countdown
+    function resetExpiredHolder() external;
 }
 
 contract BlockHuntCountdown is Ownable {
@@ -76,6 +78,9 @@ contract BlockHuntCountdown is Ownable {
         if (!stillHolds) {
             address former = currentHolder;
             _resetCountdown();
+            // SESSION 3: also reset Token's side — without this, token.countdownActive
+            // stays true permanently, blocking any new countdown from ever starting.
+            IBlockHuntTokenCountdown(tokenContract).resetExpiredHolder();
             emit CountdownReset(former);
         }
     }

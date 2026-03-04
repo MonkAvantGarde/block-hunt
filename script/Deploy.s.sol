@@ -77,7 +77,7 @@ contract Deploy is Script {
     address constant VRF_COORDINATOR = 0x5C210eF41CD1a72de73bF76eC39637bB0d3d7BEE;
 
     // Base Sepolia VRF key hash (30 gwei gas lane)
-    bytes32 constant VRF_KEY_HASH = 0x9e9e46732b32662b9adc6f3abdf6c5e926a666d174a4d6b8e39c4cca76a38897;
+    bytes32 constant VRF_KEY_HASH = 0x9e1344a1247c8a1785d0a4681a27152bffdb43666ae5bf7d14d24a5efd44bf71;
 
     // ── Run ───────────────────────────────────────────────────────────────────
 
