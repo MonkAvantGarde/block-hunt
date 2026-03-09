@@ -10,7 +10,7 @@ interface IBlockHuntTokenMint {
 contract BlockHuntMintWindow is Ownable {
 
     uint256 public constant BASE_DAILY_CAP  = 50_000;
-    uint256 public constant WINDOW_DURATION = 8 hours;
+    uint256 public constant WINDOW_DURATION = 24 hours;
 
     address public tokenContract;
 

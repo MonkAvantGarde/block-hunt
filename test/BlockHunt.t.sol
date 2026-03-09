@@ -1188,11 +1188,11 @@ contract BlockHuntTest is Test {
         assertEq(allocated, 50_000, "Base cap should be 50,000");
     }
 
-    function test_WindowExpiresByTime() public {
-        // Fast-forward past the 8-hour window
-        vm.warp(block.timestamp + 8 hours + 1);
+   function test_WindowExpiresByTime() public {
+    // Fast-forward past the 24-hour window
+    vm.warp(block.timestamp + 24 hours + 1);
 
-        assertEq(mintWindow.isWindowOpen(), false, "Window should be expired");
+    assertEq(mintWindow.isWindowOpen(), false, "Window should be expired");
     }
 
     function test_WindowTracksUserDayMints() public {

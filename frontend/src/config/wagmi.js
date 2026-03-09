@@ -33,7 +33,7 @@ export const config = createConfig({
   chains: [baseSepolia],
   connectors: [
     injected(),                                                // MetaMask + browser wallets
-    walletConnect({ projectId: WALLETCONNECT_PROJECT_ID }),    // Mobile wallets
+    // walletConnect({ projectId: WALLETCONNECT_PROJECT_ID }),    // Mobile wallets
   ],
   transports: {
     [baseSepolia.id]: http(BASE_SEPOLIA_RPC),
@@ -47,7 +47,7 @@ export const config = createConfig({
 export const CONTRACTS = {
   TOKEN:     '0x57Efa000E28313ed47213C6faF13719500038D75',
   TREASURY:  '0x1442EBD149Ac1842e40c72e89cCCD2653F16D39D',
-  WINDOW:    '0x7824b02005Ed87E9c9ADcBcE49cFea9296FA2A0D',
+  WINDOW:    '0xAD0C5f56324ed2116b9Ebc18E4de2794412867BD',
   FORGE:     '0x99c1F1c9D738528a4Bba537E70f13596cBB599E7',
   COUNTDOWN: '0xaeBa69BBF66d670EB98Bc59Bc71EF8690f639466',
 }

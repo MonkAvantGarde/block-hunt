@@ -1,18 +1,20 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // abis/index.js — Contract ABIs for The Block Hunt
-//
-// An ABI is the "menu" that tells your frontend what functions a contract has
-// and what arguments they take. Wagmi uses these to build the actual calls.
-//
-// Only the functions the frontend actually calls are included here.
-// Full ABIs can be generated from the contracts with `forge inspect` if needed.
 // ─────────────────────────────────────────────────────────────────────────────
 
 
 // ── TOKEN CONTRACT (BlockHuntToken) ───────────────────────────────────────────
 
 export const TOKEN_ABI = [
-  // Read
+  // ── Read ──────────────────────────────────────────────────────────────────
+  { "inputs": [], "name": "countdownStartTime", "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }], "stateMutability": "view", "type": "function" },
+  {
+  "inputs": [],
+  "name": "claimHolderStatus",
+  "outputs": [],
+  "stateMutability": "nonpayable",
+  "type": "function"
+  },
   {
     name: 'balancesOf',
     type: 'function',
@@ -49,12 +51,20 @@ export const TOKEN_ABI = [
     outputs: [{ name: '', type: 'uint256' }],
   },
 
-  // Write
+  // ── Write ─────────────────────────────────────────────────────────────────
   {
     name: 'mint',
     type: 'function',
     stateMutability: 'payable',
     inputs: [{ name: 'quantity', type: 'uint256' }],
+    outputs: [],
+  },
+  {
+    // Cancel a pending VRF mint request after the 1-hour timeout
+    name: 'cancelMintRequest',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'requestId', type: 'uint256' }],
     outputs: [],
   },
   {
@@ -86,7 +96,36 @@ export const TOKEN_ABI = [
     outputs: [],
   },
 
-  // Events
+  // ── Events ────────────────────────────────────────────────────────────────
+  {
+    // Fired when mint() is called — gives us the VRF requestId for cancel
+    name: 'MintRequested',
+    type: 'event',
+    inputs: [
+      { name: 'requestId', type: 'uint256', indexed: true },
+      { name: 'player',    type: 'address', indexed: true },
+      { name: 'quantity',  type: 'uint256', indexed: false },
+    ],
+  },
+  {
+    // Fired when Chainlink VRF delivers the mint result
+    name: 'MintFulfilled',
+    type: 'event',
+    inputs: [
+      { name: 'requestId', type: 'uint256', indexed: true },
+      { name: 'player',    type: 'address', indexed: true },
+      { name: 'quantity',  type: 'uint256', indexed: false },
+    ],
+  },
+  {
+    // Fired when player cancels after timeout
+    name: 'MintCancelled',
+    type: 'event',
+    inputs: [
+      { name: 'requestId', type: 'uint256', indexed: true },
+      { name: 'player',    type: 'address', indexed: true },
+    ],
+  },
   {
     name: 'BlockMinted',
     type: 'event',
@@ -112,7 +151,6 @@ export const TOKEN_ABI = [
     ],
   },
   {
-    // Emitted when holder loses a tier mid-countdown — critical for frontend alert
     name: 'CountdownHolderReset',
     type: 'event',
     inputs: [
@@ -209,5 +247,27 @@ export const FORGE_ABI = [
       { name: 'burnCount', type: 'uint256' },
     ],
     outputs: [],
+  },
+  {
+    // Fired when forge() is called — blocks are burned at this point
+    name: 'ForgeRequested',
+    type: 'event',
+    inputs: [
+      { name: 'requestId', type: 'uint256', indexed: true },
+      { name: 'player',    type: 'address', indexed: true },
+      { name: 'fromTier',  type: 'uint256', indexed: false },
+      { name: 'burnCount', type: 'uint256', indexed: false },
+    ],
+  },
+  {
+    // Fired when Chainlink VRF resolves the forge result
+    name: 'ForgeResolved',
+    type: 'event',
+    inputs: [
+      { name: 'requestId', type: 'uint256', indexed: true },
+      { name: 'player',    type: 'address', indexed: true },
+      { name: 'fromTier',  type: 'uint256', indexed: false },
+      { name: 'success',   type: 'bool',    indexed: false },
+    ],
   },
 ]
