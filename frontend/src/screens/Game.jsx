@@ -315,6 +315,8 @@ function SpinnerBlock() {
 function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, treasury, address, refetchAll }) {
   const [qty, setQty]                    = useState(10);
   const [vrfState, setVrfState]          = useState(VRF.IDLE);
+  const vrfStateRef = useRef(VRF.IDLE);
+  function setVrf(s) { vrfStateRef.current = s; setVrfState(s); }
   const [reqId, setReqId]                = useState(null);
   const [elapsed, setElapsed]            = useState(0);
   const [, setTick] = useState(0);
@@ -365,7 +367,7 @@ function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, treasury, address
       stopClock()
       clearTimeout(autoRef.current)
       setDelivered({ qty, alloc: deliveredQty, results: [] })
-      setVrfState(VRF.DELIVERED)
+      setVrf(VRF.DELIVERED)
       onMint()
       break
     }
@@ -380,7 +382,7 @@ function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, treasury, address
     poll: true,
     pollingInterval: 4_000,
     onLogs(logs) {
-      if (vrfState !== VRF.PENDING && vrfState !== VRF.DELAYED) return
+      if (vrfStateRef.current !== VRF.PENDING && vrfStateRef.current !== VRF.DELAYED) return
       const mine = address
         ? logs.filter(l => l.args.player?.toLowerCase() === address.toLowerCase())
         : logs
@@ -389,15 +391,15 @@ function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, treasury, address
       stopClock()
       clearTimeout(autoRef.current)
       setDelivered({ qty, alloc: deliveredQty, results: [] })
-      setVrfState(VRF.DELIVERED)
-      onMint()
+      setVrf(VRF.DELIVERED)
+      setTimeout(() => setTimeout(() => onMint(), 1500), 1500)
     },
   })
 
   function doMint() {
     if (!windowOpen || vrfState !== VRF.IDLE) return
     setReqId('awaiting wallet…')
-    setVrfState(VRF.PENDING)
+    setVrf(VRF.PENDING)
     startClock()
     setMintTxHash(null)
     setVrfReqId(null)
@@ -417,13 +419,13 @@ function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, treasury, address
         stopClock()
         clearTimeout(autoRef.current)
         setReqId(null)
-        setVrfState(VRF.IDLE)
+        setVrf(VRF.IDLE)
       },
     })
 
     autoRef.current = setTimeout(() => {
       stopClock()
-      setVrfState(VRF.TIMEOUT)
+      setVrf(VRF.TIMEOUT)
     }, 3_600_000)
   }
 
@@ -431,11 +433,11 @@ function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, treasury, address
     if (!vrfReqId) return
     stopClock()
     clearTimeout(autoRef.current)
-    setVrfState(VRF.REFUNDED)
+    setVrf(VRF.REFUNDED)
   }
 
   function reset() {
-    setVrfState(VRF.IDLE);
+    setVrf(VRF.IDLE);
     setReqId(null);
     setDelivered(null);
     setElapsed(0);
