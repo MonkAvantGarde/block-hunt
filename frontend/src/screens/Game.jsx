@@ -382,6 +382,7 @@ function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, treasury, address
     poll: true,
     pollingInterval: 4_000,
     onLogs(logs) {
+      console.log('MintFulfilled event fired, vrfStateRef:', vrfStateRef.current, 'logs:', logs.length)
       if (vrfStateRef.current !== VRF.PENDING && vrfStateRef.current !== VRF.DELAYED) return
       const mine = address
         ? logs.filter(l => l.args.player?.toLowerCase() === address.toLowerCase())
@@ -392,7 +393,7 @@ function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, treasury, address
       clearTimeout(autoRef.current)
       setDelivered({ qty, alloc: deliveredQty, results: [] })
       setVrf(VRF.DELIVERED)
-      setTimeout(() => setTimeout(() => onMint(), 1500), 1500)
+      setTimeout(() => onMint(), 1500)
     },
   })
 
