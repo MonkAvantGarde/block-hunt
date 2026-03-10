@@ -312,405 +312,305 @@ function SpinnerBlock() {
 // VRF MINT PANEL — live wagmi transactions
 // ═══════════════════════════════════════════════════════════════
 
-function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, treasury, address, refetchAll, blocks }) {
-  const [qty, setQty]                    = useState(10);
-  const [vrfState, setVrfState]          = useState(VRF.IDLE);
-  const vrfStateRef = useRef(VRF.IDLE);
-  function setVrf(s) { vrfStateRef.current = s; setVrfState(s); }
-  const prevT7Ref = useRef(null)
-  const pollRef = useRef(null)
-
-  function startPolling() {
-    if (pollRef.current) return
-    pollRef.current = setInterval(() => {
-      if (vrfStateRef.current !== VRF.PENDING && vrfStateRef.current !== VRF.DELAYED) {
-        clearInterval(pollRef.current)
-        pollRef.current = null
-        return
-      }
-      refetchAll()
-    }, 3000)
-  }
-
-  function stopPolling() {
-    clearInterval(pollRef.current)
-    pollRef.current = null
-  }
+function PendingMintItem({ item, onDelivered, onRequestId }) {
+  const [elapsed, setElapsed] = useState(Math.floor((Date.now() - item.startTime) / 1000))
+  const [cancelling, setCancelling] = useState(false)
 
   useEffect(() => {
-    if (vrfStateRef.current !== VRF.PENDING && vrfStateRef.current !== VRF.DELAYED) return
-    const t7 = blocks ? (blocks[7] || 0) : 0
-    if (prevT7Ref.current !== null && t7 > prevT7Ref.current) {
-      stopClock()
-      stopPolling()
-      clearTimeout(autoRef.current)
-      setDelivered({ qty, alloc: qty, results: [] })
-      setVrf(VRF.DELIVERED)
-      setTimeout(() => onMint(), 500)
-    }
-    prevT7Ref.current = t7
-  }, [blocks])
-  const [reqId, setReqId]                = useState(null);
-  const [elapsed, setElapsed]            = useState(0);
-  const [, setTick] = useState(0);
-  const [deliveredResults, setDelivered] = useState(null);
-  const intervalRef = useRef(null);
-  const autoRef     = useRef(null);
+    const t = setInterval(() => setElapsed(e => e + 1), 1000)
+    return () => clearInterval(t)
+  }, [])
 
-  const { writeContract: writeMint } = useWriteContract()
-  const [mintTxHash, setMintTxHash]  = useState(null)
-  const [vrfReqId,   setVrfReqId]    = useState(null)
-
-  const total = (qty * 0.00025).toFixed(5);
-
-  function startClock() {
-    setElapsed(0);
-    intervalRef.current = setInterval(() => setElapsed(e => e+1), 1000);
-  }
-  function stopClock() { clearInterval(intervalRef.current); }
-  useEffect(() => {
-  const t = setInterval(() => setTick(n => n+1), 1000);
-  return () => clearInterval(t);
-}, []);
   function fmt(s) {
-    const h = Math.floor(s/3600);
-    const m = Math.floor((s%3600)/60);
-    const sec = s%60;
+    const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60
     return h > 0
       ? `${h}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`
-      : `${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`;
+      : `${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`
   }
 
-  const { data: mintReceipt } = useWaitForTransactionReceipt({
-    hash: mintTxHash,
-    query: { enabled: !!mintTxHash },
+  // Watch receipt to extract requestId
+  const { data: receipt } = useWaitForTransactionReceipt({
+    hash: item.txHash,
+    query: { enabled: !!item.txHash && !item.requestId },
   })
   useEffect(() => {
-    if (!mintReceipt) return
-    for (const log of mintReceipt.logs) {
+    if (!receipt || item.requestId) return
+    for (const log of receipt.logs) {
       try {
         const decoded = decodeEventLog({ abi: TOKEN_ABI, data: log.data, topics: log.topics })
-        if (decoded.eventName === 'MintRequested') {
-          setVrfReqId(decoded.args.requestId)
-          setReqId('req #' + decoded.args.requestId.toString().slice(-6))
+        if (decoded.eventName === "MintRequested") {
+          onRequestId(item.id, decoded.args.requestId.toString())
           break
         }
-        if (decoded.eventName === 'MintFulfilled') {
-      const deliveredQty = decoded.args.quantity ? Number(decoded.args.quantity) : qty
-      stopClock()
-      clearTimeout(autoRef.current)
-      setDelivered({ qty, alloc: deliveredQty, results: [] })
-      setVrf(VRF.DELIVERED)
-      onMint()
-      break
-    }
       } catch {}
     }
-  }, [mintReceipt])
+  }, [receipt])
 
-  useWatchContractEvent({
-    address: CONTRACTS.TOKEN,
-    abi: TOKEN_ABI,
-    eventName: 'MintFulfilled',
-    poll: true,
-    pollingInterval: 4_000,
-    onLogs(logs) {
-      if (vrfStateRef.current !== VRF.PENDING && vrfStateRef.current !== VRF.DELAYED) return
-      const mine = address
-        ? logs.filter(l => l.args.player?.toLowerCase() === address.toLowerCase())
-        : logs
-      if (mine.length === 0) return
-      const deliveredQty = mine[0].args.quantity ? Number(mine[0].args.quantity) : qty
-      stopClock()
-      clearTimeout(autoRef.current)
-      setDelivered({ qty, alloc: deliveredQty, results: [] })
-      setVrf(VRF.DELIVERED)
-      setTimeout(() => onMint(), 1500)
-    },
-  })
+  const { writeContract: writeCancel } = useWriteContract()
+
+  function doCancel() {
+    if (!item.requestId || cancelling) return
+    setCancelling(true)
+    writeCancel({
+      address: CONTRACTS.TOKEN,
+      abi: TOKEN_ABI,
+      functionName: "cancelMintRequest",
+      args: [BigInt(item.requestId)],
+    }, {
+      onSuccess: () => onDelivered(item.id),
+      onError: () => setCancelling(false),
+    })
+  }
+
+  const isDelivered = item.status === "delivered"
+  const canCancel = !isDelivered && elapsed >= 3600 && !!item.requestId
+  const cancelLabel = cancelling ? "…" : elapsed >= 3600 ? "CANCEL" : fmt(3600 - elapsed)
+
+  return (
+    <div style={{
+      display:"flex", flexDirection:"column", gap:4,
+      background: isDelivered ? "rgba(110,255,138,0.06)" : "rgba(0,0,0,0.3)",
+      border: `1px solid ${isDelivered ? "rgba(110,255,138,0.2)" : canCancel ? "rgba(255,100,100,0.25)" : "rgba(255,255,255,0.08)"}`,
+      padding:"6px 10px",
+    }}>
+      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+        <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:6,
+          color: isDelivered ? "#6eff8a" : canCancel ? "#ff6666" : "#ffcc33",
+          minWidth:8,
+        }}>
+          {isDelivered ? "✓" : canCancel ? "!" : "◌"}
+        </span>
+        <span style={{ fontFamily:"'Courier Prime', monospace", fontSize:10, color:"rgba(255,255,255,0.35)", flex:1 }}>
+          {item.txHash ? item.txHash.slice(0,8)+"…"+item.txHash.slice(-4) : "—"}
+        </span>
+        <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:6, color:"rgba(255,255,255,0.4)" }}>
+          x{item.qty}
+        </span>
+        <span style={{ fontFamily:"'VT323', monospace", fontSize:18,
+          color: isDelivered ? "#6eff8a" : canCancel ? "#ff6666" : "rgba(255,255,255,0.5)",
+          minWidth:44, textAlign:"right",
+        }}>
+          {isDelivered ? "DONE" : fmt(elapsed)}
+        </span>
+        {isDelivered && (
+          <button onClick={() => onDelivered(item.id)} style={{
+            background:"none", border:"none", color:"rgba(255,255,255,0.3)",
+            cursor:"pointer", fontFamily:"'Press Start 2P', monospace", fontSize:6, padding:"0 4px",
+          }}>x</button>
+        )}
+      </div>
+      {!isDelivered && (
+        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+          <button
+            onClick={doCancel}
+            disabled={!canCancel || cancelling}
+            style={{
+              flex:1,
+              background: canCancel ? "rgba(255,80,80,0.12)" : "rgba(0,0,0,0.2)",
+              border: `1px solid ${canCancel ? "rgba(255,80,80,0.35)" : "rgba(255,255,255,0.08)"}`,
+              color: canCancel ? "#ff6666" : "rgba(255,255,255,0.2)",
+              fontFamily:"'Press Start 2P', monospace", fontSize:5.5,
+              padding:"4px 8px", cursor: canCancel ? "pointer" : "default",
+            }}
+          >
+            {canCancel ? `✕ ${cancelLabel} — REFUND ETH` : `CANCEL IN ${cancelLabel}`}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+const STORAGE_KEY = "blockhunt_pending_mints"
+function loadPending() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]") } catch { return [] }
+}
+function savePending(items) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(items)) } catch {}
+}
+
+function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, treasury, address, refetchAll, blocks }) {
+  const [qty, setQty] = useState(10)
+  const [pendingMints, setPendingMints] = useState(() => loadPending())
+  const [, setTick] = useState(0)
+  const prevBlocksRef = useRef(null)
+  const pollRef = useRef(null)
+
+  useEffect(() => {
+    const t = setInterval(() => setTick(n => n + 1), 1000)
+    return () => clearInterval(t)
+  }, [])
+
+  useEffect(() => {
+    const hasPending = pendingMints.some(m => m.status === "pending")
+    if (!hasPending) return
+    const t7 = blocks ? (blocks[7] || 0) : 0
+    if (prevBlocksRef.current !== null && t7 > prevBlocksRef.current) {
+      setPendingMints(prev => {
+        const next = [...prev]
+        const idx = next.findIndex(m => m.status === "pending")
+        if (idx !== -1) next[idx] = { ...next[idx], status: "delivered" }
+        savePending(next)
+        return next
+      })
+      setTimeout(() => onMint(), 500)
+    }
+    prevBlocksRef.current = t7
+  }, [blocks])
+
+  useEffect(() => {
+    const hasPending = pendingMints.some(m => m.status === "pending")
+    if (hasPending) {
+      if (!pollRef.current) {
+        pollRef.current = setInterval(() => refetchAll(), 3000)
+      }
+    } else {
+      clearInterval(pollRef.current)
+      pollRef.current = null
+    }
+  }, [pendingMints])
+
+  useEffect(() => () => { clearInterval(pollRef.current) }, [])
+
+  const { writeContract: writeMint } = useWriteContract()
+  const total = (qty * 0.00025).toFixed(5)
 
   function doMint() {
-    if (!windowOpen || vrfState !== VRF.IDLE) return
-    prevT7Ref.current = blocks ? (blocks[7] || 0) : 0
-    setReqId('awaiting wallet…')
-    setVrf(VRF.PENDING)
-    startPolling()
-    startClock()
-    setMintTxHash(null)
-    setVrfReqId(null)
-
+    if (!windowOpen) return
+    prevBlocksRef.current = blocks ? (blocks[7] || 0) : 0
     writeMint({
       address: CONTRACTS.TOKEN,
       abi: TOKEN_ABI,
-      functionName: 'mint',
+      functionName: "mint",
       args: [BigInt(qty)],
       value: parseEther((qty * 0.00025).toFixed(18)),
     }, {
       onSuccess: (hash) => {
-        setMintTxHash(hash)
-        setReqId(hash.slice(0, 8) + '…' + hash.slice(-4))
-      },
-      onError: () => {
-        stopClock()
-        clearTimeout(autoRef.current)
-        setReqId(null)
-        setVrf(VRF.IDLE)
+        const item = { id: Date.now().toString(), txHash: hash, qty, startTime: Date.now(), status: "pending" }
+        setPendingMints(prev => {
+          const next = [...prev, item]
+          savePending(next)
+          return next
+        })
       },
     })
-
-    autoRef.current = setTimeout(() => {
-      stopClock()
-      setVrf(VRF.TIMEOUT)
-    }, 3_600_000)
   }
 
-  function cancelMint() {
-    if (!vrfReqId) return
-    stopClock()
-    clearTimeout(autoRef.current)
-    setVrf(VRF.REFUNDED)
+  function dismissItem(id) {
+    setPendingMints(prev => {
+      const next = prev.filter(m => m.id !== id)
+      savePending(next)
+      return next
+    })
   }
 
-  function reset() {
-    setVrf(VRF.IDLE);
-    setReqId(null);
-    setDelivered(null);
-    setElapsed(0);
-    setMintTxHash(null);
-    setVrfReqId(null);
+  function storeRequestId(id, requestId) {
+    setPendingMints(prev => {
+      const next = prev.map(m => m.id === id ? { ...m, requestId } : m)
+      savePending(next)
+      return next
+    })
   }
 
-  useEffect(() => () => { stopClock(); clearTimeout(autoRef.current); }, []);
-
-  if (vrfState === VRF.IDLE) {
-    const now = Math.floor(Date.now() / 1000)
-    let timerLabel = "— : — : —"
-    let timerSub = ""
-    if (windowInfo) {
-      if (windowInfo.isOpen && windowInfo.closeAt) {
-        const secs = Math.max(0, Number(windowInfo.closeAt) - now)
-        const h = Math.floor(secs/3600), m = Math.floor((secs%3600)/60), s = secs%60
-        timerLabel = `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`
-        timerSub = "WINDOW CLOSES"
-      } else if (!windowInfo.isOpen && windowInfo.openAt) {
-        const secs = Math.max(0, Number(windowInfo.openAt) - now)
-        const h = Math.floor(secs/3600), m = Math.floor((secs%3600)/60), s = secs%60
-        timerLabel = `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`
-        timerSub = "NEXT WINDOW OPENS"
-      }
+  const now = Math.floor(Date.now() / 1000)
+  let timerLabel = "— : — : —"
+  let timerSub = ""
+  if (windowInfo) {
+    if (windowInfo.isOpen && windowInfo.closeAt) {
+      const secs = Math.max(0, Number(windowInfo.closeAt) - now)
+      const h = Math.floor(secs/3600), m = Math.floor((secs%3600)/60), s = secs%60
+      timerLabel = `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`
+      timerSub = "WINDOW CLOSES"
+    } else if (!windowInfo.isOpen && windowInfo.openAt) {
+      const secs = Math.max(0, Number(windowInfo.openAt) - now)
+      const h = Math.floor(secs/3600), m = Math.floor((secs%3600)/60), s = secs%60
+      timerLabel = `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`
+      timerSub = "NEXT WINDOW OPENS"
     }
+  }
 
-    return (
-      <div style={{ display:"flex", flexDirection:"column", gap:10, height:"100%" }}>
-        <div style={{
-          display:"flex", justifyContent:"space-between", alignItems:"center",
-          background: windowOpen ? "rgba(110,255,138,0.08)" : "rgba(255,80,80,0.08)",
-          border: `1px solid ${windowOpen ? "#6eff8a44" : "#ff505044"}`,
-          padding:"6px 10px",
-        }}>
-          <span style={{
-            fontFamily:"'Press Start 2P', monospace", fontSize:6,
-            color: windowOpen ? "#6eff8a" : "#ff8888",
-            animation: windowOpen ? "badgePulse 2s infinite" : "none",
-          }}>
-            {windowOpen ? "● WINDOW OPEN" : "○ WINDOW CLOSED"}
-          </span>
-          <span style={{ fontFamily:"'Courier Prime', monospace", fontSize:11, color:"rgba(255,255,255,0.4)" }}>
-            {timerLabel !== "— : — : —" ? (windowOpen ? `closes in ${timerLabel}` : `opens in ${timerLabel}`) : ""}
-          </span>
-        </div>
-
-        <div style={{ display:"flex", gap:6 }}>
-          <StatBox label="BATCH" value={windowInfo ? `${windowInfo.day ?? 1} / 6` : "— / 6"} />
-          <StatBox label="PRICE" value="0.00025Ξ" />
-          <StatBox label="SLOTS" value={slots.toLocaleString()} accent={slots < 5000 ? "#ff6644" : undefined} />
-        </div>
-
-        <div style={{ fontFamily:"'VT323', monospace", fontSize:44, letterSpacing:4, color:CREAM, textAlign:"center", lineHeight:1 }}>
-          {timerLabel}
-        </div>
-        <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:5.5, color:"rgba(255,255,255,0.3)", textAlign:"center", letterSpacing:1 }}>
-          {timerSub}
-        </div>
-
-        <div style={{ display:"flex", gap:0, alignItems:"stretch", border:`2px solid rgba(255,255,255,0.12)` }}>
-          {[-100,-10,-1].map(d => (
-            <button key={d} onClick={() => setQty(q => Math.max(1, q+d))} style={{
-              width:36, background:"rgba(0,0,0,0.4)",
-              border:"none", borderRight:"1px solid rgba(255,255,255,0.1)",
-              color:"rgba(255,255,255,0.6)", fontFamily:"'Press Start 2P', monospace", fontSize:7, cursor:"pointer",
-            }}>{d < -9 ? d : d < 0 ? " "+d : "+"+d}</button>
-          ))}
-          <div style={{
-            flex:1, display:"flex", alignItems:"center", justifyContent:"center",
-            fontFamily:"'VT323', monospace", fontSize:36, color:CREAM, background:"rgba(0,0,0,0.2)",
-          }}>{qty}</div>
-          {[1,10,100].map(d => (
-            <button key={d} onClick={() => setQty(q => Math.min(500, q+d))} style={{
-              width:36, background:"rgba(0,0,0,0.4)",
-              border:"none", borderLeft:"1px solid rgba(255,255,255,0.1)",
-              color:"rgba(255,255,255,0.6)", fontFamily:"'Press Start 2P', monospace", fontSize:7, cursor:"pointer",
-            }}>+{d}</button>
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:10, height:"100%" }}>
+      {pendingMints.length > 0 && (
+        <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+          <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:5.5, color:"rgba(255,255,255,0.3)", marginBottom:2 }}>
+            IN-FLIGHT MINTS
+          </div>
+          {pendingMints.map(item => (
+            <PendingMintItem key={item.id} item={item} onDelivered={dismissItem} onRequestId={storeRequestId} />
           ))}
         </div>
-
-        <div style={{
-          fontFamily:"'Press Start 2P', monospace", fontSize:8, color:"#6eff8a", textAlign:"center",
-          padding:"6px 0",
-          borderTop:"1px solid rgba(255,255,255,0.06)", borderBottom:"1px solid rgba(255,255,255,0.06)",
+      )}
+      <div style={{
+        display:"flex", justifyContent:"space-between", alignItems:"center",
+        background: windowOpen ? "rgba(110,255,138,0.08)" : "rgba(255,80,80,0.08)",
+        border: `1px solid ${windowOpen ? "#6eff8a44" : "#ff505044"}`,
+        padding:"6px 10px",
+      }}>
+        <span style={{
+          fontFamily:"'Press Start 2P', monospace", fontSize:6,
+          color: windowOpen ? "#6eff8a" : "#ff8888",
+          animation: windowOpen ? "badgePulse 2s infinite" : "none",
         }}>
-          TOTAL: {total} ETH
-        </div>
-
-        <Btn onClick={doMint} disabled={!windowOpen}>
-          {windowOpen ? "▶  MINT NOW" : "✕  WINDOW CLOSED"}
-        </Btn>
-
-        <div style={{
-          marginTop:"auto", background:"rgba(0,0,0,0.35)", border:"1px solid rgba(255,255,255,0.06)",
-          padding:"8px 12px", display:"flex", justifyContent:"space-between", alignItems:"baseline",
-        }}>
-          <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:6, color:"rgba(255,255,255,0.35)" }}>TREASURY</span>
-          <span style={{ fontFamily:"'VT323', monospace", fontSize:28, color:"#6eff8a" }}>Ξ {treasury}</span>
-        </div>
+          {windowOpen ? "● WINDOW OPEN" : "○ WINDOW CLOSED"}
+        </span>
+        <span style={{ fontFamily:"'Courier Prime', monospace", fontSize:11, color:"rgba(255,255,255,0.4)" }}>
+          {timerLabel !== "— : — : —" ? (windowOpen ? `closes in ${timerLabel}` : `opens in ${timerLabel}`) : ""}
+        </span>
       </div>
-    );
-  }
-
-  if (vrfState === VRF.PENDING || vrfState === VRF.DELAYED) {
-    return (
-      <div style={{ display:"flex", flexDirection:"column", gap:10, height:"100%" }}>
-        <VRFStatusHeader state={vrfState} />
-        <div style={{
-          background:"rgba(0,0,0,0.3)", border:"1px solid rgba(255,255,255,0.08)",
-          padding:"6px 10px",
-          fontFamily:"'Courier Prime', monospace", fontSize:11, color:"rgba(255,255,255,0.45)",
-        }}>
-          <span style={{ color:"rgba(255,255,255,0.25)" }}>TX </span>{reqId}
-        </div>
-        {vrfState === VRF.PENDING ? (
-          <SpinnerBlock />
-        ) : (
-          <div style={{ textAlign:"center", padding:"14px 0" }}>
-            <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:"#ffcc33", marginBottom:6 }}>⚠ DELAYED</div>
-            <div style={{ fontFamily:"'VT323', monospace", fontSize:28, color:"#ffcc3388" }}>Callback still pending</div>
-          </div>
-        )}
-        <div style={{ textAlign:"center" }}>
-          <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:6, color:"rgba(255,255,255,0.3)", marginBottom:4 }}>ELAPSED</div>
-          <div style={{ fontFamily:"'VT323', monospace", fontSize:40, color: vrfState === VRF.DELAYED ? "#ffcc33" : CREAM }}>{fmt(elapsed)}</div>
-        </div>
-        {vrfState === VRF.PENDING ? (
-          <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:11, color:"rgba(255,255,255,0.4)", lineHeight:1.7, textAlign:"center", padding:"0 8px" }}>
-            Your ETH is held securely until blocks are delivered.
-          </div>
-        ) : (
-          <div style={{
-            background:"rgba(255,204,51,0.08)", border:"1px solid rgba(255,204,51,0.25)",
-            padding:"10px 12px",
-            fontFamily:"'Courier Prime', monospace", fontSize:11, color:"rgba(255,204,51,0.7)", lineHeight:1.7,
-          }}>
-            This occasionally happens during network congestion. Your ETH remains safe.
-            Cancel available after 1 hour from request time.
-          </div>
-        )}
-        <div style={{ flex:1 }} />
-        {vrfState === VRF.TIMEOUT || elapsed > 3600 ? (
-          <Btn onClick={cancelMint} danger>✕  CANCEL — GET {total} ETH REFUND</Btn>
-        ) : (
-          <div style={{
-            fontFamily:"'Courier Prime', monospace", fontSize:10,
-            color:"rgba(255,255,255,0.25)", textAlign:"center", lineHeight:1.6,
-          }}>
-            Cancel available after 1 hour if no delivery
-          </div>
-        )}
+      <div style={{ display:"flex", gap:6 }}>
+        <StatBox label="BATCH" value={windowInfo ? `${windowInfo.day ?? 1} / 6` : "— / 6"} />
+        <StatBox label="PRICE" value="0.00025Ξ" />
+        <StatBox label="SLOTS" value={slots.toLocaleString()} accent={slots < 5000 ? "#ff6644" : undefined} />
       </div>
-    );
-  }
-
-  if (vrfState === VRF.TIMEOUT) {
-    return (
-      <div style={{ display:"flex", flexDirection:"column", gap:10, height:"100%" }}>
-        <VRFStatusHeader state={VRF.TIMEOUT} />
-        <div style={{
-          background:"rgba(0,0,0,0.3)", border:"1px solid rgba(255,255,255,0.08)",
-          padding:"6px 10px",
-          fontFamily:"'Courier Prime', monospace", fontSize:11, color:"rgba(255,255,255,0.4)",
-        }}>
-          <span style={{ color:"rgba(255,255,255,0.25)" }}>TX </span>{reqId}
-        </div>
-        <div style={{
-          background:"rgba(255,80,80,0.08)", border:"1px solid rgba(255,80,80,0.25)",
-          padding:"12px",
-          fontFamily:"'Courier Prime', monospace", fontSize:12, color:"rgba(255,150,150,0.85)", lineHeight:1.7,
-        }}>
-          The VRF callback did not arrive within the expected window (1 hour).
-          <br/><br/>
-          You can cancel this request and receive a full refund of <strong style={{color:"#ffcc33"}}>{total} ETH</strong> to your wallet.
-        </div>
-        <Btn onClick={cancelMint} danger>✕  CANCEL — GET {total} ETH REFUND</Btn>
-        <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:11, color:"rgba(255,255,255,0.3)", textAlign:"center", lineHeight:1.6, padding:"0 8px" }}>
-          Alternatively, wait if you believe the callback is still pending.
-        </div>
+      <div style={{ fontFamily:"'VT323', monospace", fontSize:44, letterSpacing:4, color:CREAM, textAlign:"center", lineHeight:1 }}>
+        {timerLabel}
       </div>
-    );
-  }
-
-  if (vrfState === VRF.DELIVERED && deliveredResults) {
-    return (
-      <div style={{ display:"flex", flexDirection:"column", gap:10, height:"100%", animation:"deliveredPop 0.35s ease-out" }}>
-        <VRFStatusHeader state={VRF.DELIVERED} />
-        <div style={{
-          background:"rgba(110,255,138,0.06)", border:"1px solid rgba(110,255,138,0.2)",
-          padding:"10px 12px", display:"flex", justifyContent:"space-between",
-        }}>
-          <div>
-            <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:6, color:"rgba(255,255,255,0.4)", marginBottom:3 }}>REQUESTED</div>
-            <div style={{ fontFamily:"'VT323', monospace", fontSize:28, color:CREAM }}>{deliveredResults.qty}</div>
-          </div>
-          <div style={{ fontFamily:"'VT323', monospace", fontSize:28, color:"rgba(255,255,255,0.2)", alignSelf:"center" }}>→</div>
-          <div>
-            <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:6, color:"rgba(110,255,138,0.6)", marginBottom:3 }}>DELIVERED</div>
-            <div style={{ fontFamily:"'VT323', monospace", fontSize:28, color:"#6eff8a" }}>{deliveredResults.alloc}</div>
-          </div>
-        </div>
-        <div style={{
-          fontFamily:"'Courier Prime', monospace", fontSize:12, color:"rgba(255,255,255,0.5)",
-          textAlign:"center", padding:"12px 0", lineHeight:1.7,
-        }}>
-          Blocks distributed across tiers.<br/>
-          Check your collection above.
-        </div>
-        <div style={{ flex:1 }} />
-        <Btn onClick={reset}>✓  DONE</Btn>
+      <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:5.5, color:"rgba(255,255,255,0.3)", textAlign:"center", letterSpacing:1 }}>
+        {timerSub}
       </div>
-    );
-  }
-
-  if (vrfState === VRF.REFUNDED) {
-    return (
-      <div style={{ display:"flex", flexDirection:"column", gap:10, height:"100%", animation:"deliveredPop 0.3s ease-out" }}>
-        <VRFStatusHeader state={VRF.REFUNDED} />
+      <div style={{ display:"flex", gap:0, alignItems:"stretch", border:"2px solid rgba(255,255,255,0.12)" }}>
+        {[-100,-10,-1].map(d => (
+          <button key={d} onClick={() => setQty(q => Math.max(1, q+d))} style={{
+            width:36, background:"rgba(0,0,0,0.4)",
+            border:"none", borderRight:"1px solid rgba(255,255,255,0.1)",
+            color:"rgba(255,255,255,0.6)", fontFamily:"'Press Start 2P', monospace", fontSize:7, cursor:"pointer",
+          }}>{d < -9 ? d : d < 0 ? " "+d : "+"+d}</button>
+        ))}
         <div style={{
-          background:"rgba(255,204,51,0.08)", border:"1px solid rgba(255,204,51,0.25)",
-          padding:"14px 12px", textAlign:"center", display:"flex", flexDirection:"column", gap:8,
-        }}>
-          <div style={{ fontFamily:"'VT323', monospace", fontSize:44, color:"#ffcc33" }}>{total} ETH</div>
-          <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:12, color:"rgba(255,204,51,0.7)" }}>
-            Returned to your wallet
-          </div>
-        </div>
-        <div style={{ flex:1 }} />
-        <Btn onClick={reset}>← BACK TO MINT</Btn>
+          flex:1, display:"flex", alignItems:"center", justifyContent:"center",
+          fontFamily:"'VT323', monospace", fontSize:36, color:CREAM, background:"rgba(0,0,0,0.2)",
+        }}>{qty}</div>
+        {[1,10,100].map(d => (
+          <button key={d} onClick={() => setQty(q => Math.min(500, q+d))} style={{
+            width:36, background:"rgba(0,0,0,0.4)",
+            border:"none", borderLeft:"1px solid rgba(255,255,255,0.1)",
+            color:"rgba(255,255,255,0.6)", fontFamily:"'Press Start 2P', monospace", fontSize:7, cursor:"pointer",
+          }}>+{d}</button>
+        ))}
       </div>
-    );
-  }
-
-  return null;
+      <div style={{
+        fontFamily:"'Press Start 2P', monospace", fontSize:8, color:"#6eff8a", textAlign:"center",
+        padding:"6px 0",
+        borderTop:"1px solid rgba(255,255,255,0.06)", borderBottom:"1px solid rgba(255,255,255,0.06)",
+      }}>
+        TOTAL: {total} ETH
+      </div>
+      <Btn onClick={doMint} disabled={!windowOpen}>
+        {windowOpen ? "▶  MINT NOW" : "✕  WINDOW CLOSED"}
+      </Btn>
+      <div style={{
+        marginTop:"auto", background:"rgba(0,0,0,0.35)", border:"1px solid rgba(255,255,255,0.06)",
+        padding:"8px 12px", display:"flex", justifyContent:"space-between", alignItems:"baseline",
+      }}>
+        <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:6, color:"rgba(255,255,255,0.35)" }}>TREASURY</span>
+        <span style={{ fontFamily:"'VT323', monospace", fontSize:28, color:"#6eff8a" }}>Ξ {treasury}</span>
+      </div>
+    </div>
+  )
 }
 
-// ═══════════════════════════════════════════════════════════════
+
 // FORGE PANEL
 // ═══════════════════════════════════════════════════════════════
 
