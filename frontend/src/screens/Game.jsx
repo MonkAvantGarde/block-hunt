@@ -344,7 +344,7 @@ function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, treasury, address
       stopClock()
       stopPolling()
       clearTimeout(autoRef.current)
-      setDelivered({ qty, alloc: t7 - prevT7Ref.current, results: [] })
+      setDelivered({ qty, alloc: qty, results: [] })
       setVrf(VRF.DELIVERED)
       setTimeout(() => onMint(), 500)
     }
