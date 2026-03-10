@@ -317,6 +317,7 @@ function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, treasury, address
   const [vrfState, setVrfState]          = useState(VRF.IDLE);
   const [reqId, setReqId]                = useState(null);
   const [elapsed, setElapsed]            = useState(0);
+  const [, setTick] = useState(0);
   const [deliveredResults, setDelivered] = useState(null);
   const intervalRef = useRef(null);
   const autoRef     = useRef(null);
@@ -332,6 +333,10 @@ function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, treasury, address
     intervalRef.current = setInterval(() => setElapsed(e => e+1), 1000);
   }
   function stopClock() { clearInterval(intervalRef.current); }
+  useEffect(() => {
+  const t = setInterval(() => setTick(n => n+1), 1000);
+  return () => clearInterval(t);
+}, []);
   function fmt(s) {
     const h = Math.floor(s/3600);
     const m = Math.floor((s%3600)/60);
@@ -355,6 +360,15 @@ function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, treasury, address
           setReqId('req #' + decoded.args.requestId.toString().slice(-6))
           break
         }
+        if (decoded.eventName === 'MintFulfilled') {
+      const deliveredQty = decoded.args.quantity ? Number(decoded.args.quantity) : qty
+      stopClock()
+      clearTimeout(autoRef.current)
+      setDelivered({ qty, alloc: deliveredQty, results: [] })
+      setVrfState(VRF.DELIVERED)
+      onMint()
+      break
+    }
       } catch {}
     }
   }, [mintReceipt])
