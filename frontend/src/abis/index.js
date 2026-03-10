@@ -271,3 +271,19 @@ export const FORGE_ABI = [
     ],
   },
 ]
+
+// Auto-added: VRF recovery
+TOKEN_ABI.push(
+  { name: 'pendingRequestsByPlayer', type: 'function', stateMutability: 'view',
+    inputs: [{ name: 'player', type: 'address' }],
+    outputs: [{ name: '', type: 'uint256[]' }] },
+  { name: 'vrfMintRequests', type: 'function', stateMutability: 'view',
+    inputs: [{ name: 'requestId', type: 'uint256' }],
+    outputs: [
+      { name: 'player',      type: 'address' },
+      { name: 'quantity',    type: 'uint256' },
+      { name: 'amountPaid',  type: 'uint256' },
+      { name: 'requestedAt', type: 'uint256' },
+      { name: 'windowDay',   type: 'uint256' },
+    ] }
+)

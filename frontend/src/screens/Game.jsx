@@ -471,6 +471,55 @@ function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, treasury, address
   }, [pendingMints])
 
   useEffect(() => () => { clearInterval(pollRef.current) }, [])
+  // On mount: recover open on-chain requests not tracked in localStorage
+  const recoveryRan = useRef(false)
+  useEffect(() => {
+    if (!address || recoveryRan.current) return
+    recoveryRan.current = true
+    async function recover() {
+      try {
+        const { createPublicClient, http } = await import('viem')
+        const { baseSepolia } = await import('viem/chains')
+        const client = createPublicClient({ chain: baseSepolia, transport: http() })
+        const requestIds = await client.readContract({
+          address: CONTRACTS.TOKEN, abi: TOKEN_ABI,
+          functionName: 'pendingRequestsByPlayer', args: [address],
+        })
+        if (!requestIds || requestIds.length === 0) return
+        const existing = loadPending()
+        const existingReqIds = new Set(existing.map(m => m.requestId).filter(Boolean))
+        const toAdd = []
+        for (const rid of requestIds) {
+          const ridStr = rid.toString()
+          if (existingReqIds.has(ridStr)) continue
+          const req = await client.readContract({
+            address: CONTRACTS.TOKEN, abi: TOKEN_ABI,
+            functionName: 'vrfMintRequests', args: [rid],
+          })
+          if (!req || req.player?.toLowerCase() !== address.toLowerCase()) continue
+          toAdd.push({
+            id: 'recovered_' + ridStr,
+            txHash: null,
+            qty: Number(req.quantity),
+            startTime: Number(req.requestedAt) * 1000,
+            status: 'pending',
+            requestId: ridStr,
+          })
+        }
+        if (toAdd.length > 0) {
+          setPendingMints(prev => {
+            const next = [...prev, ...toAdd]
+            savePending(next)
+            return next
+          })
+        }
+      } catch (e) {
+        console.warn('VRF recovery failed:', e)
+      }
+    }
+    recover()
+  }, [address])
+
 
   const { writeContract: writeMint } = useWriteContract()
   const total = (qty * 0.00025).toFixed(5)
