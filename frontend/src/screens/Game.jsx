@@ -312,11 +312,24 @@ function SpinnerBlock() {
 // VRF MINT PANEL — live wagmi transactions
 // ═══════════════════════════════════════════════════════════════
 
-function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, treasury, address, refetchAll }) {
+function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, treasury, address, refetchAll, blocks }) {
   const [qty, setQty]                    = useState(10);
   const [vrfState, setVrfState]          = useState(VRF.IDLE);
   const vrfStateRef = useRef(VRF.IDLE);
   function setVrf(s) { vrfStateRef.current = s; setVrfState(s); }
+  const prevT7Ref = useRef(null)
+  useEffect(() => {
+    if (vrfStateRef.current !== VRF.PENDING && vrfStateRef.current !== VRF.DELAYED) return
+    const t7 = blocks ? (blocks[7] || 0) : 0
+    if (prevT7Ref.current !== null && t7 > prevT7Ref.current) {
+      stopClock()
+      clearTimeout(autoRef.current)
+      setDelivered({ qty, alloc: t7 - prevT7Ref.current, results: [] })
+      setVrf(VRF.DELIVERED)
+      setTimeout(() => onMint(), 500)
+    }
+    prevT7Ref.current = t7
+  }, [blocks])
   const [reqId, setReqId]                = useState(null);
   const [elapsed, setElapsed]            = useState(0);
   const [, setTick] = useState(0);
@@ -399,6 +412,7 @@ function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, treasury, address
 
   function doMint() {
     if (!windowOpen || vrfState !== VRF.IDLE) return
+    prevT7Ref.current = blocks ? (blocks[7] || 0) : 0
     setReqId('awaiting wallet…')
     setVrf(VRF.PENDING)
     startClock()
@@ -1403,7 +1417,7 @@ const { data: countdownHolder } = useReadContract({
                 borderBottom:"1px solid rgba(255,255,255,0.07)",
               }}>{p.label}</div>
               <div style={{ flex:1, display:"flex", flexDirection:"column", minHeight:0 }}>
-                {p.id==="mint"  && <VRFMintPanel onMint={handleMint} windowOpen={windowOpen} windowInfo={windowInfo} slots={slots} treasury={treasury} address={address} refetchAll={refetchAll} />}
+                {p.id==="mint"  && <VRFMintPanel onMint={handleMint} windowOpen={windowOpen} windowInfo={windowInfo} slots={slots} treasury={treasury} address={address} refetchAll={refetchAll} blocks={blocks} />}
                 {p.id==="forge" && <ForgePanel blocks={blocks} onForge={handleForge} address={address} />}
                 {p.id==="trade" && <TradePanel />}
               </div>
