@@ -318,11 +318,31 @@ function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, treasury, address
   const vrfStateRef = useRef(VRF.IDLE);
   function setVrf(s) { vrfStateRef.current = s; setVrfState(s); }
   const prevT7Ref = useRef(null)
+  const pollRef = useRef(null)
+
+  function startPolling() {
+    if (pollRef.current) return
+    pollRef.current = setInterval(() => {
+      if (vrfStateRef.current !== VRF.PENDING && vrfStateRef.current !== VRF.DELAYED) {
+        clearInterval(pollRef.current)
+        pollRef.current = null
+        return
+      }
+      refetchAll()
+    }, 3000)
+  }
+
+  function stopPolling() {
+    clearInterval(pollRef.current)
+    pollRef.current = null
+  }
+
   useEffect(() => {
     if (vrfStateRef.current !== VRF.PENDING && vrfStateRef.current !== VRF.DELAYED) return
     const t7 = blocks ? (blocks[7] || 0) : 0
     if (prevT7Ref.current !== null && t7 > prevT7Ref.current) {
       stopClock()
+      stopPolling()
       clearTimeout(autoRef.current)
       setDelivered({ qty, alloc: t7 - prevT7Ref.current, results: [] })
       setVrf(VRF.DELIVERED)
@@ -395,7 +415,6 @@ function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, treasury, address
     poll: true,
     pollingInterval: 4_000,
     onLogs(logs) {
-      console.log('MintFulfilled event fired, vrfStateRef:', vrfStateRef.current, 'logs:', logs.length)
       if (vrfStateRef.current !== VRF.PENDING && vrfStateRef.current !== VRF.DELAYED) return
       const mine = address
         ? logs.filter(l => l.args.player?.toLowerCase() === address.toLowerCase())
@@ -415,6 +434,7 @@ function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, treasury, address
     prevT7Ref.current = blocks ? (blocks[7] || 0) : 0
     setReqId('awaiting wallet…')
     setVrf(VRF.PENDING)
+    startPolling()
     startClock()
     setMintTxHash(null)
     setVrfReqId(null)
