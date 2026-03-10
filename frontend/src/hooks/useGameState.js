@@ -96,17 +96,17 @@ export function useGameState() {
 
   // windowRaw comes back as an object with named fields
   const windowInfo = windowRaw
-    ? {
-        isOpen:    windowRaw.isOpen,
-        day:       Number(windowRaw.day),
-        openAt:    Number(windowRaw.openAt),
-        closeAt:   Number(windowRaw.closeAt),
-        allocated: Number(windowRaw.allocated),
-        minted:    Number(windowRaw.minted),
-        remaining: Number(windowRaw.remaining),
-        rollover:  Number(windowRaw.rollover),
-      }
-    : null
+  ? {
+      isOpen:    windowRaw[0],
+      day:       Number(windowRaw[1]),
+      openAt:    Number(windowRaw[2]),
+      closeAt:   Number(windowRaw[3]),
+      allocated: Number(windowRaw[4]),
+      minted:    Number(windowRaw[5]),
+      remaining: Number(windowRaw[6]),
+      rollover:  Number(windowRaw[7]),
+    }
+  : null
 
   const countdownInfo = countdownRaw
     ? {

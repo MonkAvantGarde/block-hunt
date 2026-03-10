@@ -1089,7 +1089,7 @@ const { data: countdownHolder } = useReadContract({
 
   useEffect(() => {
     if (!combineSuccess) return
-    refetchAll()
+    setTimeout(() => refetchAll(), 1500)
     // Task 1: show success banner
     const toTier = lastCombinedToTierRef.current
     if (toTier != null) {
