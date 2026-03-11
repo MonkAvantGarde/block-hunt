@@ -29,7 +29,8 @@ export function WalletButton() {
   const { connectors, connect, isPending: isConnecting } = useConnect()
   const { disconnect } = useDisconnect()
   const { switchChain } = useSwitchChain()
-  const [showMenu, setShowMenu] = useState(false)
+  const [showMenu,   setShowMenu]   = useState(false)
+  const [showPicker, setShowPicker] = useState(false)
 
   const isWrongNetwork = isConnected && chain?.id !== baseSepolia.id
 
@@ -70,18 +71,52 @@ export function WalletButton() {
     )
   }
 
-  // ── NOT CONNECTED ─────────────────────────────────────────────────────────
-  // Use the first available connector (MetaMask / injected wallet)
-  const connector = connectors[0]
+  // ── NOT CONNECTED — wallet picker ─────────────────────────────────────────
+  // Deduplicate connectors by name so we don't show "MetaMask" twice
+  const seen = new Set()
+  const uniqueConnectors = connectors.filter(c => {
+    if (seen.has(c.name)) return false
+    seen.add(c.name)
+    return true
+  })
 
   return (
-    <button
-      onClick={() => connect({ connector })}
-      disabled={isConnecting}
-      style={styles.connect}
-    >
-      {isConnecting ? 'Connecting...' : 'Connect Wallet'}
-    </button>
+    <div style={{ position: 'relative' }}>
+      <button
+        onClick={() => setShowPicker(v => !v)}
+        disabled={isConnecting}
+        style={styles.connect}
+      >
+        {isConnecting ? 'Connecting...' : 'Connect Wallet'}
+      </button>
+
+      {showPicker && (
+        <>
+          {/* Backdrop — click outside to close */}
+          <div
+            onClick={() => setShowPicker(false)}
+            style={{ position: 'fixed', inset: 0, zIndex: 99 }}
+          />
+          <div style={styles.picker}>
+            <div style={styles.pickerTitle}>SELECT WALLET</div>
+            {uniqueConnectors.length === 0 && (
+              <div style={styles.pickerEmpty}>No wallets detected</div>
+            )}
+            {uniqueConnectors.map(c => (
+              <button
+                key={c.id}
+                onClick={() => { connect({ connector: c }); setShowPicker(false) }}
+                style={styles.pickerItem}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(200,168,75,0.1)' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+              >
+                {c.name}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
   )
 }
 
@@ -140,4 +175,45 @@ const styles = {
     textAlign: 'left',
     padding: '12px 14px',
   },
-}
+  picker: {
+    position: 'absolute',
+    top: '100%',
+    right: 0,
+    marginTop: '4px',
+    background: '#2c1810',
+    border: '2px solid #8a6820',
+    boxShadow: '4px 4px 0 #1a1208',
+    zIndex: 100,
+    minWidth: '180px',
+  },
+  pickerTitle: {
+    fontFamily: "'Press Start 2P', monospace",
+    fontSize: '6px',
+    color: '#c8a84b',
+    opacity: 0.6,
+    letterSpacing: '1px',
+    padding: '10px 14px 6px',
+    borderBottom: '1px solid rgba(255,255,255,0.06)',
+  },
+  pickerItem: {
+    fontFamily: "'Press Start 2P', monospace",
+    fontSize: '7px',
+    display: 'block',
+    width: '100%',
+    background: 'transparent',
+    color: '#f0ead6',
+    border: 'none',
+    borderBottom: '1px solid rgba(255,255,255,0.04)',
+    textAlign: 'left',
+    padding: '12px 14px',
+    cursor: 'pointer',
+    letterSpacing: '0.5px',
+    transition: 'background 0.1s',
+  },
+  pickerEmpty: {
+    fontFamily: "'Press Start 2P', monospace",
+    fontSize: '6px',
+    color: '#f0ead6',
+    opacity: 0.4,
+    padding: '12px 14px',
+  },
