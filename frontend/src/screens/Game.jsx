@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from "react";
 import { useWriteContract, useWaitForTransactionReceipt, useWatchContractEvent, useConnect, useDisconnect, useReadContract } from 'wagmi'
-import { injected } from 'wagmi/connectors'
 import { parseEther, decodeEventLog } from 'viem'
 import { useGameState } from '../hooks/useGameState'
 import { CONTRACTS } from '../config/wagmi'
@@ -1041,13 +1040,19 @@ const { data: countdownHolder } = useReadContract({
   const treasury   = treasuryBalance
 
   // ── WALLET CONNECT / DISCONNECT ─────────────────────────────
-  const { connect }    = useConnect()
-  const { disconnect } = useDisconnect()
-  const [showDropdown, setShowDropdown] = useState(false)
+  const { connectors, connect } = useConnect()
+  const { disconnect }          = useDisconnect()
+  const [showDropdown,    setShowDropdown]    = useState(false)
+  const [showWalletPicker, setShowWalletPicker] = useState(false)
 
-  function handleConnectClick() {
-    connect({ connector: injected() })
-  }
+  // Deduplicate connectors by name (wagmi can list same wallet twice)
+  const seen = new Set()
+  const uniqueConnectors = connectors.filter(c => {
+    if (seen.has(c.name)) return false
+    seen.add(c.name)
+    return true
+  })
+
   function handleDisconnect() {
     disconnect()
     setShowDropdown(false)
@@ -1309,18 +1314,49 @@ const { data: countdownHolder } = useReadContract({
                 )}
               </>
             ) : (
-              <button
-                onClick={handleConnectClick}
-                style={{
-                  ...walletBtnStyle,
-                  background:"linear-gradient(180deg,#ffcc44,#c8a800)",
-                  color:INK,
-                  border:`2px solid #8a6800`,
-                  boxShadow:`3px 3px 0 ${INK}, 0 0 12px rgba(255,170,0,0.3)`,
-                }}
-              >
-                ▶ CONNECT
-              </button>
+              <div style={{ position: 'relative' }}>
+                <button
+                  onClick={() => setShowWalletPicker(v => !v)}
+                  style={{
+                    ...walletBtnStyle,
+                    background:"linear-gradient(180deg,#ffcc44,#c8a800)",
+                    color:INK,
+                    border:`2px solid #8a6800`,
+                    boxShadow:`3px 3px 0 ${INK}, 0 0 12px rgba(255,170,0,0.3)`,
+                  }}
+                >
+                  ▶ CONNECT
+                </button>
+
+                {showWalletPicker && (
+                  <>
+                    <div onClick={() => setShowWalletPicker(false)} style={{ position:'fixed', inset:0, zIndex:99 }} />
+                    <div style={{
+                      position:'absolute', top:'100%', right:0, marginTop:4,
+                      background:'#2c1810', border:'2px solid #8a6820',
+                      boxShadow:'4px 4px 0 #1a1208', zIndex:100, minWidth:180,
+                    }}>
+                      <div style={{ fontFamily:"'Press Start 2P',monospace", fontSize:6, color:'#c8a84b', opacity:.6, letterSpacing:1, padding:'10px 14px 6px', borderBottom:'1px solid rgba(255,255,255,.06)' }}>
+                        SELECT WALLET
+                      </div>
+                      {uniqueConnectors.length === 0 && (
+                        <div style={{ fontFamily:"'Press Start 2P',monospace", fontSize:6, color:'#f0ead6', opacity:.4, padding:'12px 14px' }}>No wallets detected</div>
+                      )}
+                      {uniqueConnectors.map(c => (
+                        <button
+                          key={c.id}
+                          onClick={() => { connect({ connector: c }); setShowWalletPicker(false) }}
+                          style={{ fontFamily:"'Press Start 2P',monospace", fontSize:7, display:'block', width:'100%', background:'transparent', color:'#f0ead6', border:'none', borderBottom:'1px solid rgba(255,255,255,.04)', textAlign:'left', padding:'12px 14px', cursor:'pointer', letterSpacing:.5 }}
+                          onMouseEnter={e => { e.currentTarget.style.background='rgba(200,168,75,0.1)' }}
+                          onMouseLeave={e => { e.currentTarget.style.background='transparent' }}
+                        >
+                          {c.name}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
             )}
           </div>
         </div>
