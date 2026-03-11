@@ -483,7 +483,7 @@ function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, treasury, address
         const client = createPublicClient({ chain: baseSepolia, transport: http() })
         const requestIds = await client.readContract({
           address: CONTRACTS.TOKEN, abi: TOKEN_ABI,
-          functionName: 'pendingRequestsByPlayer', args: [address],
+          functionName: 'getPendingRequests', args: [address],
         })
         if (!requestIds || requestIds.length === 0) return
         const existing = loadPending()

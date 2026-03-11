@@ -274,7 +274,7 @@ export const FORGE_ABI = [
 
 // Auto-added: VRF recovery
 TOKEN_ABI.push(
-  { name: 'pendingRequestsByPlayer', type: 'function', stateMutability: 'view',
+  { name: 'getPendingRequests', type: 'function', stateMutability: 'view',
     inputs: [{ name: 'player', type: 'address' }],
     outputs: [{ name: '', type: 'uint256[]' }] },
   { name: 'vrfMintRequests', type: 'function', stateMutability: 'view',
