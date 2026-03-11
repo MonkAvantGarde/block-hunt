@@ -312,7 +312,7 @@ export function GameRulesModal({ onClose }) {
 // ⚠️  After deploying your subgraph to The Graph Studio, paste your
 //     query URL here. Format:
 //     https://api.studio.thegraph.com/query/YOUR_ID/block-hunt/version/latest
-const SUBGRAPH_URL = "https://api.studio.thegraph.com/query/1744131/blok-hunt/v0.0.1";
+const SUBGRAPH_URL = "REPLACE_WITH_YOUR_SUBGRAPH_URL";
 
 const TIER_COLS = ["#9ba8b0", "#8fa8c8", "#8fb87a", "#c8c870", "#c87a7a", "#c8a84b"];
 
@@ -342,50 +342,76 @@ function buildTierDots(p) {
   ];
 }
 
-const LB_QUERY = `{
-  players(first: 20, orderBy: progressionScore, orderDirection: desc) {
-    id
-    tier2Balance tier3Balance tier4Balance
-    tier5Balance tier6Balance tier7Balance
-    tiersUnlocked
-    totalMints
-    progressionScore
-  }
-  seasonStat(id: "season-1") {
-    totalMinted
-    totalBurned
-    uniquePlayers
-  }
-}`;
+// Known burn / zero addresses to exclude from leaderboard
+const BURN_ADDRESSES = [
+  "0x0000000000000000000000000000000000000000",
+  "0x000000000000000000000000000000000000dead",
+];
+
+const PAGE_SIZE = 100;
+
+function buildLbQuery(skip = 0) {
+  return `{
+    players(
+      first: ${PAGE_SIZE},
+      skip: ${skip},
+      orderBy: progressionScore,
+      orderDirection: desc,
+      where: { id_not_in: ${JSON.stringify(BURN_ADDRESSES)} }
+    ) {
+      id
+      tier2Balance tier3Balance tier4Balance
+      tier5Balance tier6Balance tier7Balance
+      tiersUnlocked
+      totalMints
+      progressionScore
+    }
+    seasonStat(id: "season-1") {
+      totalMinted
+      totalBurned
+      uniquePlayers
+    }
+  }`;
+}
 
 export function LeaderboardModal({ onClose, onOpenProfile, connectedAddress }) {
-  const [players,  setPlayers]  = useState([]);
-  const [stats,    setStats]    = useState(null);
-  const [loading,  setLoading]  = useState(true);
-  const [error,    setError]    = useState(null);
+  const [players,     setPlayers]     = useState([]);
+  const [stats,       setStats]       = useState(null);
+  const [loading,     setLoading]     = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error,       setError]       = useState(null);
+  const [hasMore,     setHasMore]     = useState(false);
+
+  async function fetchPage(skip, append = false) {
+    try {
+      const res = await fetch(SUBGRAPH_URL, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ query: buildLbQuery(skip) }),
+      });
+      const json = await res.json();
+      if (json.errors) throw new Error(json.errors[0].message);
+      const page = json.data.players || [];
+      setPlayers(prev => append ? [...prev, ...page] : page);
+      if (!append) setStats(json.data.seasonStat || null);
+      // If we got a full page, there may be more
+      setHasMore(page.length === PAGE_SIZE);
+    } catch (err) {
+      setError(err.message || "Failed to load leaderboard");
+    }
+  }
 
   useEffect(() => {
-    async function fetchLeaderboard() {
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await fetch(SUBGRAPH_URL, {
-          method:  "POST",
-          headers: { "Content-Type": "application/json" },
-          body:    JSON.stringify({ query: LB_QUERY }),
-        });
-        const json = await res.json();
-        if (json.errors) throw new Error(json.errors[0].message);
-        setPlayers(json.data.players || []);
-        setStats(json.data.seasonStat || null);
-      } catch (err) {
-        setError(err.message || "Failed to load leaderboard");
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchLeaderboard();
+    setLoading(true);
+    setError(null);
+    fetchPage(0).finally(() => setLoading(false));
   }, []);
+
+  async function handleLoadMore() {
+    setLoadingMore(true);
+    await fetchPage(players.length, true);
+    setLoadingMore(false);
+  }
 
   const connLower = connectedAddress ? connectedAddress.toLowerCase() : null;
 
@@ -400,10 +426,10 @@ export function LeaderboardModal({ onClose, onOpenProfile, connectedAddress }) {
       {/* Season stats */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", borderBottom: "1px solid rgba(255,255,255,.06)" }}>
         {[
-          { label: "TOTAL MINTED",  val: stats ? Number(stats.totalMinted).toLocaleString()  : "—" },
-          { label: "TOTAL BURNED",  val: stats ? Number(stats.totalBurned).toLocaleString()  : "—" },
-          { label: "PRIZE POOL",    val: "live ↗", gold: true },
-          { label: "PLAYERS",       val: stats ? stats.uniquePlayers.toLocaleString()        : "—" },
+          { label: "TOTAL MINTED", val: stats ? Number(stats.totalMinted).toLocaleString() : "—" },
+          { label: "TOTAL BURNED", val: stats ? Number(stats.totalBurned).toLocaleString() : "—" },
+          { label: "PRIZE POOL",   val: "live ↗", gold: true },
+          { label: "PLAYERS",      val: stats ? stats.uniquePlayers.toLocaleString()       : "—" },
         ].map((s, i) => (
           <div key={s.label} style={{ padding: "12px 20px", borderRight: i < 3 ? "1px solid rgba(255,255,255,.05)" : "none" }}>
             <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 5, color: CREAM, opacity: .4, letterSpacing: 1, marginBottom: 5 }}>{s.label}</div>
@@ -434,76 +460,89 @@ export function LeaderboardModal({ onClose, onOpenProfile, connectedAddress }) {
               No players yet. Be the first.
             </div>
           ) : (
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr>
-                  {["#", "PLAYER", "TIERS HELD", "SCORE", "MINTS"].map((h, i) => (
-                    <th key={h} style={{
-                      fontFamily: "'Press Start 2P', monospace", fontSize: 6,
-                      color: CREAM, opacity: .35, letterSpacing: 1,
-                      padding: "10px 16px",
-                      textAlign: i >= 3 ? "right" : "left",
-                      borderBottom: "1px solid rgba(255,255,255,.05)",
-                      paddingRight: i === 4 ? 24 : undefined,
-                    }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {players.map((p, idx) => {
-                  const rank    = idx + 1;
-                  const isMe    = connLower && p.id === connLower;
-                  const tierDots = buildTierDots(p);
-                  return (
-                    <tr
-                      key={p.id}
-                      className="lb-row"
-                      onClick={onOpenProfile}
-                      style={{ background: isMe ? "rgba(200,168,75,.07)" : "transparent" }}
-                    >
-                      {/* Rank */}
-                      <td style={{ padding: "9px 16px", borderBottom: "1px solid rgba(255,255,255,.04)" }}>
-                        <span style={{ fontFamily: "'VT323', monospace", fontSize: 20, color: rank <= 3 ? GOLD : CREAM, opacity: rank <= 3 ? 1 : .55 }}>{rank}</span>
-                      </td>
+            <>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr>
+                    {["#", "PLAYER", "TIERS HELD", "SCORE", "MINTS"].map((h, i) => (
+                      <th key={h} style={{
+                        fontFamily: "'Press Start 2P', monospace", fontSize: 6,
+                        color: CREAM, opacity: .35, letterSpacing: 1,
+                        padding: "10px 16px",
+                        textAlign: i >= 3 ? "right" : "left",
+                        borderBottom: "1px solid rgba(255,255,255,.05)",
+                        paddingRight: i === 4 ? 24 : undefined,
+                      }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {players.map((p, idx) => {
+                    const rank     = idx + 1;
+                    const isMe     = connLower && p.id === connLower;
+                    const tierDots = buildTierDots(p);
+                    return (
+                      <tr
+                        key={p.id}
+                        className="lb-row"
+                        onClick={onOpenProfile}
+                        style={{ background: isMe ? "rgba(200,168,75,.07)" : "transparent" }}
+                      >
+                        <td style={{ padding: "9px 16px", borderBottom: "1px solid rgba(255,255,255,.04)" }}>
+                          <span style={{ fontFamily: "'VT323', monospace", fontSize: 20, color: rank <= 3 ? GOLD : CREAM, opacity: rank <= 3 ? 1 : .55 }}>{rank}</span>
+                        </td>
+                        <td style={{ padding: "9px 16px", borderBottom: "1px solid rgba(255,255,255,.04)" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <div style={{ fontFamily: "'Courier Prime', monospace", fontSize: 11, color: CREAM, opacity: .7 }}>{fmtAddr(p.id)}</div>
+                            {isMe && <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 5, color: GOLD, background: "rgba(200,168,75,.15)", border: `1px solid ${GOLD_DK}`, padding: "2px 6px", letterSpacing: 1 }}>YOU</span>}
+                          </div>
+                        </td>
+                        <td style={{ padding: "9px 16px", borderBottom: "1px solid rgba(255,255,255,.04)" }}>
+                          <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                            {tierDots.map((held, i) => (
+                              <div key={i} style={{ width: 9, height: 9, background: held ? TIER_COLS[i] : "transparent", border: held ? "none" : "1px solid rgba(255,255,255,.2)" }} />
+                            ))}
+                            <span style={{ fontFamily: "'VT323', monospace", fontSize: 16, color: CREAM, opacity: .45, marginLeft: 6 }}>{p.tiersUnlocked}/6</span>
+                          </div>
+                        </td>
+                        <td style={{ padding: "9px 16px", borderBottom: "1px solid rgba(255,255,255,.04)", textAlign: "right" }}>
+                          <span style={{ fontFamily: "'VT323', monospace", fontSize: 20, color: GOLD_LT, opacity: .85 }}>{fmtScore(p.progressionScore)}</span>
+                        </td>
+                        <td style={{ padding: "9px 24px 9px 16px", borderBottom: "1px solid rgba(255,255,255,.04)", textAlign: "right" }}>
+                          <span style={{ fontFamily: "'VT323', monospace", fontSize: 20, color: CREAM, opacity: .5 }}>{Number(p.totalMints).toLocaleString()}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
 
-                      {/* Player address */}
-                      <td style={{ padding: "9px 16px", borderBottom: "1px solid rgba(255,255,255,.04)" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <div style={{ fontFamily: "'Courier Prime', monospace", fontSize: 11, color: CREAM, opacity: .7 }}>{fmtAddr(p.id)}</div>
-                          {isMe && (
-                            <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 5, color: GOLD, background: "rgba(200,168,75,.15)", border: `1px solid ${GOLD_DK}`, padding: "2px 6px", letterSpacing: 1 }}>YOU</span>
-                          )}
-                        </div>
-                      </td>
+              {/* Load more */}
+              {hasMore && (
+                <div style={{ padding: "16px 24px", textAlign: "center" }}>
+                  <button
+                    onClick={handleLoadMore}
+                    disabled={loadingMore}
+                    style={{
+                      fontFamily: "'Press Start 2P', monospace", fontSize: 7,
+                      padding: "10px 24px", letterSpacing: 1,
+                      background: "transparent", color: GOLD,
+                      border: `1px solid ${GOLD_DK}`, cursor: loadingMore ? "default" : "pointer",
+                      opacity: loadingMore ? .5 : 1,
+                    }}
+                  >
+                    {loadingMore ? "● LOADING..." : `▼ LOAD MORE (showing ${players.length})`}
+                  </button>
+                </div>
+              )}
 
-                      {/* Tiers held — colored dots */}
-                      <td style={{ padding: "9px 16px", borderBottom: "1px solid rgba(255,255,255,.04)" }}>
-                        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                          {tierDots.map((held, i) => (
-                            <div key={i} style={{
-                              width: 9, height: 9,
-                              background: held ? TIER_COLS[i] : "transparent",
-                              border:     held ? "none" : "1px solid rgba(255,255,255,.2)",
-                            }} />
-                          ))}
-                          <span style={{ fontFamily: "'VT323', monospace", fontSize: 16, color: CREAM, opacity: .45, marginLeft: 6 }}>{p.tiersUnlocked}/6</span>
-                        </div>
-                      </td>
-
-                      {/* Progression score */}
-                      <td style={{ padding: "9px 16px", borderBottom: "1px solid rgba(255,255,255,.04)", textAlign: "right" }}>
-                        <span style={{ fontFamily: "'VT323', monospace", fontSize: 20, color: GOLD_LT, opacity: .85 }}>{fmtScore(p.progressionScore)}</span>
-                      </td>
-
-                      {/* Total mints */}
-                      <td style={{ padding: "9px 24px 9px 16px", borderBottom: "1px solid rgba(255,255,255,.04)", textAlign: "right" }}>
-                        <span style={{ fontFamily: "'VT323', monospace", fontSize: 20, color: CREAM, opacity: .5 }}>{Number(p.totalMints).toLocaleString()}</span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+              {/* End of list indicator */}
+              {!hasMore && players.length >= PAGE_SIZE && (
+                <div style={{ padding: "14px", textAlign: "center", fontFamily: "'Press Start 2P', monospace", fontSize: 5, color: CREAM, opacity: .25, letterSpacing: 1 }}>
+                  ALL {players.length} PLAYERS SHOWN
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
