@@ -474,7 +474,7 @@ function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, treasury, address
   // On mount: recover open on-chain requests not tracked in localStorage
   const recoveryRan = useRef(false)
   useEffect(() => {
-    if (!address || recoveryRan.current) return
+    if (!address) return
     // recoveryRan.current = true
     async function recover() {
       try {
