@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useAccount } from "wagmi";
 import LandingScreen from "./screens/Landing";
 import GameScreen from "./screens/Game";
 import Modals from "./components/Modals";
@@ -8,6 +9,7 @@ import CountdownSpectator from "./screens/CountdownSpectator";
 export default function App() {
   const [screen, setScreen] = useState("landing");
   const [modal, setModal] = useState(null); // "rules" | "leaderboard" | "profile" | null
+  const { address } = useAccount();
 
   function openModal(m) { setModal(m); }
   function closeModal() { setModal(null); }
@@ -28,6 +30,7 @@ export default function App() {
         open={modal}
         onClose={closeModal}
         onOpenProfile={() => setModal("profile")}
+        connectedAddress={address}
       />
     </>
   );

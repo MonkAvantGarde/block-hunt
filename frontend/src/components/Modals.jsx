@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 // ═══════════════════════════════════════════════════════════════
 // TOKENS
@@ -308,24 +308,89 @@ export function GameRulesModal({ onClose }) {
 // ═══════════════════════════════════════════════════════════════
 // MODAL 2 — LEADERBOARD
 // ═══════════════════════════════════════════════════════════════
+
+// ⚠️  After deploying your subgraph to The Graph Studio, paste your
+//     query URL here. Format:
+//     https://api.studio.thegraph.com/query/YOUR_ID/block-hunt/version/latest
+const SUBGRAPH_URL = "https://api.studio.thegraph.com/query/1744131/blok-hunt/v0.0.1";
+
 const TIER_COLS = ["#9ba8b0", "#8fa8c8", "#8fb87a", "#c8c870", "#c87a7a", "#c8a84b"];
 
-const LB_DATA = [
-  { rank: 1,  ens: "vitalik.eth",      wallet: "0x4f3a...8c21", tiers: [1,1,1,1,1,1], blocks: 2160,  me: true },
-  { rank: 2,  ens: "cryptohunter.eth", wallet: "0x8b2d...f419", tiers: [1,1,1,1,1,0], blocks: 4820 },
-  { rank: 3,  ens: null,               wallet: "0x1c9e...7744", tiers: [1,1,1,1,0,0], blocks: 8340 },
-  { rank: 4,  ens: "blockwatcher.eth", wallet: "0x3a7f...2281", tiers: [1,1,1,1,0,0], blocks: 6210 },
-  { rank: 5,  ens: null,               wallet: "0x9d4c...bb12", tiers: [1,1,1,0,0,0], blocks: 12400 },
-  { rank: 6,  ens: "collector99.eth",  wallet: "0x6e1a...34df", tiers: [1,1,1,0,0,0], blocks: 9870 },
-  { rank: 7,  ens: null,               wallet: "0x2f8b...a901", tiers: [1,1,0,0,0,0], blocks: 21000 },
-  { rank: 8,  ens: null,               wallet: "0x5c3d...6622", tiers: [1,1,0,0,0,0], blocks: 18500 },
-  { rank: 9,  ens: "deepminer.eth",    wallet: "0x7a0e...c993", tiers: [1,1,0,0,0,0], blocks: 15200 },
-  { rank: 10, ens: null,               wallet: "0x4b9f...1147", tiers: [1,0,0,0,0,0], blocks: 44000 },
-];
+// Formats large score numbers: 18400000 → "18.4M", 360000 → "360K", 1 → "1"
+function fmtScore(val) {
+  const n = Number(val);
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
+  if (n >= 1_000)     return Math.round(n / 1_000) + "K";
+  return n.toString();
+}
 
-export function LeaderboardModal({ onClose, onOpenProfile }) {
+// Truncates wallet address: 0x1234567890abcdef → 0x1234...cdef
+function fmtAddr(addr) {
+  if (!addr) return "";
+  return addr.slice(0, 6) + "..." + addr.slice(-4);
+}
+
+// Build the 6-dot tiers array from balance fields (T7 leftmost → T2 rightmost)
+function buildTierDots(p) {
+  return [
+    Number(p.tier7Balance) > 0 ? 1 : 0,
+    Number(p.tier6Balance) > 0 ? 1 : 0,
+    Number(p.tier5Balance) > 0 ? 1 : 0,
+    Number(p.tier4Balance) > 0 ? 1 : 0,
+    Number(p.tier3Balance) > 0 ? 1 : 0,
+    Number(p.tier2Balance) > 0 ? 1 : 0,
+  ];
+}
+
+const LB_QUERY = `{
+  players(first: 20, orderBy: progressionScore, orderDirection: desc) {
+    id
+    tier2Balance tier3Balance tier4Balance
+    tier5Balance tier6Balance tier7Balance
+    tiersUnlocked
+    totalMints
+    progressionScore
+  }
+  seasonStat(id: "season-1") {
+    totalMinted
+    totalBurned
+    uniquePlayers
+  }
+}`;
+
+export function LeaderboardModal({ onClose, onOpenProfile, connectedAddress }) {
+  const [players,  setPlayers]  = useState([]);
+  const [stats,    setStats]    = useState(null);
+  const [loading,  setLoading]  = useState(true);
+  const [error,    setError]    = useState(null);
+
+  useEffect(() => {
+    async function fetchLeaderboard() {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(SUBGRAPH_URL, {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ query: LB_QUERY }),
+        });
+        const json = await res.json();
+        if (json.errors) throw new Error(json.errors[0].message);
+        setPlayers(json.data.players || []);
+        setStats(json.data.seasonStat || null);
+      } catch (err) {
+        setError(err.message || "Failed to load leaderboard");
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchLeaderboard();
+  }, []);
+
+  const connLower = connectedAddress ? connectedAddress.toLowerCase() : null;
+
   return (
-    <ModalShell onClose={onClose} width={680}>
+    <ModalShell onClose={onClose} width={720}>
       {/* Header */}
       <div style={{ padding: "22px 28px 16px", borderBottom: "1px solid rgba(255,255,255,.06)", display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
         <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 11, color: GOLD, letterSpacing: 1, textShadow: `2px 2px 0 ${GOLD_DK}` }}>⬡ LEADERBOARD</div>
@@ -335,72 +400,113 @@ export function LeaderboardModal({ onClose, onOpenProfile }) {
       {/* Season stats */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", borderBottom: "1px solid rgba(255,255,255,.06)" }}>
         {[
-          { label: "TOTAL MINTED", val: "1,284,440" },
-          { label: "TOTAL BURNED", val: "312,880" },
-          { label: "PRIZE POOL",   val: "Ξ 12.437", gold: true },
-          { label: "WINDOW ROLLOVER", val: "+4,200" },
-        ].map(s => (
-          <div key={s.label} style={{ padding: "12px 20px", borderRight: "1px solid rgba(255,255,255,.05)" }}>
+          { label: "TOTAL MINTED",  val: stats ? Number(stats.totalMinted).toLocaleString()  : "—" },
+          { label: "TOTAL BURNED",  val: stats ? Number(stats.totalBurned).toLocaleString()  : "—" },
+          { label: "PRIZE POOL",    val: "live ↗", gold: true },
+          { label: "PLAYERS",       val: stats ? stats.uniquePlayers.toLocaleString()        : "—" },
+        ].map((s, i) => (
+          <div key={s.label} style={{ padding: "12px 20px", borderRight: i < 3 ? "1px solid rgba(255,255,255,.05)" : "none" }}>
             <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 5, color: CREAM, opacity: .4, letterSpacing: 1, marginBottom: 5 }}>{s.label}</div>
             <div style={{ fontFamily: "'VT323', monospace", fontSize: 22, color: s.gold ? GOLD_LT : CREAM, letterSpacing: .5 }}>{s.val}</div>
           </div>
         ))}
       </div>
 
+      {/* Loading / error states */}
+      {loading && (
+        <div style={{ padding: "40px 28px", textAlign: "center", fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: CREAM, opacity: .4, letterSpacing: 1 }}>
+          <span style={{ animation: "pulse-dot 1s infinite" }}>● </span>LOADING...
+        </div>
+      )}
+
+      {error && !loading && (
+        <div style={{ padding: "28px", margin: "20px 28px", border: `1px solid ${EMBER}33`, background: "rgba(204,51,34,.06)" }}>
+          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 6, color: EMBER, letterSpacing: 1, marginBottom: 8 }}>⚠ COULD NOT LOAD</div>
+          <div style={{ fontFamily: "'VT323', monospace", fontSize: 17, color: CREAM, opacity: .6 }}>{error}</div>
+        </div>
+      )}
+
       {/* Table */}
-      <div style={{ padding: "0 0 16px" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr>
-              {["#", "PLAYER", "TIERS HELD", "TOTAL BLOCKS"].map((h, i) => (
-                <th key={h} style={{
-                  fontFamily: "'Press Start 2P', monospace", fontSize: 6,
-                  color: CREAM, opacity: .35, letterSpacing: 1,
-                  padding: "10px 20px", textAlign: i === 3 ? "right" : "left",
-                  borderBottom: "1px solid rgba(255,255,255,.05)",
-                  paddingRight: i === 3 ? 24 : undefined,
-                }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {LB_DATA.map(p => (
-              <tr
-                key={p.rank}
-                className="lb-row"
-                onClick={onOpenProfile}
-                style={{ background: p.me ? "rgba(200,168,75,.07)" : "transparent" }}
-              >
-                <td style={{ padding: "9px 20px", borderBottom: "1px solid rgba(255,255,255,.04)" }}>
-                  <span style={{ fontFamily: "'VT323', monospace", fontSize: 20, color: p.rank <= 3 ? GOLD : CREAM, opacity: p.rank <= 3 ? 1 : .55 }}>{p.rank}</span>
-                </td>
-                <td style={{ padding: "9px 20px", borderBottom: "1px solid rgba(255,255,255,.04)" }}>
-                  {p.ens
-                    ? <div><div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: CREAM, opacity: .9 }}>{p.ens}</div>
-                        <div style={{ fontFamily: "'Courier Prime', monospace", fontSize: 11, color: CREAM, opacity: .45, marginTop: 2 }}>{p.wallet}</div></div>
-                    : <div style={{ fontFamily: "'Courier Prime', monospace", fontSize: 11, color: CREAM, opacity: .7 }}>{p.wallet}</div>
-                  }
-                  {p.me && <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 5, color: GOLD, background: "rgba(200,168,75,.15)", border: `1px solid ${GOLD_DK}`, padding: "2px 6px", marginLeft: 8, letterSpacing: 1 }}>YOU</span>}
-                </td>
-                <td style={{ padding: "9px 20px", borderBottom: "1px solid rgba(255,255,255,.04)" }}>
-                  <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                    {p.tiers.map((held, i) => (
-                      <div key={i} style={{
-                        width: 9, height: 9,
-                        background: held ? TIER_COLS[i] : "transparent",
-                        border: held ? "none" : "1px solid rgba(255,255,255,.2)",
-                      }} />
-                    ))}
-                  </div>
-                </td>
-                <td style={{ padding: "9px 24px 9px 20px", borderBottom: "1px solid rgba(255,255,255,.04)", textAlign: "right" }}>
-                  <span style={{ fontFamily: "'VT323', monospace", fontSize: 20, color: CREAM, opacity: .65 }}>{p.blocks.toLocaleString()}</span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {!loading && !error && (
+        <div style={{ padding: "0 0 16px" }}>
+          {players.length === 0 ? (
+            <div style={{ padding: "40px 28px", textAlign: "center", fontFamily: "'VT323', monospace", fontSize: 22, color: CREAM, opacity: .4 }}>
+              No players yet. Be the first.
+            </div>
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  {["#", "PLAYER", "TIERS HELD", "SCORE", "MINTS"].map((h, i) => (
+                    <th key={h} style={{
+                      fontFamily: "'Press Start 2P', monospace", fontSize: 6,
+                      color: CREAM, opacity: .35, letterSpacing: 1,
+                      padding: "10px 16px",
+                      textAlign: i >= 3 ? "right" : "left",
+                      borderBottom: "1px solid rgba(255,255,255,.05)",
+                      paddingRight: i === 4 ? 24 : undefined,
+                    }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {players.map((p, idx) => {
+                  const rank    = idx + 1;
+                  const isMe    = connLower && p.id === connLower;
+                  const tierDots = buildTierDots(p);
+                  return (
+                    <tr
+                      key={p.id}
+                      className="lb-row"
+                      onClick={onOpenProfile}
+                      style={{ background: isMe ? "rgba(200,168,75,.07)" : "transparent" }}
+                    >
+                      {/* Rank */}
+                      <td style={{ padding: "9px 16px", borderBottom: "1px solid rgba(255,255,255,.04)" }}>
+                        <span style={{ fontFamily: "'VT323', monospace", fontSize: 20, color: rank <= 3 ? GOLD : CREAM, opacity: rank <= 3 ? 1 : .55 }}>{rank}</span>
+                      </td>
+
+                      {/* Player address */}
+                      <td style={{ padding: "9px 16px", borderBottom: "1px solid rgba(255,255,255,.04)" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <div style={{ fontFamily: "'Courier Prime', monospace", fontSize: 11, color: CREAM, opacity: .7 }}>{fmtAddr(p.id)}</div>
+                          {isMe && (
+                            <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 5, color: GOLD, background: "rgba(200,168,75,.15)", border: `1px solid ${GOLD_DK}`, padding: "2px 6px", letterSpacing: 1 }}>YOU</span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Tiers held — colored dots */}
+                      <td style={{ padding: "9px 16px", borderBottom: "1px solid rgba(255,255,255,.04)" }}>
+                        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                          {tierDots.map((held, i) => (
+                            <div key={i} style={{
+                              width: 9, height: 9,
+                              background: held ? TIER_COLS[i] : "transparent",
+                              border:     held ? "none" : "1px solid rgba(255,255,255,.2)",
+                            }} />
+                          ))}
+                          <span style={{ fontFamily: "'VT323', monospace", fontSize: 16, color: CREAM, opacity: .45, marginLeft: 6 }}>{p.tiersUnlocked}/6</span>
+                        </div>
+                      </td>
+
+                      {/* Progression score */}
+                      <td style={{ padding: "9px 16px", borderBottom: "1px solid rgba(255,255,255,.04)", textAlign: "right" }}>
+                        <span style={{ fontFamily: "'VT323', monospace", fontSize: 20, color: GOLD_LT, opacity: .85 }}>{fmtScore(p.progressionScore)}</span>
+                      </td>
+
+                      {/* Total mints */}
+                      <td style={{ padding: "9px 24px 9px 16px", borderBottom: "1px solid rgba(255,255,255,.04)", textAlign: "right" }}>
+                        <span style={{ fontFamily: "'VT323', monospace", fontSize: 20, color: CREAM, opacity: .5 }}>{Number(p.totalMints).toLocaleString()}</span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
     </ModalShell>
   );
 }
@@ -573,12 +679,12 @@ export function ProfileModal({ onClose }) {
 // EXPORT — MODAL CONTROLLER (convenience wrapper)
 // Usage: <Modals open="rules|leaderboard|profile|null" onClose={fn} />
 // ═══════════════════════════════════════════════════════════════
-export default function Modals({ open, onClose, onOpenProfile }) {
+export default function Modals({ open, onClose, onOpenProfile, connectedAddress }) {
   return (
     <>
       <style>{MODAL_CSS}</style>
       {open === "rules"       && <GameRulesModal   onClose={onClose} />}
-      {open === "leaderboard" && <LeaderboardModal onClose={onClose} onOpenProfile={onOpenProfile} />}
+      {open === "leaderboard" && <LeaderboardModal onClose={onClose} onOpenProfile={onOpenProfile} connectedAddress={connectedAddress} />}
       {open === "profile"     && <ProfileModal     onClose={onClose} />}
     </>
   );
