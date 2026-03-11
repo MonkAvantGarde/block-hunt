@@ -1,0 +1,24 @@
+[
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true,  "name": "operator", "type": "address" },
+      { "indexed": true,  "name": "from",     "type": "address" },
+      { "indexed": true,  "name": "to",       "type": "address" },
+      { "indexed": false, "name": "id",       "type": "uint256" },
+      { "indexed": false, "name": "value",    "type": "uint256" }
+    ],
+    "name": "TransferSingle",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true,  "name": "requestId", "type": "uint256" },
+      { "indexed": true,  "name": "player",    "type": "address" },
+      { "indexed": false, "name": "quantity",  "type": "uint256" }
+    ],
+    "name": "MintFulfilled",
+    "type": "event"
+  }
+]

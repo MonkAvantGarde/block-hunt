@@ -1,0 +1,28 @@
+type Player @entity {
+  id: ID!          # lowercase wallet address
+  address: Bytes!
+
+  # Live balances per tier
+  tier1Balance: BigInt!
+  tier2Balance: BigInt!
+  tier3Balance: BigInt!
+  tier4Balance: BigInt!
+  tier5Balance: BigInt!
+  tier6Balance: BigInt!
+  tier7Balance: BigInt!
+
+  # Derived — recalculated on every event
+  tiersUnlocked: Int!        # count of tiers 2–7 where balance > 0
+  totalMints: BigInt!        # blocks received from VRF (MintFulfilled)
+  progressionScore: BigInt!  # weighted score used for leaderboard ranking
+
+  lastUpdated: BigInt!
+}
+
+# Singleton — always id = "season-1"
+type SeasonStat @entity {
+  id: ID!
+  totalMinted: BigInt!
+  totalBurned: BigInt!
+  uniquePlayers: Int!
+}
