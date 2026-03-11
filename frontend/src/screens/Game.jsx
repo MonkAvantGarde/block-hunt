@@ -475,7 +475,7 @@ function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, treasury, address
   const recoveryRan = useRef(false)
   useEffect(() => {
     if (!address || recoveryRan.current) return
-    recoveryRan.current = true
+    // recoveryRan.current = true
     async function recover() {
       try {
         const { createPublicClient, http } = await import('viem')
