@@ -312,7 +312,7 @@ export function GameRulesModal({ onClose }) {
 // ⚠️  After deploying your subgraph to The Graph Studio, paste your
 //     query URL here. Format:
 //     https://api.studio.thegraph.com/query/YOUR_ID/block-hunt/version/latest
-const SUBGRAPH_URL = "REPLACE_WITH_YOUR_SUBGRAPH_URL";
+const SUBGRAPH_URL = "https://api.studio.thegraph.com/query/1744131/blok-hunt/version/latest";
 
 const TIER_COLS = ["#9ba8b0", "#8fa8c8", "#8fb87a", "#c8c870", "#c87a7a", "#c8a84b"];
 
