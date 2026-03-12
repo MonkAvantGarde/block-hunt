@@ -4,6 +4,8 @@ import { parseEther, decodeEventLog } from 'viem'
 import { useGameState } from '../hooks/useGameState'
 import { CONTRACTS } from '../config/wagmi'
 import { TOKEN_ABI, FORGE_ABI } from '../abis'
+import { BATCH_PRICES_ETH, BATCH_SUPPLY } from '../config/design-tokens'
+import PrizePoolDisplay from '../components/PrizePoolDisplay'
 import AllTiersTrigger from './AllTiersTrigger'
 
 // ═══════════════════════════════════════════════════════════════
@@ -45,7 +47,8 @@ const TIERS = [
 ];
 
 const TMAP = Object.fromEntries(TIERS.map(t => [t.id, t]));
-const COMBINE_RATIOS = { 7:20, 6:20, 5:30, 4:30, 3:50, 2:100 };
+// T2→T1 combine does NOT exist. The Origin is sacrifice-only.
+const COMBINE_RATIOS = { 7:20, 6:20, 5:30, 4:30, 3:50 };
 
 // Tier names for the combine success message
 const TIER_NAMES = {
@@ -203,6 +206,17 @@ function TierSlot({ tierId, count, onCombine, combining=false }) {
           <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:5, color:"rgba(255,255,255,0.25)", letterSpacing:0.5 }}>
             {count}/{ratio}
           </div>
+          {count < ratio && (
+            <div style={{
+              fontFamily:"'VT323', monospace", fontSize:13,
+              color: count === 0 ? "rgba(255,255,255,0.2)" : `${t.accent}88`,
+              textAlign:"center", lineHeight:1.2, marginTop:1,
+            }}>
+              {count === 0
+                ? `${ratio} = 1 T${tierId - 1}`
+                : `${ratio - count} more`}
+            </div>
+          )}
         </>
       )}
 
@@ -428,7 +442,7 @@ function savePending(items) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(items)) } catch {}
 }
 
-function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, treasury, address, refetchAll, blocks }) {
+function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, prizePool, address, refetchAll, blocks, mintPrice, mintPriceWei, currentBatch }) {
   const [qty, setQty] = useState(10)
   const [pendingMints, setPendingMints] = useState(() => loadPending())
   const [, setTick] = useState(0)
@@ -521,7 +535,7 @@ function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, treasury, address
 
 
   const { writeContract: writeMint } = useWriteContract()
-  const total = (qty * 0.00025).toFixed(5)
+  const total = (qty * mintPrice).toFixed(5)
 
   function doMint() {
     if (!windowOpen) return
@@ -531,7 +545,7 @@ function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, treasury, address
       abi: TOKEN_ABI,
       functionName: "mint",
       args: [BigInt(qty)],
-      value: parseEther((qty * 0.00025).toFixed(18)),
+      value: parseEther((qty * mintPrice).toFixed(18)),
     }, {
       onSuccess: (hash) => {
         const item = { id: Date.now().toString(), txHash: hash, qty, startTime: Date.now(), status: "pending" }
@@ -606,11 +620,61 @@ function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, treasury, address
           {timerLabel !== "— : — : —" ? (windowOpen ? `closes in ${timerLabel}` : `opens in ${timerLabel}`) : ""}
         </span>
       </div>
+      {/* Mint remaining bar */}
+      {windowInfo && windowInfo.allocated > 0 && (
+        <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline" }}>
+            <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:5, color:"rgba(255,255,255,0.3)", letterSpacing:0.5 }}>
+              {(() => {
+                const pct = Math.round((windowInfo.minted / windowInfo.allocated) * 100);
+                return pct >= 100 ? "WINDOW SOLD OUT" : pct >= 80 ? "FILLING FAST" : "MINTED THIS WINDOW";
+              })()}
+            </span>
+            <span style={{ fontFamily:"'VT323', monospace", fontSize:16, color:"rgba(255,255,255,0.5)" }}>
+              {windowInfo.minted.toLocaleString()} / {windowInfo.allocated.toLocaleString()}
+            </span>
+          </div>
+          <div style={{ height:8, background:"rgba(0,0,0,0.45)", border:"1px solid rgba(255,255,255,0.06)", overflow:"hidden" }}>
+            <div style={{
+              height:"100%",
+              width:`${Math.min((windowInfo.minted / windowInfo.allocated) * 100, 100)}%`,
+              background: (() => {
+                const pct = (windowInfo.minted / windowInfo.allocated) * 100;
+                return pct >= 80 ? "#ff4433" : pct >= 50 ? "#ffcc33" : "#6eff8a";
+              })(),
+              transition:"width 0.5s, background 0.5s",
+            }} />
+          </div>
+        </div>
+      )}
+
       <div style={{ display:"flex", gap:6 }}>
-        <StatBox label="BATCH" value={windowInfo ? `${windowInfo.day ?? 1} / 6` : "— / 6"} />
-        <StatBox label="PRICE" value="0.00025Ξ" />
+        <StatBox label="BATCH" value={`${currentBatch} / 6`} />
+        <StatBox label="PRICE" value={`${mintPrice}Ξ`} />
         <StatBox label="SLOTS" value={slots.toLocaleString()} accent={slots < 5000 ? "#ff6644" : undefined} />
       </div>
+      {/* Batch price ladder */}
+      <div style={{ background:"rgba(0,0,0,0.25)", border:"1px solid rgba(255,255,255,0.06)", padding:"6px 8px" }}>
+        <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:5, color:"rgba(255,255,255,0.25)", letterSpacing:1, marginBottom:4 }}>BATCH PRICES</div>
+        <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
+          {[1,2,3,4,5,6].map(b => {
+            const isCurrent = b === currentBatch;
+            return (
+              <div key={b} style={{
+                display:"flex", alignItems:"center", gap:6, padding:"2px 4px",
+                background: isCurrent ? "rgba(200,168,75,0.1)" : "transparent",
+                border: isCurrent ? `1px solid ${GOLD_DK}` : "1px solid transparent",
+              }}>
+                <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:5, color: isCurrent ? GOLD : "rgba(255,255,255,0.3)", width:14 }}>B{b}</span>
+                <span style={{ fontFamily:"'VT323', monospace", fontSize:15, color: isCurrent ? GOLD_LT : "rgba(255,255,255,0.35)", flex:1 }}>{BATCH_PRICES_ETH[b]} Ξ</span>
+                <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:4.5, color: isCurrent ? GOLD : "rgba(255,255,255,0.2)" }}>{(BATCH_SUPPLY[b] / 1000).toFixed(0)}K</span>
+                {isCurrent && <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:4.5, color:GOLD, letterSpacing:.5 }}>◄</span>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       <div style={{ fontFamily:"'VT323', monospace", fontSize:44, letterSpacing:4, color:CREAM, textAlign:"center", lineHeight:1 }}>
         {timerLabel}
       </div>
@@ -647,12 +711,8 @@ function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, treasury, address
       <Btn onClick={doMint} disabled={!windowOpen}>
         {windowOpen ? "▶  MINT NOW" : "✕  WINDOW CLOSED"}
       </Btn>
-      <div style={{
-        marginTop:"auto", background:"rgba(0,0,0,0.35)", border:"1px solid rgba(255,255,255,0.06)",
-        padding:"8px 12px", display:"flex", justifyContent:"space-between", alignItems:"baseline",
-      }}>
-        <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:6, color:"rgba(255,255,255,0.35)" }}>TREASURY</span>
-        <span style={{ fontFamily:"'VT323', monospace", fontSize:28, color:"#6eff8a" }}>Ξ {treasury}</span>
+      <div style={{ marginTop:"auto" }}>
+        <PrizePoolDisplay eth={parseFloat(prizePool)} size="medium" />
       </div>
     </div>
   )
@@ -671,12 +731,14 @@ function ForgePanel({ blocks, onForge, address }) {
   const [forgeTxHash, setForgeTxHash] = useState(null)
   const intervalRef = useRef(null)
   const autoRef     = useRef(null)
+  const pollRef     = useRef(null)
+  const forgeBlockRef = useRef(null)  // block number when forge tx was sent
 
   const { writeContract } = useWriteContract()
 
   const sel     = selTier ? TMAP[selTier]     : null
   const target  = selTier ? TMAP[selTier - 1] : null
-  const maxBurn = selTier ? Math.min(blocks[selTier] || 0, 99) : 99
+  const maxBurn = selTier ? Math.min(blocks[selTier] || 0, COMBINE_RATIOS[selTier] || 20) : 20
 
   function startClock() {
     setElapsed(0)
@@ -688,32 +750,70 @@ function ForgePanel({ blocks, onForge, address }) {
     return `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`
   }
 
-  useWatchContractEvent({
-    address: CONTRACTS.FORGE,
-    abi: FORGE_ABI,
-    eventName: 'ForgeResolved',
-    poll: true,
-    pollingInterval: 4_000,
-    onLogs(logs) {
-      if (vrfState !== VRF.PENDING && vrfState !== VRF.DELAYED) return
-      const mine = address
-        ? logs.filter(l => l.args.player?.toLowerCase() === address.toLowerCase())
-        : logs
-      if (mine.length === 0) return
-      const log = mine[0]
-      stopClock()
-      clearTimeout(autoRef.current)
-      setForgeResult({ success: log.args.success, fromTier: Number(log.args.fromTier) })
-      setVrfState(VRF.DELIVERED)
-      onForge()
-    },
+  // Poll for ForgeResolved events directly via getLogs when forge is pending
+  useEffect(() => {
+    if (vrfState !== VRF.PENDING && vrfState !== VRF.DELAYED) {
+      clearInterval(pollRef.current)
+      pollRef.current = null
+      return
+    }
+    if (!address) return
+
+    async function checkForgeResult() {
+      try {
+        const { createPublicClient, http, parseAbiItem } = await import('viem')
+        const { baseSepolia } = await import('viem/chains')
+        const client = createPublicClient({ chain: baseSepolia, transport: http() })
+
+        const fromBlock = forgeBlockRef.current || 'latest'
+        const logs = await client.getLogs({
+          address: CONTRACTS.FORGE,
+          event: parseAbiItem('event ForgeResolved(uint256 indexed requestId, address indexed player, uint256 fromTier, bool success)'),
+          args: { player: address },
+          fromBlock: typeof fromBlock === 'bigint' ? fromBlock : 'latest',
+          toBlock: 'latest',
+        })
+
+        if (logs.length > 0) {
+          const log = logs[logs.length - 1]
+          stopClock()
+          clearTimeout(autoRef.current)
+          clearInterval(pollRef.current)
+          pollRef.current = null
+          setForgeResult({ success: log.args.success, fromTier: Number(log.args.fromTier) })
+          setVrfState(VRF.DELIVERED)
+          onForge()
+        }
+      } catch (e) {
+        console.warn('Forge poll error:', e)
+      }
+    }
+
+    // Start polling every 4 seconds
+    pollRef.current = setInterval(checkForgeResult, 4_000)
+    // Also check immediately after a short delay
+    setTimeout(checkForgeResult, 2_000)
+
+    return () => { clearInterval(pollRef.current); pollRef.current = null }
+  }, [vrfState, address])
+
+  // Store the block number when forge tx confirms
+  const { data: forgeReceipt } = useWaitForTransactionReceipt({
+    hash: forgeTxHash,
+    query: { enabled: !!forgeTxHash },
   })
+  useEffect(() => {
+    if (forgeReceipt?.blockNumber) {
+      forgeBlockRef.current = forgeReceipt.blockNumber
+    }
+  }, [forgeReceipt])
 
   function doForge() {
     if (!selTier || vrfState !== VRF.IDLE) return
     setVrfState(VRF.PENDING)
     startClock()
     setForgeTxHash(null)
+    forgeBlockRef.current = null
 
     writeContract({
       address: CONTRACTS.FORGE,
@@ -887,28 +987,34 @@ function ForgePanel({ blocks, onForge, address }) {
               onChange={e => setBurn(parseInt(e.target.value))}
               style={{ width:'100%', accentColor:sel.accent }} />
             <div style={{ display:'flex', justifyContent:'space-between', marginTop:4 }}>
-              <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:5, color:'rgba(255,255,255,0.25)' }}>10 = 10%</span>
-              <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:5, color:'rgba(255,255,255,0.25)' }}>{maxBurn} = {maxBurn}%</span>
+              <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:5, color:'rgba(255,255,255,0.25)' }}>10 of {COMBINE_RATIOS[selTier]} = {Math.round((10 / COMBINE_RATIOS[selTier]) * 100)}%</span>
+              <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:5, color:'rgba(255,255,255,0.25)' }}>{maxBurn} of {COMBINE_RATIOS[selTier]} = {Math.min(Math.round((maxBurn / COMBINE_RATIOS[selTier]) * 100), 100)}%</span>
             </div>
           </div>
 
-          <div style={{
-            background:'rgba(0,0,0,0.25)', border:`1px solid ${sel.accent}33`,
-            padding:'10px 12px', textAlign:'center',
-          }}>
-            <div style={{ fontFamily:"'VT323', monospace", fontSize:38, color: burnCount >= 80 ? '#6eff8a' : burnCount >= 50 ? GOLD : '#ff6644' }}>
-              {burnCount}% CHANCE
-            </div>
-            <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:11, color:'rgba(255,255,255,0.45)', marginTop:3 }}>
-              Burning {burnCount}× <span style={{color:sel.accent}}>{sel.name}</span> → 1× <span style={{color:target.accent}}>{target.name}</span>
-            </div>
-            <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:5.5, color:'rgba(255,80,80,0.6)', marginTop:6 }}>
-              ⚠ FAILURE DESTROYS ALL BURNED BLOCKS
-            </div>
-          </div>
+          {(() => {
+            const ratio = COMBINE_RATIOS[selTier] || 20;
+            const pct = Math.min(Math.round((burnCount / ratio) * 100), 100);
+            return (
+              <div style={{
+                background:'rgba(0,0,0,0.25)', border:`1px solid ${sel.accent}33`,
+                padding:'10px 12px', textAlign:'center',
+              }}>
+                <div style={{ fontFamily:"'VT323', monospace", fontSize:38, color: pct >= 80 ? '#6eff8a' : pct >= 50 ? GOLD : '#ff6644' }}>
+                  {pct}% CHANCE
+                </div>
+                <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:11, color:'rgba(255,255,255,0.45)', marginTop:3 }}>
+                  Burning {burnCount} of {ratio} <span style={{color:sel.accent}}>{sel.name}</span> → 1× <span style={{color:target.accent}}>{target.name}</span>
+                </div>
+                <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:5.5, color:'rgba(255,80,80,0.6)', marginTop:6 }}>
+                  ⚠ IF THIS FAILS: {burnCount}× {sel.name} — GONE FOREVER
+                </div>
+              </div>
+            );
+          })()}
 
           <Btn onClick={doForge} color="#9933cc">
-            ⚡ FORGE  ({burnCount}%)
+            ⚡ FORGE  ({Math.min(Math.round((burnCount / (COMBINE_RATIOS[selTier] || 20)) * 100), 100)}%)
           </Btn>
         </>
       ) : (
@@ -1013,7 +1119,10 @@ export default function GameScreen({ onOpenModal, onNavigate }) {
     isConnected,
     balances,
     windowInfo,
-    treasuryBalance,
+    prizePool,
+    currentBatch,
+    mintPrice,
+    mintPriceWei,
     refetchAll,
   } = useGameState()
 
@@ -1037,7 +1146,6 @@ const { data: countdownHolder } = useReadContract({
 
   const windowOpen = windowInfo?.isOpen ?? false
   const slots      = windowInfo?.remaining ? Number(windowInfo.remaining) : 0
-  const treasury   = treasuryBalance
 
   // ── WALLET CONNECT / DISCONNECT ─────────────────────────────
   const { connectors, connect } = useConnect()
@@ -1125,13 +1233,25 @@ const { data: countdownHolder } = useReadContract({
   function handleMint()  { refetchAll() }
   function handleForge() { refetchAll() }
 
-  const have6 = [2,3,4,5,6,7].filter(t => (blocks[t] ?? 0) > 0).length
-
   // Task 3: all 6 tiers held = show takeover
   const all6held = [2,3,4,5,6,7].every(t => (blocks[t] ?? 0) >= 1)
+  const have6 = all6held ? 6 : [2,3,4,5,6,7].filter(t => (blocks[t] ?? 0) > 0).length
   const isActiveHolder = countdownActive === true && 
    countdownHolder?.toLowerCase() === address?.toLowerCase()
   const showTrigger = all6held && countdownActive === false
+
+  // ── COUNTDOWN NAVIGATION (moved from render to effect) ────────────────
+  useEffect(() => {
+    if (countdownActive === true && isConnected && !isActiveHolder) {
+      onNavigate('countdown-spectator')
+    }
+  }, [countdownActive, isConnected, isActiveHolder])
+
+  useEffect(() => {
+    if (isActiveHolder) {
+      onNavigate('countdown-holder')
+    }
+  }, [isActiveHolder])
 
   const panels = [
     { id:"mint",  label:"⬡ MINT",  bg:"#0a1f15", titleColor:"#6eff8a" },
@@ -1186,8 +1306,7 @@ const { data: countdownHolder } = useReadContract({
         </div>
       )}
 
-      {/* ── Spectator route: countdown active, not the holder ── */}
-      {countdownActive === true && isConnected && !isActiveHolder && onNavigate('countdown-spectator')}
+      {/* Countdown navigation handled by useEffect above */}
 
       {/* ── CountdownHolderReset alert banner ── */}
       {resetAlert && (
@@ -1214,7 +1333,6 @@ const { data: countdownHolder } = useReadContract({
       )}
 
       {/* ── Task 3: All-6-tiers takeover ── */}
-      {isActiveHolder && onNavigate('countdown-holder')}
       {showTrigger && (
         <AllTiersTrigger
           walletAddress={address}
@@ -1252,7 +1370,7 @@ const { data: countdownHolder } = useReadContract({
             color:GOLD, border:`2px solid ${GOLD_DK}`,
             padding:"5px 12px", background:"rgba(200,168,75,0.1)", whiteSpace:"nowrap",
           }}>
-            ◈ Ξ {treasury}
+            ◈ Ξ {prizePool}
           </div>
 
           <div style={{ position:"relative" }}>
@@ -1422,7 +1540,7 @@ const { data: countdownHolder } = useReadContract({
                 borderBottom:"1px solid rgba(255,255,255,0.07)",
               }}>{p.label}</div>
               <div style={{ flex:1, display:"flex", flexDirection:"column", minHeight:0 }}>
-                {p.id==="mint"  && <VRFMintPanel onMint={handleMint} windowOpen={windowOpen} windowInfo={windowInfo} slots={slots} treasury={treasury} address={address} refetchAll={refetchAll} blocks={blocks} />}
+                {p.id==="mint"  && <VRFMintPanel onMint={handleMint} windowOpen={windowOpen} windowInfo={windowInfo} slots={slots} prizePool={prizePool} address={address} refetchAll={refetchAll} blocks={blocks} mintPrice={mintPrice} mintPriceWei={mintPriceWei} currentBatch={currentBatch} />}
                 {p.id==="forge" && <ForgePanel blocks={blocks} onForge={handleForge} address={address} />}
                 {p.id==="trade" && <TradePanel />}
               </div>

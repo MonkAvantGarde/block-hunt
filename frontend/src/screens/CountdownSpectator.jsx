@@ -333,16 +333,27 @@ function VoteSection({ burnVotes = 0, claimVotes = 0 }) {
 // ═══════════════════════════════════════════════════════════════
 // TICKER — live data
 // ═══════════════════════════════════════════════════════════════
-function Ticker({ holderShort, eth, claimPct }) {
-  const items = [
-    "COUNTDOWN ACTIVE",
-    `HOLDER: ${holderShort || "—"}`,
-    `PRIZE POOL: Ξ ${eth.toFixed(4)}`,
-    `COMMUNITY VOTE: ${claimPct}% CLAIM`,
-    "SEASON 1",
-    "MINTING LOCKED",
-    "TRADING STILL OPEN",
-  ];
+function Ticker({ holderShort, eth, claimPct, secondsRemaining = 999999 }) {
+  const urgent = secondsRemaining < 86400;
+  const items = urgent
+    ? [
+        "YOUR WINDOW IS CLOSING",
+        `HOLDER: ${holderShort || "—"}`,
+        `PRIZE POOL: Ξ ${eth.toFixed(4)}`,
+        "TIME IS RUNNING OUT",
+        `COMMUNITY VOTE: ${claimPct}% CLAIM`,
+        "ACT NOW OR LOSE EVERYTHING",
+        "TRADING STILL OPEN",
+      ]
+    : [
+        "YOUR WINDOW IS CLOSING",
+        `HOLDER: ${holderShort || "—"}`,
+        `PRIZE POOL: Ξ ${eth.toFixed(4)}`,
+        `COMMUNITY VOTE: ${claimPct}% CLAIM`,
+        "SEASON 1",
+        "MINTING LOCKED",
+        "TRADING STILL OPEN",
+      ];
   const doubled = [...items, ...items];
   return (
     <div style={{
@@ -354,7 +365,7 @@ function Ticker({ holderShort, eth, claimPct }) {
         {doubled.map((item, i) => (
           <span key={i} style={{
             fontFamily: "'Press Start 2P', monospace", fontSize: 6,
-            color: GOLD, opacity: .8, letterSpacing: 1, padding: "0 32px",
+            color: urgent ? EMBER_LT : GOLD, opacity: .8, letterSpacing: 1, padding: "0 32px",
           }}>◈ {item}</span>
         ))}
       </div>
@@ -509,6 +520,12 @@ export default function CountdownSpectator({ onBack }) {
       <div style={{ width: 6, height: 6, background: EMBER_LT, animation: "pulse-dot 1.2s ease-in-out infinite" }} />
       COUNTDOWN ACTIVE
     </div>
+    <button onClick={onBack} style={{
+      fontFamily: "'Press Start 2P', monospace", fontSize: 6,
+      background: "transparent", color: "rgba(255,255,255,0.4)",
+      border: "1px solid rgba(255,255,255,0.15)", padding: "6px 12px",
+      cursor: "pointer", letterSpacing: 1,
+    }}>◀ BACK</button>
     <button onClick={() => { disconnect(); onBack(); }} style={{
       fontFamily: "'Press Start 2P', monospace", fontSize: 6,
       background: "transparent", color: "rgba(255,255,255,0.4)",
@@ -521,8 +538,8 @@ export default function CountdownSpectator({ onBack }) {
       <div style={{ position: "relative", zIndex: 5, maxWidth: 900, margin: "0 auto", padding: "28px 36px 80px" }}>
 
         <div style={{ textAlign: "center", marginBottom: 8 }}>
-          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 6, color: EMBER_LT, letterSpacing: 3, opacity: .6, marginBottom: 16 }}>
-            ● COUNTDOWN IN PROGRESS
+          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 6, color: EMBER_LT, letterSpacing: 3, opacity: secondsRemaining < 86400 ? 1 : .6, marginBottom: 16 }}>
+            {secondsRemaining < 86400 ? "⚠ YOUR WINDOW IS CLOSING" : "● COUNTDOWN IN PROGRESS"}
           </div>
           {countdownStartTime
           ? <BigClock seconds={secondsRemaining} />
@@ -534,7 +551,7 @@ export default function CountdownSpectator({ onBack }) {
         </div>
 
         <div style={{ margin: "24px 0" }}>
-          <Ticker holderShort={holderShort} eth={eth} claimPct={claimPct} />
+          <Ticker holderShort={holderShort} eth={eth} claimPct={claimPct} secondsRemaining={secondsRemaining} />
         </div>
 
         <PrizeDisplay eth={eth} />

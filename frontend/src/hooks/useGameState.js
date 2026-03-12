@@ -1,30 +1,36 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // useGameState.js — Master hook that reads all on-chain state
 //
-// This hook is the bridge between the blockchain and the UI.
-// Import it in any component that needs to display live game data.
+// Updated: Session 15 — March 12, 2026
+// Changes:
+//   - Added currentBatch from MintWindow (was showing window day as batch)
+//   - Added currentMintPrice from Token contract
+//   - Added Escrow reads (sacrifice state, entitlements)
+//   - Renamed treasuryBalance → prizePool (language change: "prize pool" not "treasury")
+//   - Added mintPrice in ETH (formatted for display)
 //
 // What it returns:
-//   balances        — the connected player's block counts per tier (array of 8)
-//   windowInfo      — mint window status: open/closed, timer, slots remaining
-//   countdownInfo   — countdown: active?, who holds it, time left
-//   treasuryBalance — current prize pool in ETH (as a formatted string)
+//   balances        — player's block counts per tier (array of 8)
+//   windowInfo      — mint window status: open/closed, timer, slots, minted/allocated
+//   countdownInfo   — countdown: active?, holder, time left, votes
+//   prizePool       — current prize pool in ETH (formatted string)
+//   currentBatch    — current batch number (1-6)
+//   mintPrice       — price per block for current batch (formatted ETH string)
+//   mintPriceWei    — price per block as bigint (for transaction value)
+//   escrowInfo      — sacrifice distribution state (null if not yet sacrificed)
 //   isLoading       — true while any data is still fetching
-//   refetchAll      — call this after any transaction to refresh everything
+//   refetchAll      — call after any transaction to refresh everything
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useAccount, useReadContract, useReadContracts } from 'wagmi'
+import { useAccount, useReadContract } from 'wagmi'
 import { formatEther } from 'viem'
 import { CONTRACTS } from '../config/wagmi'
-import { TOKEN_ABI, WINDOW_ABI, TREASURY_ABI, COUNTDOWN_ABI } from '../abis'
+import { TOKEN_ABI, WINDOW_ABI, TREASURY_ABI, COUNTDOWN_ABI, ESCROW_ABI } from '../abis'
 
 export function useGameState() {
   const { address, isConnected } = useAccount()
 
   // ── PLAYER BALANCES ────────────────────────────────────────────────────────
-  // Returns uint256[8] — index 0 unused, indices 1–7 are tier balances
-  // Only fetches when a wallet is connected
-
   const {
     data: balancesRaw,
     isLoading: balancesLoading,
@@ -38,8 +44,6 @@ export function useGameState() {
   })
 
   // ── MINT WINDOW INFO ───────────────────────────────────────────────────────
-  // Polled every 30 seconds — window status changes slowly
-
   const {
     data: windowRaw,
     isLoading: windowLoading,
@@ -48,14 +52,34 @@ export function useGameState() {
     address: CONTRACTS.WINDOW,
     abi: WINDOW_ABI,
     functionName: 'getWindowInfo',
-    query: {
-      refetchInterval: 30_000,  // every 30s
-    },
+    query: { refetchInterval: 30_000 },
+  })
+
+  // ── CURRENT BATCH (1-6) ────────────────────────────────────────────────────
+  const {
+    data: batchRaw,
+    isLoading: batchLoading,
+    refetch: refetchBatch,
+  } = useReadContract({
+    address: CONTRACTS.WINDOW,
+    abi: WINDOW_ABI,
+    functionName: 'currentBatch',
+    query: { refetchInterval: 60_000 },
+  })
+
+  // ── CURRENT MINT PRICE ─────────────────────────────────────────────────────
+  const {
+    data: mintPriceRaw,
+    isLoading: mintPriceLoading,
+    refetch: refetchMintPrice,
+  } = useReadContract({
+    address: CONTRACTS.TOKEN,
+    abi: TOKEN_ABI,
+    functionName: 'currentMintPrice',
+    query: { refetchInterval: 60_000 },
   })
 
   // ── COUNTDOWN INFO ─────────────────────────────────────────────────────────
-  // Polled every 10 seconds when countdown is active
-
   const {
     data: countdownRaw,
     isLoading: countdownLoading,
@@ -64,14 +88,10 @@ export function useGameState() {
     address: CONTRACTS.COUNTDOWN,
     abi: COUNTDOWN_ABI,
     functionName: 'getCountdownInfo',
-    query: {
-      refetchInterval: 10_000,  // every 10s
-    },
+    query: { refetchInterval: 10_000 },
   })
 
-  // ── TREASURY BALANCE ───────────────────────────────────────────────────────
-  // Polled every 60 seconds — updates on each mint
-
+  // ── PRIZE POOL (was "treasury balance") ────────────────────────────────────
   const {
     data: treasuryRaw,
     isLoading: treasuryLoading,
@@ -80,62 +100,92 @@ export function useGameState() {
     address: CONTRACTS.TREASURY,
     abi: TREASURY_ABI,
     functionName: 'treasuryBalance',
-    query: {
-      refetchInterval: 60_000,
-    },
+    query: { refetchInterval: 60_000 },
+  })
+
+  // ── ESCROW INFO (sacrifice distribution state) ─────────────────────────────
+  const {
+    data: escrowRaw,
+    refetch: refetchEscrow,
+  } = useReadContract({
+    address: CONTRACTS.ESCROW,
+    abi: ESCROW_ABI,
+    functionName: 'getEscrowInfo',
+    query: { refetchInterval: 30_000 },
   })
 
   // ── SHAPE THE DATA ─────────────────────────────────────────────────────────
-  // Transform raw contract return values into something easy to use in the UI
 
-  // balancesRaw is uint256[8] — convert bigints to regular numbers
-  // Index 0 is always 0 (unused). Tiers 1–7 are indices 1–7.
   const balances = balancesRaw
     ? Array.from(balancesRaw).map(n => Number(n))
     : [0, 0, 0, 0, 0, 0, 0, 0]
 
-  // windowRaw comes back as an object with named fields
   const windowInfo = windowRaw
-  ? {
-      isOpen:    windowRaw[0],
-      day:       Number(windowRaw[1]),
-      openAt:    Number(windowRaw[2]),
-      closeAt:   Number(windowRaw[3]),
-      allocated: Number(windowRaw[4]),
-      minted:    Number(windowRaw[5]),
-      remaining: Number(windowRaw[6]),
-      rollover:  Number(windowRaw[7]),
-    }
-  : null
-
-  const countdownInfo = countdownRaw
     ? {
-        active:    countdownRaw.active,
-        holder:    countdownRaw.holder,
-        startTime: Number(countdownRaw.startTime),
-        endTime:   Number(countdownRaw.endTime),
-        timeLeft:  Number(countdownRaw.timeLeft),   // seconds
+        isOpen:    windowRaw[0],
+        day:       Number(windowRaw[1]),
+        openAt:    Number(windowRaw[2]),
+        closeAt:   Number(windowRaw[3]),
+        allocated: Number(windowRaw[4]),
+        minted:    Number(windowRaw[5]),
+        remaining: Number(windowRaw[6]),
+        rollover:  Number(windowRaw[7]),
       }
     : null
 
-  // Format treasury as a human-readable ETH string e.g. "12.4"
-  const treasuryBalance = treasuryRaw
+  const countdownInfo = countdownRaw
+    ? {
+        active:     countdownRaw[0],
+        holder:     countdownRaw[1],
+        startTime:  Number(countdownRaw[2]),
+        endTime:    Number(countdownRaw[3]),
+        remaining:  Number(countdownRaw[4]),
+        burnVotes:  Number(countdownRaw[5]),
+        claimVotes: Number(countdownRaw[6]),
+      }
+    : null
+
+  const prizePool = treasuryRaw
     ? parseFloat(formatEther(treasuryRaw)).toFixed(4)
     : '0.0000'
 
-  // How many tiers (2–7) does the connected player currently hold at least 1 of?
+  // Batch number: 1-6
+  const currentBatch = batchRaw ? Number(batchRaw) : 1
+
+  // Mint price: from contract (wei bigint) and formatted ETH string
+  const mintPriceWei = mintPriceRaw || BigInt(0)
+  const mintPrice = mintPriceRaw
+    ? parseFloat(formatEther(mintPriceRaw))
+    : 0.00008  // Batch 1 default
+
+  // Escrow state (only populated after sacrifice)
+  const escrowInfo = escrowRaw
+    ? {
+        sacrificeExecuted: escrowRaw[0],
+        entitlementsSet:   escrowRaw[1],
+        pool:              Number(escrowRaw[2]),
+        seed:              Number(escrowRaw[3]),
+        claimExpiry:       Number(escrowRaw[4]),
+        seedReleased:      escrowRaw[5],
+      }
+    : null
+
+  // How many tiers (2-7) does the connected player hold at least 1 of?
   const tiersHeld = isConnected
     ? [2, 3, 4, 5, 6, 7].filter(tier => balances[tier] > 0).length
     : 0
 
-  const isLoading = balancesLoading || windowLoading || countdownLoading || treasuryLoading
+  const isLoading = balancesLoading || windowLoading || countdownLoading
+                 || treasuryLoading || batchLoading || mintPriceLoading
 
-  // Call this after any write transaction to refresh all data
   function refetchAll() {
     refetchBalances()
     refetchWindow()
     refetchCountdown()
     refetchTreasury()
+    refetchBatch()
+    refetchMintPrice()
+    refetchEscrow()
   }
 
   return {
@@ -144,11 +194,16 @@ export function useGameState() {
     isConnected,
 
     // Game state
-    balances,        // e.g. [0, 0, 3, 0, 12, 0, 47, 200] — index = tier
-    tiersHeld,       // 0–6 (Tier 1 excluded — only obtainable by winning)
+    balances,
+    tiersHeld,
     windowInfo,
     countdownInfo,
-    treasuryBalance,
+    prizePool,              // renamed from treasuryBalance
+    treasuryBalance: prizePool,  // backwards compat — remove after all screens updated
+    currentBatch,
+    mintPrice,              // number in ETH (e.g. 0.00008)
+    mintPriceWei,           // bigint for transaction value
+    escrowInfo,
 
     // Utils
     isLoading,

@@ -398,7 +398,7 @@ const liveEth = treasuryData?.value
           padding: "7px 20px", whiteSpace: "nowrap",
           animation: "fade-in 1.2s ease 2s both",
         }}>
-          <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:GOLD, opacity:0.6, letterSpacing:2 }}>TREASURY</div>
+          <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:GOLD, opacity:0.6, letterSpacing:2 }}>PRIZE POOL</div>
           <div style={{ fontFamily:"'VT323', monospace", fontSize:28, color:GOLD_LT, letterSpacing:2, lineHeight:1 }}>
             {liveEth > 0
             ? <TreasuryCounter targetEth={liveEth} />

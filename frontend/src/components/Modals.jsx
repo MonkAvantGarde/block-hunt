@@ -121,13 +121,13 @@ const CARDS = [
     body: (
       <div>
         <div style={{ fontFamily: "'VT323', monospace", fontSize: 22, color: CREAM, opacity: .9, lineHeight: 1.5, marginBottom: 16 }}>
-          Once a day, a window opens. You have <span style={{ color: GOLD_LT }}>8 hours</span> to enter.<br /><br />
+          Once a day, a window opens. You have <span style={{ color: GOLD_LT }}>6 hours</span> to enter.<br /><br />
           State how many blocks you want. The window closes.<br />
           What you receive is determined then — not before.<br />
           No one gets an advantage by moving faster.
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {["0.00025 ETH per block", "Up to 500 per player", "50,000 daily cap", "Quiet days roll over"].map(s => (
+          {["0.00008 ETH (Batch 1, price rises)", "Up to 500 per player", "Batch-scaled daily cap", "Quiet days roll over"].map(s => (
             <div key={s} style={{
               fontFamily: "'Press Start 2P', monospace", fontSize: 6,
               border: "1px solid rgba(255,255,255,.1)",
@@ -166,13 +166,13 @@ const CARDS = [
       <div>
         <div style={{ fontFamily: "'VT323', monospace", fontSize: 22, color: CREAM, opacity: .9, lineHeight: 1.5, marginBottom: 16 }}>
           Feed it blocks. Name your risk.<br />
-          Burn <span style={{ color: GOLD_LT }}>10</span> — a 10% chance of something rarer.<br />
-          Burn <span style={{ color: GOLD_LT }}>99</span> — a 99% chance. But 99 blocks gone either way.<br /><br />
+          Burn <span style={{ color: GOLD_LT }}>10 of 20</span> — a 50% chance of something rarer.<br />
+          Burn <span style={{ color: GOLD_LT }}>all 20</span> — certain. But 20 blocks gone either way.<br /><br />
           The Forge is indifferent to your hope.<br />
           It only counts what you commit.
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {["Burn N blocks = N% chance", "Fail = all blocks destroyed", "Applies to Tiers 2–7"].map(s => (
+          {["Burn N of M = (N/M)% chance", "Fail = all blocks destroyed", "Applies to Tiers 3–7"].map(s => (
             <div key={s} style={{
               fontFamily: "'Press Start 2P', monospace", fontSize: 6,
               border: "1px solid rgba(255,255,255,.1)",
@@ -194,7 +194,7 @@ const CARDS = [
           Trade is not a shortcut. It is the system working as intended.
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {["5% royalty on all trades", "All blocks are ERC-1155"].map(s => (
+          {["10% royalty on all trades", "All blocks are ERC-1155"].map(s => (
             <div key={s} style={{
               fontFamily: "'Press Start 2P', monospace", fontSize: 6,
               border: "1px solid rgba(255,255,255,.1)",
@@ -419,8 +419,8 @@ export function LeaderboardModal({ onClose, onOpenProfile, connectedAddress }) {
     <ModalShell onClose={onClose} width={720}>
       {/* Header */}
       <div style={{ padding: "22px 28px 16px", borderBottom: "1px solid rgba(255,255,255,.06)", display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-        <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 11, color: GOLD, letterSpacing: 1, textShadow: `2px 2px 0 ${GOLD_DK}` }}>⬡ LEADERBOARD</div>
-        <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 6, color: CREAM, opacity: .4, letterSpacing: 1 }}>TOP COLLECTORS · SEASON 1</div>
+        <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 11, color: GOLD, letterSpacing: 1, textShadow: `2px 2px 0 ${GOLD_DK}` }}>⬡ THE RACE</div>
+        <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 6, color: CREAM, opacity: .4, letterSpacing: 1 }}>WHO'S CLOSEST TO WINNING · SEASON 1</div>
       </div>
 
       {/* Season stats */}
@@ -495,6 +495,7 @@ export function LeaderboardModal({ onClose, onOpenProfile, connectedAddress }) {
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                             <div style={{ fontFamily: "'Courier Prime', monospace", fontSize: 11, color: CREAM, opacity: .7 }}>{fmtAddr(p.id)}</div>
                             {isMe && <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 5, color: GOLD, background: "rgba(200,168,75,.15)", border: `1px solid ${GOLD_DK}`, padding: "2px 6px", letterSpacing: 1 }}>YOU</span>}
+                            {Number(p.tiersUnlocked) >= 5 && <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 5, color: EMBER, background: "rgba(204,51,34,.12)", border: `1px solid ${EMBER}44`, padding: "2px 6px", letterSpacing: 1, animation: "pulse-dot 2s ease-in-out infinite" }}>{6 - Number(p.tiersUnlocked)} AWAY</span>}
                           </div>
                         </td>
                         <td style={{ padding: "9px 16px", borderBottom: "1px solid rgba(255,255,255,.04)" }}>

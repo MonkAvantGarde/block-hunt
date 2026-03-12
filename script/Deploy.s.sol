@@ -76,8 +76,8 @@ contract Deploy is Script {
     uint256 constant VRF_SUB_ID = 57750058386053786990998297633685375559871666481243777791923539169896613845120;
 
     // VRF callback gas limits
-    uint32 constant TOKEN_VRF_GAS = 150_000;
-    uint32 constant FORGE_VRF_GAS = 100_000;
+    uint32 constant TOKEN_VRF_GAS = 500_000;
+    uint32 constant FORGE_VRF_GAS = 300_000;
 
     // ── Run ───────────────────────────────────────────────────────────────────
 
