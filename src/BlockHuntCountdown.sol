@@ -3,9 +3,20 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 
+/**
+ * ╔══════════════════════════════════════════════════════════════╗
+ * ║          THE BLOCK HUNT — COUNTDOWN CONTRACT                 ║
+ * ║                                                              ║
+ * ║  Pure game logic: 7-day timer, community vote, holder check. ║
+ * ║  No ETH flows through this contract.                         ║
+ * ║                                                              ║
+ * ║  Financial logic (50/40/10 split, claims, sweep) lives in    ║
+ * ║  BlockHuntEscrow — a separate, dedicated custodial contract. ║
+ * ╚══════════════════════════════════════════════════════════════╝
+ */
+
 interface IBlockHuntTokenCountdown {
     function hasAllTiers(address player) external view returns (bool);
-      // SESSION 3: called when this contract disqualifies a holder mid-countdown
     function resetExpiredHolder() external;
 }
 
@@ -22,9 +33,11 @@ contract BlockHuntCountdown is Ownable {
     uint256 public votesBurn;
     uint256 public votesClaim;
     mapping(address => bool) public hasVoted;
+    address[] private _voterList;
 
     uint256 public season;
 
+    // ── Events ──────────────────────────────────────────────────────────────
     event CountdownStarted(address indexed holder, uint256 startTime, uint256 endTime);
     event CountdownEnded(address indexed formerHolder);
     event VoteCast(address indexed voter, bool burnVote);
@@ -36,10 +49,8 @@ contract BlockHuntCountdown is Ownable {
 
     function setTokenContract(address addr) external onlyOwner { tokenContract = addr; }
 
-    /**
-     * @notice Called by BlockHuntToken when a player triggers the countdown.
-     *         Records the holder and start time for the community vote UI.
-     */
+    // ── Called by BlockHuntToken when a player triggers the countdown ─────────
+
     function startCountdown(address holder) external {
         require(msg.sender == tokenContract, "Only token contract");
         require(!isActive, "Countdown already active");
@@ -57,8 +68,6 @@ contract BlockHuntCountdown is Ownable {
      * @notice Called by BlockHuntToken after any endgame execution
      *         (claim, sacrifice, or default sacrifice).
      *         Resets this contract's state so it accurately reflects reality.
-     *         Fixes the pre-existing bug where isActive stayed true permanently
-     *         after the game ended.
      */
     function syncReset() external {
         require(msg.sender == tokenContract, "Only token contract");
@@ -69,8 +78,8 @@ contract BlockHuntCountdown is Ownable {
 
     /**
      * @notice Called by anyone (typically Gelato keeper) to check whether the
-     *         countdown holder has sold or transferred their tiers below the threshold.
-     *         If they no longer qualify, resets the countdown so a new holder can start.
+     *         countdown holder still qualifies. If they transferred away a
+     *         required tier, resets the countdown so a new holder can start.
      */
     function checkHolderStatus() external {
         if (!isActive) return;
@@ -78,8 +87,6 @@ contract BlockHuntCountdown is Ownable {
         if (!stillHolds) {
             address former = currentHolder;
             _resetCountdown();
-            // SESSION 3: also reset Token's side — without this, token.countdownActive
-            // stays true permanently, blocking any new countdown from ever starting.
             IBlockHuntTokenCountdown(tokenContract).resetExpiredHolder();
             emit CountdownReset(former);
         }
@@ -94,6 +101,7 @@ contract BlockHuntCountdown is Ownable {
         require(isActive, "No active countdown");
         require(!hasVoted[msg.sender], "Already voted");
         hasVoted[msg.sender] = true;
+        _voterList.push(msg.sender);
         if (burnVote) {
             votesBurn++;
         } else {
@@ -102,7 +110,7 @@ contract BlockHuntCountdown is Ownable {
         emit VoteCast(msg.sender, burnVote);
     }
 
-    // ── VIEW HELPERS ──────────────────────────────────────────────────
+    // ── VIEW HELPERS ────────────────────────────────────────────────────────
 
     function timeRemaining() external view returns (uint256) {
         if (!isActive) return 0;
@@ -134,7 +142,7 @@ contract BlockHuntCountdown is Ownable {
         claimVotes = votesClaim;
     }
 
-    // ── INTERNAL ──────────────────────────────────────────────────────
+    // ── INTERNAL ────────────────────────────────────────────────────────────
 
     function _resetCountdown() internal {
         isActive           = false;
@@ -142,5 +150,9 @@ contract BlockHuntCountdown is Ownable {
         countdownStartTime = 0;
         votesBurn          = 0;
         votesClaim         = 0;
+        for (uint256 i = 0; i < _voterList.length; i++) {
+            hasVoted[_voterList[i]] = false;
+        }
+        delete _voterList;
     }
 }

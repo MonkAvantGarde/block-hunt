@@ -9,8 +9,31 @@ interface IBlockHuntTokenMint {
 
 contract BlockHuntMintWindow is Ownable {
 
-    uint256 public constant BASE_DAILY_CAP  = 50_000;
-    uint256 public constant WINDOW_DURATION = 24 hours;
+    uint256 public constant WINDOW_DURATION = 6 hours;
+    uint256 public constant TOTAL_BATCHES   = 6;
+
+    // [NEW] Minimum time between window opens. Two windows/day at 08:00 and
+    // 20:00 UTC = 12 hours apart. The keeper calls openWindow() on schedule,
+    // but the on-chain guard means anyone can call it and the timing is safe.
+    uint256 public constant MIN_WINDOW_GAP = 12 hours;
+
+    function batchSupply(uint256 batch) public pure returns (uint256) {
+        if (batch == 1) return 500_000;
+        if (batch == 2) return 500_000;
+        if (batch == 3) return 1_000_000;
+        if (batch == 4) return 2_000_000;
+        if (batch == 5) return 4_000_000;
+        if (batch == 6) return 2_000_000;
+        return 2_000_000;
+    }
+
+    function windowCapForBatch(uint256 batch) public pure returns (uint256) {
+        if (batch <= 2) return 25_000;
+        if (batch == 3) return 50_000;
+        if (batch == 4) return 100_000;
+        if (batch == 5) return 200_000;
+        return 100_000;
+    }
 
     address public tokenContract;
 
@@ -26,7 +49,6 @@ contract BlockHuntMintWindow is Ownable {
     struct Batch {
         uint256 id;
         uint256 startDay;
-        uint256 endDay;
         uint256 totalMinted;
     }
 
@@ -39,29 +61,45 @@ contract BlockHuntMintWindow is Ownable {
     uint256 public currentBatch;
     uint256 public perUserDayCap = 500;
 
-    uint256 public constant BATCH_DURATION_DAYS = 30;
-    uint256 public constant TOTAL_BATCHES = 6;
-
     event WindowOpened(uint256 indexed day, uint256 openAt, uint256 closeAt, uint256 allocated);
     event WindowClosed(uint256 indexed day, uint256 minted, uint256 rollover);
     event BatchAdvanced(uint256 indexed newBatch, uint256 day);
 
     constructor() Ownable(msg.sender) {
         currentBatch = 1;
-        batches[1] = Batch({ id: 1, startDay: 1, endDay: 30, totalMinted: 0 });
+        batches[1] = Batch({ id: 1, startDay: 1, totalMinted: 0 });
     }
 
     function setTokenContract(address addr) external onlyOwner { tokenContract = addr; }
     function setPerUserDayCap(uint256 cap) external onlyOwner { perUserDayCap = cap; }
 
-    function openWindow() external onlyOwner {
+    /**
+     * @notice Opens a new mint window. Settles the previous window if needed.
+     *
+     * [CHANGED] Removed onlyOwner — now permissionless with a time guard.
+     * A Gelato keeper calls this every 12 hours on schedule. If the keeper
+     * is down, any community member can call it instead.
+     *
+     * Guard: at least MIN_WINDOW_GAP (12 hours) since the last window opened.
+     * First window (currentDay == 0) has no time guard so deployment works.
+     */
+    function openWindow() external {
+        // Time guard: prevent windows from being opened too frequently
+        if (currentDay > 0) {
+            require(
+                block.timestamp >= windows[currentDay].openAt + MIN_WINDOW_GAP,
+                "Too early for next window"
+            );
+        }
+
+        // Settle previous window if still open
         Window storage prev = windows[currentDay];
         if (prev.openAt > 0 && !prev.settled) {
             _closeWindow(currentDay);
         }
 
         currentDay++;
-        uint256 allocated = BASE_DAILY_CAP + rolloverSupply;
+        uint256 allocated = windowCapForBatch(currentBatch) + rolloverSupply;
         rolloverSupply = 0;
 
         windows[currentDay] = Window({
@@ -81,7 +119,19 @@ contract BlockHuntMintWindow is Ownable {
         emit WindowOpened(currentDay, block.timestamp, block.timestamp + WINDOW_DURATION, allocated);
     }
 
-    function closeWindow() external onlyOwner {
+    /**
+     * @notice Explicitly settle a window after it has expired.
+     *
+     * [CHANGED] Removed onlyOwner — permissionless but only works after the
+     * window's closeAt time has passed. Useful for triggering rollover
+     * accounting without waiting for the next openWindow() call.
+     *
+     * Not strictly necessary (openWindow auto-settles), but keeps state clean.
+     */
+    function closeWindow() external {
+        Window storage w = windows[currentDay];
+        require(w.openAt > 0, "No window exists");
+        require(block.timestamp > w.closeAt, "Window still active");
         _closeWindow(currentDay);
     }
 
@@ -95,13 +145,13 @@ contract BlockHuntMintWindow is Ownable {
     }
 
     function _checkBatchAdvancement() internal {
+        if (currentBatch >= TOTAL_BATCHES) return;
         Batch storage batch = batches[currentBatch];
-        if (currentDay > batch.endDay && currentBatch < TOTAL_BATCHES) {
+        if (batch.totalMinted >= batchSupply(currentBatch)) {
             currentBatch++;
             batches[currentBatch] = Batch({
-                id: currentBatch,
-                startDay: currentDay,
-                endDay: currentDay + BATCH_DURATION_DAYS - 1,
+                id:          currentBatch,
+                startDay:    currentDay,
                 totalMinted: 0
             });
             emit BatchAdvanced(currentBatch, currentDay);
@@ -119,12 +169,25 @@ contract BlockHuntMintWindow is Ownable {
         );
     }
 
-     function recordMint(address player, uint256 quantity) external {
+    /**
+     * [FIX H2] Added per-user cap enforcement. Previously perUserDayCap was
+     * tracked in userDayMints but never checked — a single wallet could mint
+     * the entire window allocation via repeated 500-block transactions.
+     */
+    function recordMint(address player, uint256 quantity) external {
         require(msg.sender == tokenContract, "Only token contract");
+
+        // [FIX H2] Enforce per-user window cap
+        require(
+            userDayMints[currentDay][player] + quantity <= perUserDayCap,
+            "Per-user window cap reached"
+        );
+
         Window storage w = windows[currentDay];
         w.minted += quantity;
         batches[currentBatch].totalMinted += quantity;
         userDayMints[currentDay][player] += quantity;
+        _checkBatchAdvancement();
     }
 
     function getWindowInfo() external view returns (

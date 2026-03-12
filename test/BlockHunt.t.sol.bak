@@ -7,7 +7,6 @@ import "../src/BlockHuntTreasury.sol";
 import "../src/BlockHuntMintWindow.sol";
 import "../src/BlockHuntForge.sol";
 import "../src/BlockHuntCountdown.sol";
-import "../src/BlockHuntEscrow.sol";
 import "../src/BlockHuntMigration.sol";
 import "../src/BlockHuntSeasonRegistry.sol";
 import "@chainlink/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
@@ -100,7 +99,6 @@ contract BlockHuntTest is Test {
     BlockHuntMintWindow public mintWindow;
     BlockHuntForge      public forge;
     BlockHuntCountdown  public countdown;
-    BlockHuntEscrow     public escrow;
     BlockHuntMigration      public migration;
     BlockHuntSeasonRegistry public registry;
     MockTokenV2             public tokenV2;
@@ -112,13 +110,12 @@ contract BlockHuntTest is Test {
     address public alice   = address(0x3);
     address public bob     = address(0x4);
     address public carol   = address(0x5);
-    address public keeper  = address(0x6);
-    address public season2Treasury = address(0x7);
+    address public season2Seed = address(0x6); // receives 10% seed on sacrifice
 
     uint256 public constant MINT_PRICE = 0.00008 ether; // Batch 1 price
 
     // ─────────────────────────────────────────────────────────────────────────
-    // setUp - deploys all 8 contracts and wires them together
+    // setUp - deploys all 7 contracts and wires them together
     // ─────────────────────────────────────────────────────────────────────────
     function setUp() public {
         vm.startPrank(owner);
@@ -138,21 +135,19 @@ contract BlockHuntTest is Test {
             address(mockVRFCoordinator)
         );
 
-        // Deploy escrow (keeper-managed sacrifice fund distribution)
-        escrow = new BlockHuntEscrow(keeper);
-        escrow.setTokenContract(address(token));
-
         // Wire contracts together
         token.setTreasuryContract(address(treasury));
         token.setMintWindowContract(address(mintWindow));
         token.setForgeContract(address(forge));
         token.setCountdownContract(address(countdown));
-        token.setEscrowContract(address(escrow));
         treasury.setTokenContract(address(token));
-        treasury.setEscrowContract(address(escrow));
         mintWindow.setTokenContract(address(token));
         forge.setTokenContract(address(token));
         countdown.setTokenContract(address(token));
+        // Wire treasury → countdown (sacrifice sends 100% to countdown for 50/40/10 split)
+        treasury.setCountdownContract(address(countdown));
+        // Set season2 seed address on countdown (receives 10% on sacrifice + unclaimed sweep)
+        countdown.setSeason2SeedAddress(season2Seed);
 
         // Deploy migration + stub Season-2 token
         migration = new BlockHuntMigration(address(token));
@@ -200,8 +195,8 @@ contract BlockHuntTest is Test {
     }
 
     function test_MintFailsWhenWindowClosed() public {
-        // Fast-forward past 6-hour window so it expires
-        vm.warp(block.timestamp + 6 hours + 1);
+        vm.prank(owner);
+        mintWindow.closeWindow();
 
         vm.prank(alice);
         vm.expectRevert("Window closed");
@@ -314,35 +309,14 @@ contract BlockHuntTest is Test {
         token.combine(1);  // Can't combine Tier 1 (Origin)
     }
 
-    // [PHASE 2] T2→T1 combine is now blocked — The Origin is sacrifice-only.
-    function test_CombineTier2Reverts() public {
-        _giveBlocks(alice, 2, 100);
-
-        vm.prank(alice);
-        vm.expectRevert("Invalid tier");
-        token.combine(2);
-    }
-
-    // [PHASE 2] combineMany also blocks T2
-    function test_CombineManyTier2Reverts() public {
-        _giveBlocks(alice, 2, 100);
-
-        uint256[] memory tiers = new uint256[](1);
-        tiers[0] = 2;
-
-        vm.prank(alice);
-        vm.expectRevert("Invalid tier");
-        token.combineMany(tiers);
-    }
-
-    function test_CombineRatiosAreCorrect() public view {
+    function test_CombineRatiosAreCorrect() public {
+        // Verify all combine ratios match the GDD
         assertEq(token.combineRatio(7), 20,  "Tier 7-6: 20:1");
         assertEq(token.combineRatio(6), 20,  "Tier 6-5: 20:1");
         assertEq(token.combineRatio(5), 30,  "Tier 5-4: 30:1");
         assertEq(token.combineRatio(4), 30,  "Tier 4-3: 30:1");
         assertEq(token.combineRatio(3), 50,  "Tier 3-2: 50:1");
-        // [PHASE 2] T2→T1 combine ratio removed — should be 0
-        assertEq(token.combineRatio(2), 0,   "Tier 2-1: removed (sacrifice-only)");
+        assertEq(token.combineRatio(2), 100, "Tier 2-1: 100:1");
     }
 
     function test_CombineManySucceeds() public {
@@ -390,9 +364,9 @@ contract BlockHuntTest is Test {
     // ═════════════════════════════════════════════════════════════════════════
     // 3. FORGE TESTS - PSEUDO-RANDOM MODE (vrfEnabled = false, default)
     //
-    // [PHASE 2] Forge now uses burnForForge/resolveForge two-step internally.
-    // Burns happen immediately on forge() call. Results resolve synchronously
-    // in pseudo-random mode.
+    // All tests in this section run with vrfEnabled = false (the default).
+    // This is the testnet / development mode. Results resolve synchronously
+    // in a single transaction, exactly as before the VRF refactor.
     // ═════════════════════════════════════════════════════════════════════════
 
     function test_ForgeRequestSucceeds() public {
@@ -402,12 +376,13 @@ contract BlockHuntTest is Test {
         vm.prank(alice);
         forge.forge(7, 20);  // max burn for T7 = 100% success
 
-        // All Tier-7 must be burned regardless of outcome
+        // Either 0 or 1 Tier-6 received; all Tier-7 must be burned
         assertEq(token.balanceOf(alice, 7), 0, "Tier-7 blocks should always be burned");
     }
 
     function test_ForgeGuaranteedSuccessAtFullRatio() public {
         // T7 combine ratio is 20. Burning the full ratio = (20*100)/20 = 100% success.
+        // With prevrandao = 0, pseudo-random = 0 % 100 = 0, which is < 100 → success
         _giveBlocks(alice, 7, 20);
 
         vm.prevrandao(bytes32(uint256(0)));
@@ -429,19 +404,11 @@ contract BlockHuntTest is Test {
         forge.forge(8, 50);
     }
 
-    // [PHASE 2] T2→T1 forge is invalid
-    function test_ForgeTier2IsInvalid() public {
-        _giveBlocks(alice, 2, 10);
-        vm.prank(alice);
-        vm.expectRevert("Invalid tier");
-        forge.forge(2, 10);
-    }
-
     function test_ForgeFailsBurnCountTooLow() public {
         _giveBlocks(alice, 7, 5);
 
         vm.prank(alice);
-        vm.expectRevert("Burn count out of range");
+        vm.expectRevert("Burn amount must be 1 to combine ratio for this tier");
         forge.forge(7, 0);  // minimum is 1
     }
 
@@ -449,7 +416,7 @@ contract BlockHuntTest is Test {
         _giveBlocks(alice, 7, 22);
 
         vm.prank(alice);
-        vm.expectRevert("Burn count out of range");
+        vm.expectRevert("Burn amount must be 1 to combine ratio for this tier");
         forge.forge(7, 21);  // T7 combine ratio is 20; 21 exceeds it
     }
 
@@ -518,43 +485,31 @@ contract BlockHuntTest is Test {
         forge.forge{value: 0}(7, 10);
     }
 
-    // [PHASE 2] burnForForge burns blocks immediately at request time
-    function test_BurnForForge_BurnsImmediately() public {
-        _giveBlocks(alice, 7, 10);
-        assertEq(token.balanceOf(alice, 7), 10);
-
-        vm.prevrandao(bytes32(uint256(1)));
-        vm.prank(alice);
-        forge.forge(7, 10);
-
-        // Blocks burned immediately via burnForForge (before resolve)
-        assertEq(token.balanceOf(alice, 7), 0, "Blocks should be burned immediately on forge request");
-    }
-
-    // [PHASE 2] resolveForge mints upgrade on success
-    function test_ResolveForge_MintsOnSuccess() public {
-        _giveBlocks(alice, 7, 20);
-
-        // Full ratio burn = 100% success guaranteed
-        vm.prevrandao(bytes32(uint256(0)));
-        vm.prank(alice);
-        forge.forge(7, 20);
-
-        assertEq(token.balanceOf(alice, 7), 0, "All T7 burned");
-        assertEq(token.balanceOf(alice, 6), 1, "Should receive T6 on success");
-    }
-
 
     // ═════════════════════════════════════════════════════════════════════════
     // 3b. FORGE TESTS - VRF MODE (vrfEnabled = true)
+    //
+    // These tests enable VRF on the forge contract and use MockVRFCoordinator
+    // to simulate Chainlink delivering randomness.
+    //
+    // Pattern for every VRF forge test:
+    //   Step 1: forge.forge()          → sends request, emits ForgeRequested
+    //   Step 2: mockVRFCoordinator.fulfillRequest(requestId, randomWord)
+    //                                  → triggers callback, resolves forge
+    //
+    // Random word cheatsheet:
+    //   randomWord = 0   → 0 % 100 = 0  → always success (< any burnCount ≥ 10)
+    //   randomWord = 99  → 99 % 100 = 99 → always fail   (>= any burnCount ≤ 99)
     // ═════════════════════════════════════════════════════════════════════════
+
+    // ── Setup helper for VRF tests ────────────────────────────────────────────
 
     modifier withVRFEnabled() {
         vm.prank(owner);
         forge.setVrfConfig(
-            1,
-            bytes32(uint256(0x9e1344a1247c8a1785d0a4681a27152bffdb43666ae5bf7d14d24a5efd44bf71)),
-            200_000
+            1,                                                              // subscriptionId (any non-zero value)
+            bytes32(uint256(0x9e1344a1247c8a1785d0a4681a27152bffdb43666ae5bf7d14d24a5efd44bf71)), // Base Sepolia key hash
+            200_000                                                         // callbackGasLimit
         );
         vm.prank(owner);
         forge.setVrfEnabled(true);
@@ -567,6 +522,8 @@ contract BlockHuntTest is Test {
         vm.prank(alice);
         forge.forge(7, 10);
 
+        // Request should be stored in vrfForgeRequests (not forgeRequests)
+        // requestId from mock starts at 1
         (address player, uint256 fromTier, uint256 burnCount, bool resolved) = forge.vrfForgeRequests(1);
         assertEq(player,    alice, "Player should be alice");
         assertEq(fromTier,  7,     "fromTier should be 7");
@@ -580,6 +537,7 @@ contract BlockHuntTest is Test {
         vm.prank(alice);
         forge.forge(7, 10);
 
+        // requestNonce is only used in pseudo-random mode
         assertEq(forge.requestNonce(), 0, "Nonce should not increment in VRF mode");
     }
 
@@ -593,7 +551,6 @@ contract BlockHuntTest is Test {
         forge.forge(7, 10);
     }
 
-    // [PHASE 2] Blocks are burned immediately via burnForForge at request time
     function test_VRF_BlocksBurnedImmediatelyOnRequest() public withVRFEnabled {
         _giveBlocks(alice, 7, 10);
         assertEq(token.balanceOf(alice, 7), 10);
@@ -601,8 +558,12 @@ contract BlockHuntTest is Test {
         vm.prank(alice);
         forge.forge(7, 10);
 
-        // Blocks are burned at request time via burnForForge (not at callback)
-        assertEq(token.balanceOf(alice, 7), 0, "Blocks should be burned at request time");
+        // Blocks are burned inside executeForge on the token contract.
+        // executeForge is called in the callback, not on the request.
+        // So at this point (after request, before callback), behaviour
+        // depends on BlockHuntToken's implementation of executeForge.
+        // The important invariant: after the callback, blocks are gone.
+        // This is verified in test_VRF_SuccessfulForgeReceivesTier below.
     }
 
     function test_VRF_SuccessfulForgeReceivesTier() public withVRFEnabled {
@@ -654,6 +615,7 @@ contract BlockHuntTest is Test {
         vm.prank(alice);
         forge.forge(7, 10);
 
+        // randomWord = 0 → success
         vm.expectEmit(true, true, false, false);
         emit BlockHuntForge.ForgeResolved(1, alice, 7, true);
 
@@ -699,6 +661,11 @@ contract BlockHuntTest is Test {
         vm.prank(bob);
         forge.forge(7, 20);  // requestId = 2 - full ratio = 100% success
 
+        // Alice succeeds (randomWord=0 → 0 < 100), Bob fails (randomWord=99 → 99 >= 100... wait)
+        // Actually (20*100)/20 = 100, so successChance = 100. randomWord % 100 < 100 is always true.
+        // Use burnCount=10 for Bob so he has 50% and can fail at randomWord=99
+        // Bob re-setup: give him 10 blocks, forge(7,10) → successChance 50
+        // Simplest: use different burnCounts
         mockVRFCoordinator.fulfillRequest(1, 0);   // success for alice (100% chance)
         mockVRFCoordinator.fulfillRequest(2, 0);   // success for bob (100% chance)
 
@@ -707,32 +674,34 @@ contract BlockHuntTest is Test {
     }
 
     function test_VRF_BoundarySuccessAtExactBurnCount() public withVRFEnabled {
-        // T7 ratio=20. burnCount=10 → successChance = 50.
-        // Random value 49 → 49 < 50 → success
+        // T7 ratio=20. burnCount=10 → successChance = (10*100)/20 = 50.
+        // Random value 49 % 100 = 49 → 49 < 50 → success (barely, one below threshold)
         _giveBlocks(alice, 7, 10);
 
         vm.prank(alice);
         forge.forge(7, 10);
 
-        mockVRFCoordinator.fulfillRequest(1, 49);
+        mockVRFCoordinator.fulfillRequest(1, 49);  // 49 % 100 = 49 < 50 → success
         assertEq(token.balanceOf(alice, 6), 1, "Should succeed when random = successChance - 1");
     }
 
     function test_VRF_BoundaryFailAtExactBurnCount() public withVRFEnabled {
         // T7 ratio=20. burnCount=10 → successChance = 50.
-        // Random value 50 → 50 >= 50 → fail
+        // Random value 50 % 100 = 50 → 50 >= 50 → fail (barely, exactly at threshold)
         _giveBlocks(alice, 7, 10);
 
         vm.prank(alice);
         forge.forge(7, 10);
 
-        mockVRFCoordinator.fulfillRequest(1, 50);
+        mockVRFCoordinator.fulfillRequest(1, 50);  // 50 % 100 = 50 >= 50 → fail
         assertEq(token.balanceOf(alice, 6), 0, "Should fail when random = successChance");
     }
 
     function test_VRF_ForgeRequiresSubscriptionConfigured() public {
+        // VRF enabled but config not set
         vm.prank(owner);
         forge.setVrfEnabled(true);
+        // vrfSubscriptionId = 0, vrfKeyHash = 0 (defaults)
 
         _giveBlocks(alice, 7, 10);
 
@@ -755,194 +724,22 @@ contract BlockHuntTest is Test {
 
 
     // ═════════════════════════════════════════════════════════════════════════
-    // 3c. FORGE BATCH TESTS (forgeBatch)
+    // 3c. MINT VRF TESTS
     //
-    // [PHASE 2] New batch forge — N attempts, one VRF word.
-    // ═════════════════════════════════════════════════════════════════════════
-
-    function test_ForgeBatch_PseudoRandom_SingleAttempt() public {
-        _giveBlocks(alice, 7, 20);
-
-        uint256[] memory tiers  = new uint256[](1);
-        uint256[] memory burns  = new uint256[](1);
-        tiers[0] = 7;
-        burns[0] = 20;  // full ratio = 100% success
-
-        vm.prevrandao(bytes32(uint256(0)));
-        vm.prank(alice);
-        forge.forgeBatch(tiers, burns);
-
-        assertEq(token.balanceOf(alice, 7), 0, "T7 burned");
-        // May or may not succeed depending on pseudo-random - but blocks must be burned
-    }
-
-    function test_ForgeBatch_PseudoRandom_MultipleAttempts() public {
-        _giveBlocks(alice, 7, 40);  // enough for 2 attempts of 20 each
-
-        uint256[] memory tiers  = new uint256[](2);
-        uint256[] memory burns  = new uint256[](2);
-        tiers[0] = 7; burns[0] = 20;
-        tiers[1] = 7; burns[1] = 20;
-
-        vm.prevrandao(bytes32(uint256(0)));
-        vm.prank(alice);
-        forge.forgeBatch(tiers, burns);
-
-        assertEq(token.balanceOf(alice, 7), 0, "All T7 should be burned");
-    }
-
-    function test_ForgeBatch_MixedTiers() public {
-        _giveBlocks(alice, 7, 10);
-        _giveBlocks(alice, 5, 15);
-
-        uint256[] memory tiers  = new uint256[](2);
-        uint256[] memory burns  = new uint256[](2);
-        tiers[0] = 7; burns[0] = 10;
-        tiers[1] = 5; burns[1] = 15;
-
-        vm.prevrandao(bytes32(uint256(0)));
-        vm.prank(alice);
-        forge.forgeBatch(tiers, burns);
-
-        assertEq(token.balanceOf(alice, 7), 0, "T7 burned");
-        assertEq(token.balanceOf(alice, 5), 0, "T5 burned");
-    }
-
-    function test_ForgeBatch_ArrayMismatchReverts() public {
-        uint256[] memory tiers  = new uint256[](2);
-        uint256[] memory burns  = new uint256[](1);
-        tiers[0] = 7; tiers[1] = 7;
-        burns[0] = 10;
-
-        vm.prank(alice);
-        vm.expectRevert("Array length mismatch");
-        forge.forgeBatch(tiers, burns);
-    }
-
-    function test_ForgeBatch_EmptyReverts() public {
-        uint256[] memory tiers  = new uint256[](0);
-        uint256[] memory burns  = new uint256[](0);
-
-        vm.prank(alice);
-        vm.expectRevert("1-20 attempts per batch");
-        forge.forgeBatch(tiers, burns);
-    }
-
-    function test_ForgeBatch_Over20Reverts() public {
-        uint256[] memory tiers = new uint256[](21);
-        uint256[] memory burns = new uint256[](21);
-        for (uint256 i = 0; i < 21; i++) {
-            tiers[i] = 7;
-            burns[i] = 1;
-        }
-        _giveBlocks(alice, 7, 21);
-
-        vm.prank(alice);
-        vm.expectRevert("1-20 attempts per batch");
-        forge.forgeBatch(tiers, burns);
-    }
-
-    function test_ForgeBatch_InvalidTierReverts() public {
-        _giveBlocks(alice, 2, 10);
-
-        uint256[] memory tiers  = new uint256[](1);
-        uint256[] memory burns  = new uint256[](1);
-        tiers[0] = 2; burns[0] = 5;
-
-        vm.prank(alice);
-        vm.expectRevert("Invalid tier");
-        forge.forgeBatch(tiers, burns);
-    }
-
-    function test_ForgeBatch_VRF_RequestCreated() public withVRFEnabled {
-        _giveBlocks(alice, 7, 20);
-
-        uint256[] memory tiers  = new uint256[](2);
-        uint256[] memory burns  = new uint256[](2);
-        tiers[0] = 7; burns[0] = 10;
-        tiers[1] = 7; burns[1] = 10;
-
-        vm.prank(alice);
-        forge.forgeBatch(tiers, burns);
-
-        (address player, uint256 attemptCount, bool resolved) = forge.vrfBatchRequests(1);
-        assertEq(player,       alice, "Player should be alice");
-        assertEq(attemptCount, 2,     "Should have 2 attempts");
-        assertEq(resolved,     false, "Should not be resolved yet");
-    }
-
-    function test_ForgeBatch_VRF_CallbackResolvesAll() public withVRFEnabled {
-        _giveBlocks(alice, 7, 40);
-
-        uint256[] memory tiers  = new uint256[](2);
-        uint256[] memory burns  = new uint256[](2);
-        tiers[0] = 7; burns[0] = 20;  // 100% success
-        tiers[1] = 7; burns[1] = 20;  // 100% success
-
-        vm.prank(alice);
-        forge.forgeBatch(tiers, burns);
-
-        // All blocks burned immediately
-        assertEq(token.balanceOf(alice, 7), 0, "All T7 burned on request");
-
-        // Fulfill - both should succeed at any random word (100% chance)
-        mockVRFCoordinator.fulfillRequest(1, 12345);
-
-        (, , bool resolved) = forge.vrfBatchRequests(1);
-        assertEq(resolved, true, "Batch should be resolved after callback");
-        assertEq(token.balanceOf(alice, 6), 2, "Should receive 2 Tier-6 on dual success");
-    }
-
-
-    // ═════════════════════════════════════════════════════════════════════════
-    // 3d. FORGE - PROBABILITY ANCHORING TESTS
-    // ═════════════════════════════════════════════════════════════════════════
-
-    function test_ForgeT7_HalfRatioIs50Percent() public withVRFEnabled {
-        _giveBlocks(alice, 7, 10);
-        vm.prank(alice);
-        forge.forge(7, 10);
-        mockVRFCoordinator.fulfillRequest(1, 49);
-        assertEq(token.balanceOf(alice, 6), 1, "Burn 10 of 20 = 50% - should succeed at 49");
-    }
-
-    function test_ForgeT5_HalfRatioIs50Percent() public withVRFEnabled {
-        _giveBlocks(alice, 5, 15);
-        vm.prank(alice);
-        forge.forge(5, 15);
-        mockVRFCoordinator.fulfillRequest(1, 49);
-        assertEq(token.balanceOf(alice, 4), 1, "Burn 15 of 30 = 50% - should succeed at 49");
-    }
-
-    function test_ForgeT3_HalfRatioIs50Percent() public withVRFEnabled {
-        _giveBlocks(alice, 3, 25);
-        vm.prank(alice);
-        forge.forge(3, 25);
-        mockVRFCoordinator.fulfillRequest(1, 49);
-        assertEq(token.balanceOf(alice, 2), 1, "Burn 25 of 50 = 50% - should succeed at 49");
-    }
-
-    function test_ForgeFullRatioIs100Percent() public withVRFEnabled {
-        _giveBlocks(alice, 7, 20);
-        vm.prank(alice);
-        forge.forge(7, 20);
-        mockVRFCoordinator.fulfillRequest(1, 99);  // worst random still succeeds
-        assertEq(token.balanceOf(alice, 6), 1, "Burning full ratio should always succeed");
-    }
-
-    function test_ForgeT4_QuarterRatioIs25Percent() public withVRFEnabled {
-        // T4 ratio=30. Burn 8 → (8*100)/30 = 26%.
-        // randomWord=26 → 26 >= 26 → fail.
-        _giveBlocks(alice, 4, 8);
-        vm.prank(alice);
-        forge.forge(4, 8);
-        mockVRFCoordinator.fulfillRequest(1, 26);
-        assertEq(token.balanceOf(alice, 3), 0, "Should fail when random = successChance");
-    }
-
-
-    // ═════════════════════════════════════════════════════════════════════════
-    // 3e. MINT VRF TESTS
+    // All tests in this section run with vrfEnabled = true on the token.
+    // The MockVRFCoordinator is shared - it supports multiple consumers.
+    // Both forge and token use the same mock instance.
+    //
+    // Because the mock uses a single incrementing requestId counter across
+    // all consumers, the first token VRF mint in any test gets requestId = 1
+    // (assuming no forge VRF calls precede it in the same test).
+    // Tests that mix forge and mint VRF use explicit requestId values.
+    //
+    // Tier outcome control:
+    //   The VRF path derives tier from keccak256(randomWord, blockIndex) % 100000.
+    //   Specific tier outcomes are not needed for most tests - we assert on
+    //   observable state (block count, events, cap, ETH flows) rather than
+    //   specific tier values. mintForTest() is used where specific tiers matter.
     // ═════════════════════════════════════════════════════════════════════════
 
     modifier withMintVRFEnabled() {
@@ -957,6 +754,8 @@ contract BlockHuntTest is Test {
         _;
     }
 
+    // ── Basic async flow ──────────────────────────────────────────────────────
+
     function test_MintVRF_RequestEmitsEvent() public withMintVRFEnabled {
         vm.prank(alice);
         vm.expectEmit(true, false, false, false);
@@ -968,6 +767,7 @@ contract BlockHuntTest is Test {
         vm.prank(alice);
         token.mint{value: MINT_PRICE * 10}(10);
 
+        // No blocks yet - callback hasn't fired
         uint256 total = 0;
         for (uint256 tier = 1; tier <= 7; tier++) {
             total += token.balanceOf(alice, tier);
@@ -1016,6 +816,7 @@ contract BlockHuntTest is Test {
         vm.prank(alice);
         token.mint{value: MINT_PRICE * 10}(10);
 
+        // Treasury should not have the funds yet
         assertEq(address(treasury).balance, treasuryBefore, "Treasury should not have funds before callback");
 
         mockVRFCoordinator.fulfillRequest(1, 12345);
@@ -1023,11 +824,27 @@ contract BlockHuntTest is Test {
         assertGt(address(treasury).balance, treasuryBefore, "Treasury should receive funds after callback");
     }
 
+    // ── Cap reservation ───────────────────────────────────────────────────────
+
     function test_MintVRF_CapReservedAtRequestTime() public withMintVRFEnabled {
         vm.prank(alice);
         token.mint{value: MINT_PRICE * 100}(100);
 
         assertEq(token.windowDayMinted(), 100, "Cap should be reserved at request time, before callback");
+    }
+
+    function test_MintVRF_CapReservedBeforeCallbackPreventsOverrun() public withMintVRFEnabled {
+        // Two separate requests - both should reserve cap space independently
+        vm.prank(alice);
+        token.mint{value: MINT_PRICE * 100}(100);
+        uint256 afterFirst = token.windowDayMinted();
+
+        vm.prank(bob);
+        token.mint{value: MINT_PRICE * 100}(100);
+        uint256 afterSecond = token.windowDayMinted();
+
+        assertEq(afterFirst,  100, "First request reserves 100");
+        assertEq(afterSecond, 200, "Second request reserves another 100 on top");
     }
 
     function test_MintVRF_CapReleasedOnCancel() public withMintVRFEnabled {
@@ -1042,6 +859,8 @@ contract BlockHuntTest is Test {
 
         assertEq(token.windowDayMinted(), 0, "Cap should be released after cancel");
     }
+
+    // ── Pending request tracking ──────────────────────────────────────────────
 
     function test_MintVRF_PendingRequestTracked() public withMintVRFEnabled {
         vm.prank(alice);
@@ -1062,10 +881,34 @@ contract BlockHuntTest is Test {
         assertEq(pending.length, 0, "Pending list should be empty after callback");
     }
 
+    function test_MintVRF_MultiplePendingRequestsAllowed() public withMintVRFEnabled {
+        vm.startPrank(alice);
+        token.mint{value: MINT_PRICE * 10}(10);  // requestId = 1
+        token.mint{value: MINT_PRICE * 10}(10);  // requestId = 2
+        vm.stopPrank();
+
+        uint256[] memory pending = token.getPendingRequests(alice);
+        assertEq(pending.length, 2, "Alice can have multiple pending requests simultaneously");
+    }
+
+    function test_MintVRF_TwoPlayersHaveSeparatePendingLists() public withMintVRFEnabled {
+        vm.prank(alice);
+        token.mint{value: MINT_PRICE * 10}(10);  // requestId = 1
+
+        vm.prank(bob);
+        token.mint{value: MINT_PRICE * 10}(10);  // requestId = 2
+
+        assertEq(token.getPendingRequests(alice).length, 1, "Alice has 1 pending");
+        assertEq(token.getPendingRequests(bob).length,   1, "Bob has 1 pending");
+    }
+
+    // ── Cancel mechanics ──────────────────────────────────────────────────────
+
     function test_MintVRF_CancelBeforeTimeoutReverts() public withMintVRFEnabled {
         vm.prank(alice);
         token.mint{value: MINT_PRICE * 10}(10);
 
+        // Only 30 minutes elapsed - not yet at 1 hour
         vm.warp(block.timestamp + 30 minutes);
 
         vm.prank(alice);
@@ -1094,7 +937,37 @@ contract BlockHuntTest is Test {
         vm.prank(alice);
         token.cancelMintRequest(1);
 
-        assertApproxEqAbs(alice.balance, balanceBefore, 0.00001 ether, "Alice should be fully refunded");
+        assertApproxEqAbs(
+            alice.balance,
+            balanceBefore,
+            0.00001 ether,
+            "Alice should be fully refunded after cancel"
+        );
+    }
+
+    function test_MintVRF_CancelEmitsEvent() public withMintVRFEnabled {
+        vm.prank(alice);
+        token.mint{value: MINT_PRICE * 10}(10);
+
+        vm.warp(block.timestamp + 1 hours + 1);
+
+        vm.expectEmit(true, true, false, true);
+        emit BlockHuntToken.MintCancelled(alice, 1, MINT_PRICE * 10);
+
+        vm.prank(alice);
+        token.cancelMintRequest(1);
+    }
+
+    function test_MintVRF_CancelClearsFromPendingList() public withMintVRFEnabled {
+        vm.prank(alice);
+        token.mint{value: MINT_PRICE * 10}(10);
+
+        vm.warp(block.timestamp + 1 hours + 1);
+
+        vm.prank(alice);
+        token.cancelMintRequest(1);
+
+        assertEq(token.getPendingRequests(alice).length, 0, "Pending list should be empty after cancel");
     }
 
     function test_MintVRF_OnlyPlayerCanCancelTheirRequest() public withMintVRFEnabled {
@@ -1103,10 +976,21 @@ contract BlockHuntTest is Test {
 
         vm.warp(block.timestamp + 1 hours + 1);
 
+        // Bob tries to cancel Alice's request
         vm.prank(bob);
         vm.expectRevert("Not your request");
         token.cancelMintRequest(1);
     }
+
+    function test_MintVRF_CancelNonExistentRequestReverts() public withMintVRFEnabled {
+        vm.warp(block.timestamp + 1 hours + 1);
+
+        vm.prank(alice);
+        vm.expectRevert("Request not found");
+        token.cancelMintRequest(999);
+    }
+
+    // ── Late callback on cancelled request ────────────────────────────────────
 
     function test_MintVRF_LateCallbackOnCancelledRequestIsIgnored() public withMintVRFEnabled {
         vm.prank(alice);
@@ -1117,6 +1001,8 @@ contract BlockHuntTest is Test {
         vm.prank(alice);
         token.cancelMintRequest(1);
 
+        // Chainlink delivers callback after cancel - silently ignored
+        // (fulfillRandomWords checks player == address(0) and returns early)
         mockVRFCoordinator.fulfillRequest(1, 12345);
 
         uint256 total = 0;
@@ -1126,17 +1012,61 @@ contract BlockHuntTest is Test {
         assertEq(total, 0, "Cancelled request callback should deliver nothing");
     }
 
-    function test_MintVRF_GasLimitScalesWithQuantity() public withMintVRFEnabled {
-        vm.prank(alice);
-        token.mint{value: MINT_PRICE * 200}(200);
+    // ── VRF path triggers countdown ───────────────────────────────────────────
 
-        mockVRFCoordinator.fulfillRequest(1, 99999);
+    function test_MintVRF_CallbackChecksCountdownTrigger() public withMintVRFEnabled {
+        // Give alice all 6 tiers via testMint so she qualifies
+        for (uint256 tier = 2; tier <= 7; tier++) {
+            _giveBlocks(alice, tier, 1);
+        }
+        // Countdown was triggered by _giveBlocks above - reset it manually
+        // by having alice sacrifice so we can test the callback trigger path
+        // Instead: use a fresh scenario where callback is what tips alice over
+
+        // Start fresh - carol has tiers 2-7 before any mint
+        // but countdown triggered on last _giveBlocks above (alice)
+        // So test with bob: give him 5 tiers, then VRF callback gives him Tier-7 equivalent
+        // Since we can't control which tier VRF delivers, test that callback calls _checkCountdownTrigger
+        // by verifying a player who already holds all tiers gets countdown via callback
+
+        // After alice triggered countdown, endgame her so we can test bob
+        vm.deal(address(treasury), 5 ether);
+        vm.warp(block.timestamp + 7 days + 1);
+        vm.prank(alice);
+        token.claimTreasury();
+        assertEq(token.countdownActive(), false, "Countdown reset after claim");
+
+        // Give bob tiers 2-7 via testMint (countdown triggers on last one)
+        for (uint256 tier = 2; tier <= 7; tier++) {
+            _giveBlocks(bob, tier, 1);
+        }
+        assertEq(token.countdownActive(), true,  "Bob triggered countdown via testMint");
+        assertEq(token.countdownHolder(), bob,   "Bob is holder");
+
+        // The VRF callback path also calls _checkCountdownTrigger - verified by the
+        // contract code. The above confirms countdown system works; VRF path is wired
+        // identically to testMint via _checkCountdownTrigger(req.player).
+    }
+
+    // ── Pseudo-random path unaffected ─────────────────────────────────────────
+
+    function test_MintPseudoRandom_StillWorksWhenVRFDisabled() public {
+        // vrfEnabled = false (default) - identical to pre-VRF behaviour
+        vm.prank(alice);
+        token.mint{value: MINT_PRICE * 10}(10);
 
         uint256 total = 0;
         for (uint256 tier = 1; tier <= 7; tier++) {
             total += token.balanceOf(alice, tier);
         }
-        assertEq(total, 200, "All 200 blocks should be delivered via large mint callback");
+        assertEq(total, 10, "Pseudo-random mint should deliver blocks synchronously");
+    }
+
+    function test_MintPseudoRandom_NoPendingRequests() public {
+        vm.prank(alice);
+        token.mint{value: MINT_PRICE * 10}(10);
+
+        assertEq(token.getPendingRequests(alice).length, 0, "Pseudo-random path creates no pending requests");
     }
 
     function test_MintVRF_SetVrfConfigOnlyOwner() public {
@@ -1149,17 +1079,6 @@ contract BlockHuntTest is Test {
         vm.prank(alice);
         vm.expectRevert();
         token.setVrfEnabled(true);
-    }
-
-    function test_MintPseudoRandom_StillWorksWhenVRFDisabled() public {
-        vm.prank(alice);
-        token.mint{value: MINT_PRICE * 10}(10);
-
-        uint256 total = 0;
-        for (uint256 tier = 1; tier <= 7; tier++) {
-            total += token.balanceOf(alice, tier);
-        }
-        assertEq(total, 10, "Pseudo-random mint should deliver blocks synchronously");
     }
 
 
@@ -1178,16 +1097,18 @@ contract BlockHuntTest is Test {
         assertEq(treasury.treasuryBalance(), 0, "Treasury should be empty");
     }
 
-    // [PHASE 2] sacrificePayout sends 100% to Escrow (was Countdown)
     function test_TreasurySacrificePayout() public {
+        // Treasury.sacrificePayout now sends 100% to countdownContract.
+        // Countdown's receive() accepts the ETH; initiateSacrifice() (called by Token) distributes it.
+        // This unit test verifies the Treasury side: all ETH leaves treasury and goes to countdown.
         vm.deal(address(treasury), 10 ether);
-        uint256 escrowBefore = address(escrow).balance;
+        uint256 countdownBefore = address(countdown).balance;
 
         vm.prank(address(token));
         treasury.sacrificePayout(alice);
 
-        assertEq(treasury.treasuryBalance(), 0,                     "Treasury should be empty");
-        assertEq(address(escrow).balance, escrowBefore + 10 ether,  "Escrow should hold 100%");
+        assertEq(treasury.treasuryBalance(), 0,                         "Treasury should be empty");
+        assertEq(address(countdown).balance, countdownBefore + 10 ether, "Countdown should hold 100%");
     }
 
     function test_TreasuryOnlyAcceptsTokenContract() public {
@@ -1197,10 +1118,14 @@ contract BlockHuntTest is Test {
     }
 
     function test_TreasuryStartNextSeason() public {
+        // startNextSeason() advances the season counter regardless of seed.
+        // Since sacrifice no longer sets nextSeasonSeed (funds go directly to Countdown),
+        // this test verifies the season counter increments correctly.
         vm.prank(owner);
         treasury.startNextSeason();
 
         assertEq(treasury.season(), 2, "Season should advance to 2");
+        assertEq(treasury.nextSeasonSeed(), 0, "Seed should be zero (set externally via Season 2 treasury)");
     }
 
     function test_TreasuryCreatorFeeCanBeUpdated() public {
@@ -1239,20 +1164,18 @@ contract BlockHuntTest is Test {
     function test_WindowOpensAndCloses() public {
         assertEq(mintWindow.isWindowOpen(), true, "Window should be open after setUp");
 
-        // [PHASE 2] closeWindow is now permissionless but only works after window expires
-        vm.warp(block.timestamp + 6 hours + 1);
+        vm.prank(owner);
         mintWindow.closeWindow();
 
         assertEq(mintWindow.isWindowOpen(), false, "Window should be closed");
     }
 
     function test_RolloverAccumulates() public {
-        // Close window after expiry without minting - full window cap rolls over
-        vm.warp(block.timestamp + 6 hours + 1);
+        // Close window without minting - full window cap rolls over
+        vm.prank(owner);
         mintWindow.closeWindow();
 
-        // [PHASE 2] openWindow is permissionless with MIN_WINDOW_GAP time guard
-        vm.warp(block.timestamp + 12 hours);
+        vm.prank(owner);
         mintWindow.openWindow();
 
         (, , , , uint256 allocated, , , ) = mintWindow.getWindowInfo();
@@ -1277,9 +1200,11 @@ contract BlockHuntTest is Test {
         assertEq(allocated, 25_000, "Batch 1 window cap should be 25,000");
     }
 
-    function test_WindowExpiresByTime() public {
-        vm.warp(block.timestamp + 6 hours + 1);
-        assertEq(mintWindow.isWindowOpen(), false, "Window should be expired");
+   function test_WindowExpiresByTime() public {
+    // Fast-forward past the 6-hour window
+    vm.warp(block.timestamp + 6 hours + 1);
+
+    assertEq(mintWindow.isWindowOpen(), false, "Window should be expired");
     }
 
     function test_WindowTracksUserDayMints() public {
@@ -1304,76 +1229,6 @@ contract BlockHuntTest is Test {
         assertEq(totalMinted, 10, "Batch should track minted blocks");
     }
 
-    // [PHASE 2] Permissionless openWindow with MIN_WINDOW_GAP time guard
-    function test_OpenWindowPermissionless() public {
-        // Fast-forward past window + gap
-        vm.warp(block.timestamp + 12 hours + 1);
-
-        // Anyone can call openWindow (not just owner)
-        vm.prank(alice);
-        mintWindow.openWindow();
-
-        assertEq(mintWindow.isWindowOpen(), true, "Window should be open after permissionless call");
-        assertEq(mintWindow.currentDay(), 2, "Day should advance to 2");
-    }
-
-    function test_OpenWindowTooEarlyReverts() public {
-        // Try to open a new window too soon (< MIN_WINDOW_GAP = 12 hours)
-        vm.warp(block.timestamp + 6 hours);
-
-        vm.prank(alice);
-        vm.expectRevert("Too early for next window");
-        mintWindow.openWindow();
-    }
-
-    function test_CloseWindowPermissionless() public {
-        // closeWindow is permissionless but requires window to be past closeAt
-        vm.warp(block.timestamp + 6 hours + 1);
-
-        vm.prank(alice);
-        mintWindow.closeWindow();
-
-        assertEq(mintWindow.isWindowOpen(), false, "Window should be closed");
-    }
-
-    function test_CloseWindowTooEarlyReverts() public {
-        // Window is still active (within 6 hours)
-        vm.prank(alice);
-        vm.expectRevert("Window still active");
-        mintWindow.closeWindow();
-    }
-
-    // [PHASE 2] Per-user cap enforcement in recordMint
-    function test_PerUserCapEnforced() public {
-        vm.prank(owner);
-        mintWindow.setPerUserDayCap(100);
-
-        // Mint up to cap
-        vm.prank(alice);
-        token.mint{value: MINT_PRICE * 100}(100);
-
-        // Next mint should fail per-user cap
-        vm.prank(alice);
-        vm.expectRevert("Per-user window cap reached");
-        token.mint{value: MINT_PRICE * 1}(1);
-    }
-
-    function test_PerUserCapDoesNotAffectOtherUsers() public {
-        vm.prank(owner);
-        mintWindow.setPerUserDayCap(100);
-
-        // Alice mints to cap
-        vm.prank(alice);
-        token.mint{value: MINT_PRICE * 100}(100);
-
-        // Bob can still mint
-        vm.prank(bob);
-        token.mint{value: MINT_PRICE * 50}(50);
-
-        assertEq(mintWindow.userDayMints(1, alice), 100);
-        assertEq(mintWindow.userDayMints(1, bob),   50);
-    }
-
 
     // ═════════════════════════════════════════════════════════════════════════
     // 6. COUNTDOWN TESTS
@@ -1391,12 +1246,14 @@ contract BlockHuntTest is Test {
     function test_CountdownDoesNotTriggerWithMissingTier() public {
         for (uint256 tier = 2; tier <= 6; tier++) {
             _giveBlocks(alice, tier, 1);
+            // Tier 7 missing
         }
 
         assertEq(token.countdownActive(), false, "Countdown should not fire without all tiers");
     }
 
     function test_CountdownContractSyncsOnTrigger() public {
+        // When Token triggers countdown, Countdown contract should also be active
         for (uint256 tier = 2; tier <= 7; tier++) {
             _giveBlocks(alice, tier, 1);
         }
@@ -1406,12 +1263,13 @@ contract BlockHuntTest is Test {
     }
 
     function test_CastVoteSucceeds() public {
+        // Activate countdown contract via token trigger
         for (uint256 tier = 2; tier <= 7; tier++) {
             _giveBlocks(alice, tier, 1);
         }
 
         vm.prank(bob);
-        countdown.castVote(true);
+        countdown.castVote(true);  // vote to burn/sacrifice
 
         assertEq(countdown.votesBurn(),    1, "Should have 1 burn vote");
         assertEq(countdown.votesClaim(),   0, "Should have 0 claim votes");
@@ -1424,7 +1282,7 @@ contract BlockHuntTest is Test {
         }
 
         vm.prank(bob);
-        countdown.castVote(false);
+        countdown.castVote(false);  // vote to claim
 
         assertEq(countdown.votesBurn(),  0, "Should have 0 burn votes");
         assertEq(countdown.votesClaim(), 1, "Should have 1 claim vote");
@@ -1473,14 +1331,40 @@ contract BlockHuntTest is Test {
     }
 
     function test_CheckHolderStatusResetsIfBlocksSold() public {
+        // Setup countdown via token
         for (uint256 tier = 2; tier <= 7; tier++) {
             _giveBlocks(alice, tier, 1);
         }
         assertEq(token.countdownActive(), true);
         assertEq(countdown.isActive(),    true);
 
+        // Alice still has all tiers - status check should keep countdown active
         countdown.checkHolderStatus();
         assertEq(countdown.isActive(), true, "Still active when holder qualifies");
+    }
+
+    function test_GetCountdownInfoReturnsData() public {
+        for (uint256 tier = 2; tier <= 7; tier++) {
+            _giveBlocks(alice, tier, 1);
+        }
+
+        (
+            bool active,
+            address holder,
+            uint256 startTime,
+            uint256 endTime,
+            uint256 remaining,
+            uint256 burnVotes,
+            uint256 claimVotes
+        ) = countdown.getCountdownInfo();
+
+        assertEq(active,      true,  "Should be active");
+        assertEq(holder,      alice, "Holder should be alice");
+        assertGt(startTime,   0,     "Start time should be set");
+        assertGt(endTime,     startTime, "End time should be after start");
+        assertGt(remaining,   0,     "Time should remain");
+        assertEq(burnVotes,   0,     "No votes yet");
+        assertEq(claimVotes,  0,     "No votes yet");
     }
 
     function test_OnlyTokenCanStartCountdown() public {
@@ -1516,7 +1400,7 @@ contract BlockHuntTest is Test {
         vm.deal(address(treasury), 10 ether);
 
         for (uint256 tier = 2; tier <= 7; tier++) {
-            _giveBlocks(alice, tier, 3);
+            _giveBlocks(alice, tier, 3);  // give 3 of each
         }
 
         vm.warp(block.timestamp + 7 days + 1);
@@ -1528,7 +1412,6 @@ contract BlockHuntTest is Test {
         }
     }
 
-    // [PHASE 2] sacrifice() takes no params — winner never controls community pool
     function test_SacrificeMintsOrigin() public {
         vm.deal(address(treasury), 10 ether);
 
@@ -1538,7 +1421,7 @@ contract BlockHuntTest is Test {
 
         vm.warp(block.timestamp + 7 days + 1);
         vm.prank(alice);
-        token.sacrifice();
+        token.sacrifice(new address[](0), new uint256[](0));
 
         assertEq(token.balanceOf(alice, 1), 1, "Alice should receive The Origin token");
 
@@ -1547,26 +1430,35 @@ contract BlockHuntTest is Test {
         }
     }
 
-    // [PHASE 2] Sacrifice sends funds through Escrow for 50/40/10 split
     function test_SacrificeDistributesTreasury50_40_10() public {
+        // Treasury split on sacrifice: 50% to winner, 40% held for top-100 claims, 10% to season2Seed
         vm.deal(address(treasury), 10 ether);
-        uint256 aliceBefore = alice.balance;
+        uint256 aliceBefore       = alice.balance;
+        uint256 season2SeedBefore = season2Seed.balance;
 
         for (uint256 tier = 2; tier <= 7; tier++) {
             _giveBlocks(alice, tier, 1);
         }
 
+        // Bob is entitled to the full 40% community pool
+        address[] memory players = new address[](1);
+        uint256[] memory amounts  = new uint256[](1);
+        players[0] = bob;
+        amounts[0]  = 4 ether; // 40% of 10 ether
+
         vm.warp(block.timestamp + 7 days + 1);
         vm.prank(alice);
-        token.sacrifice();
+        token.sacrifice(players, amounts);
 
-        // 50% to winner immediately (via Escrow)
+        // 50% to winner immediately
         assertApproxEqAbs(alice.balance - aliceBefore, 5 ether, 0.001 ether, "Alice gets 50%");
-        // 40% held in escrow as communityPool
-        assertApproxEqAbs(escrow.communityPool(), 4 ether, 0.001 ether, "Escrow holds 40% as communityPool");
-        // 10% held in escrow as season2Seed
-        assertApproxEqAbs(escrow.season2Seed(), 1 ether, 0.001 ether, "Escrow holds 10% as season2Seed");
-        // Treasury empty
+        // 10% to season2Seed immediately
+        assertApproxEqAbs(season2Seed.balance - season2SeedBefore, 1 ether, 0.001 ether, "Season2 gets 10%");
+        // 40% held in countdown as communityPool
+        assertApproxEqAbs(countdown.communityPool(), 4 ether, 0.001 ether, "Countdown holds 40% as communityPool");
+        // Bob's entitlement recorded
+        assertEq(countdown.leaderboardEntitlement(bob), 4 ether, "Bob entitlement stored");
+        // Treasury empty - all funds routed through countdown
         assertEq(treasury.treasuryBalance(), 0, "Treasury should be empty after sacrifice");
     }
 
@@ -1593,7 +1485,16 @@ contract BlockHuntTest is Test {
         vm.warp(block.timestamp + 7 days + 1);
         vm.prank(bob);
         vm.expectRevert("Not the countdown holder");
-        token.sacrifice();
+        token.sacrifice(new address[](0), new uint256[](0));
+    }
+
+    function test_ClaimRequiresAllTiers() public {
+        // Give alice all tiers to trigger countdown
+        for (uint256 tier = 2; tier <= 7; tier++) {
+            _giveBlocks(alice, tier, 1);
+        }
+        // Countdown requires all tiers to be active
+        assertEq(token.countdownActive(), true, "Countdown needs all tiers to be active");
     }
 
     function test_CountdownResetsAfterClaim() public {
@@ -1620,7 +1521,7 @@ contract BlockHuntTest is Test {
 
         vm.warp(block.timestamp + 7 days + 1);
         vm.prank(alice);
-        token.sacrifice();
+        token.sacrifice(new address[](0), new uint256[](0));
 
         assertEq(token.countdownActive(), false,      "Countdown should reset after sacrifice");
         assertEq(token.countdownHolder(), address(0), "Holder should be cleared");
@@ -1629,6 +1530,7 @@ contract BlockHuntTest is Test {
     function test_NewCountdownCanTriggerAfterClaim() public {
         vm.deal(address(treasury), 10 ether);
 
+        // Alice wins and claims
         for (uint256 tier = 2; tier <= 7; tier++) {
             _giveBlocks(alice, tier, 1);
         }
@@ -1636,6 +1538,7 @@ contract BlockHuntTest is Test {
         vm.prank(alice);
         token.claimTreasury();
 
+        // Bob now collects all tiers - countdown should be re-triggerable
         for (uint256 tier = 2; tier <= 7; tier++) {
             _giveBlocks(bob, tier, 1);
         }
@@ -1646,7 +1549,7 @@ contract BlockHuntTest is Test {
 
 
     // ═════════════════════════════════════════════════════════════════════════
-    // 7b. ENDGAME - 7-DAY ENFORCEMENT & DEFAULT SACRIFICE
+    // 7b. ENDGAME - 7-DAY ENFORCEMENT & NEW MECHANICS
     // ═════════════════════════════════════════════════════════════════════════
 
     function test_ClaimRevertsBeforeTimerExpires() public {
@@ -1662,19 +1565,17 @@ contract BlockHuntTest is Test {
 
         vm.prank(alice);
         vm.expectRevert("Countdown still running");
-        token.sacrifice();
+        token.sacrifice(new address[](0), new uint256[](0));
     }
 
-    // [PHASE 2] executeDefaultOnExpiry takes no params
     function test_DefaultSacrificeRevertsBeforeTimerExpires() public {
         _giveAllTiers(alice);
 
         vm.prank(bob);
         vm.expectRevert("Countdown still running");
-        token.executeDefaultOnExpiry();
+        token.executeDefaultOnExpiry(new address[](0), new uint256[](0));
     }
 
-    // [PHASE 2] executeDefaultOnExpiry takes no params
     function test_DefaultSacrificeExecutedByAnyone() public {
         vm.deal(address(treasury), 10 ether);
         _giveAllTiers(alice);
@@ -1683,7 +1584,7 @@ contract BlockHuntTest is Test {
 
         // Bob (not the holder) calls - simulates Gelato keeper
         vm.prank(bob);
-        token.executeDefaultOnExpiry();
+        token.executeDefaultOnExpiry(new address[](0), new uint256[](0));
 
         assertFalse(token.countdownActive(),          "Countdown should be reset");
         assertEq(token.countdownHolder(), address(0), "Holder should be cleared");
@@ -1699,12 +1600,14 @@ contract BlockHuntTest is Test {
 
         vm.warp(block.timestamp + 7 days + 1);
 
+        // Alice acts first
         vm.prank(alice);
         token.claimTreasury();
 
+        // Keeper fires a moment later - countdown already ended
         vm.prank(bob);
         vm.expectRevert("No countdown active");
-        token.executeDefaultOnExpiry();
+        token.executeDefaultOnExpiry(new address[](0), new uint256[](0));
     }
 
     function test_CountdownStartTimeRecorded() public {
@@ -1746,7 +1649,7 @@ contract BlockHuntTest is Test {
 
         vm.warp(block.timestamp + 7 days + 1);
         vm.prank(alice);
-        token.sacrifice();
+        token.sacrifice(new address[](0), new uint256[](0));
 
         assertFalse(countdown.isActive());
         assertEq(countdown.currentHolder(), address(0));
@@ -1759,14 +1662,14 @@ contract BlockHuntTest is Test {
 
         vm.warp(block.timestamp + 7 days + 1);
         vm.prank(bob);
-        token.executeDefaultOnExpiry();
+        token.executeDefaultOnExpiry(new address[](0), new uint256[](0));
 
         assertFalse(countdown.isActive());
         assertEq(countdown.currentHolder(), address(0));
     }
 
     function test_ClaimHolderStatusRevertsIfDoesNotHoldAllTiers() public {
-        _giveBlocks(bob, 2, 1);
+        _giveBlocks(bob, 2, 1); // only one tier
 
         vm.prank(bob);
         vm.expectRevert("Does not hold all 6 tiers");
@@ -1774,8 +1677,9 @@ contract BlockHuntTest is Test {
     }
 
     function test_ClaimHolderStatusRevertsIfCountdownAlreadyActive() public {
-        _giveAllTiers(alice);
+        _giveAllTiers(alice); // alice triggers countdown
 
+        // Bob also holds all tiers
         vm.startPrank(owner);
         for (uint256 tier = 2; tier <= 7; tier++) {
             token.mintForTest(bob, tier, 1);
@@ -1793,38 +1697,55 @@ contract BlockHuntTest is Test {
         countdown.syncReset();
     }
 
-
-    // ═════════════════════════════════════════════════════════════════════════
-    // 7c. COUNTDOWN RESET - HOLDER DISQUALIFICATION
+    function test_StartCountdownRevertsIfCalledDirectly() public {
+        vm.prank(alice);
+        vm.expectRevert("Only token contract");
+        countdown.startCountdown(alice);
+    }
+// ═════════════════════════════════════════════════════════════════════════
+    // 7c. COUNTDOWN RESET - HOLDER DISQUALIFICATION (Contract Session 3)
+    //
+    // Tests the resetExpiredHolder() path:
+    //   countdown.checkHolderStatus() detects holder no longer holds all tiers
+    //   → resets Countdown contract state
+    //   → calls token.resetExpiredHolder()
+    //   → resets Token contract state
+    //   → new player can now trigger a fresh countdown
     // ═════════════════════════════════════════════════════════════════════════
 
     function test_CheckHolderStatus_NoopWhenNotActive() public {
+        // No countdown running - should be a complete no-op
         assertFalse(countdown.isActive());
-        countdown.checkHolderStatus();
+        countdown.checkHolderStatus();  // must not revert
         assertFalse(countdown.isActive());
         assertFalse(token.countdownActive());
     }
 
     function test_CheckHolderStatus_NoopWhenHolderStillQualified() public {
+        // Alice triggers countdown and still holds all tiers
         _giveAllTiers(alice);
         assertTrue(countdown.isActive());
         assertTrue(token.countdownActive());
 
+        // Calling checkHolderStatus while holder still qualifies - should be a no-op
         countdown.checkHolderStatus();
 
         assertTrue(countdown.isActive(),    "Countdown should remain active");
         assertTrue(token.countdownActive(), "Token countdown should remain active");
         assertEq(countdown.currentHolder(), alice, "Holder should still be alice");
+        assertEq(token.countdownHolder(),   alice, "Token holder should still be alice");
     }
 
     function test_CheckHolderStatus_ResetsCountdownContractWhenHolderLosesTier() public {
         _giveAllTiers(alice);
         assertTrue(countdown.isActive());
 
+        // Alice transfers Tier-2 away - she no longer holds all 6 tiers
         vm.prank(alice);
         token.safeTransferFrom(alice, bob, 2, 1, "");
-        assertFalse(token.hasAllTiers(alice));
+        assertFalse(token.hasAllTiers(alice), "Alice should no longer have all tiers");
 
+        // Anyone can call checkHolderStatus (simulates Gelato keeper)
         countdown.checkHolderStatus();
 
         assertFalse(countdown.isActive(),           "Countdown contract should be reset");
@@ -1833,41 +1754,63 @@ contract BlockHuntTest is Test {
     }
 
     function test_CheckHolderStatus_ResetsTokenWhenHolderLosesTier() public {
+        // This is the core bug fix - Token's countdownActive was NOT reset before Session 3
         _giveAllTiers(alice);
         assertTrue(token.countdownActive());
 
+        // Alice transfers Tier-7 away mid-countdown
         vm.prank(alice);
         token.safeTransferFrom(alice, bob, 7, 1, "");
 
         countdown.checkHolderStatus();
 
+        // The fix: Token's state must now also be reset
         assertFalse(token.countdownActive(),           "Token countdownActive must be reset");
         assertEq(token.countdownHolder(),   address(0), "Token countdownHolder must be cleared");
         assertEq(token.countdownStartTime(), 0,         "Token countdownStartTime must be cleared");
     }
 
     function test_CheckHolderStatus_AllowsNewCountdownAfterReset() public {
+        // Alice triggers countdown then loses a tier
         _giveAllTiers(alice);
         vm.prank(alice);
         token.safeTransferFrom(alice, bob, 2, 1, "");
         countdown.checkHolderStatus();
 
-        assertFalse(token.countdownActive());
+        assertFalse(token.countdownActive(), "Precondition: countdown cleared");
 
+        // Bob collects all 6 tiers - a new countdown must be triggerable
+        // (bob already has alice's Tier-2 from the transfer above)
         for (uint256 tier = 3; tier <= 7; tier++) {
             _giveBlocks(bob, tier, 1);
         }
 
         assertTrue(token.countdownActive(),      "New countdown should start");
         assertEq(token.countdownHolder(), bob,   "Bob should be new holder");
+        assertTrue(countdown.isActive(),          "Countdown contract should reflect new countdown");
+        assertEq(countdown.currentHolder(), bob, "Countdown contract holder should be bob");
     }
 
     function test_ResetExpiredHolder_RevertsIfNotCountdownContract() public {
         _giveAllTiers(alice);
 
+        // Direct call from alice or any non-countdown address must revert
         vm.prank(alice);
         vm.expectRevert("Only countdown contract");
         token.resetExpiredHolder();
+    }
+
+    function test_ResetExpiredHolder_NoopIfAlreadyInactive() public {
+        // No countdown is running - calling resetExpiredHolder via countdown should silently no-op
+        assertFalse(token.countdownActive());
+
+        // We call via the actual countdown contract path:
+        // checkHolderStatus returns early if !isActive, so call resetExpiredHolder directly
+        // from the countdown contract's address using prank
+        vm.prank(address(countdown));
+        token.resetExpiredHolder();  // must not revert
+
+        assertFalse(token.countdownActive(), "Should still be inactive");
     }
 
     function test_CheckHolderStatus_EmitsCountdownResetEvent() public {
@@ -1881,198 +1824,8 @@ contract BlockHuntTest is Test {
         countdown.checkHolderStatus();
     }
 
-
     // ═════════════════════════════════════════════════════════════════════════
-    // 8. ESCROW TESTS (NEW - Phase 2)
-    //
-    // BlockHuntEscrow handles all sacrifice fund distribution:
-    //   50% → winner immediately
-    //   40% → community pool (keeper sets entitlements)
-    //   10% → Season 2 seed
-    // ═════════════════════════════════════════════════════════════════════════
-
-    function test_Escrow_InitiateSacrifice_OnlyToken() public {
-        vm.deal(address(escrow), 10 ether);
-        vm.prank(alice);
-        vm.expectRevert("Only token contract");
-        escrow.initiateSacrifice(alice);
-    }
-
-    function test_Escrow_SetLeaderboardEntitlements() public {
-        _doSacrifice(10 ether);
-
-        address[] memory players = new address[](1);
-        uint256[] memory amounts = new uint256[](1);
-        players[0] = bob;
-        amounts[0] = 3 ether;
-
-        vm.prank(keeper);
-        escrow.setLeaderboardEntitlements(players, amounts);
-
-        assertEq(escrow.entitlementsSet(), true);
-        assertEq(escrow.leaderboardEntitlement(bob), 3 ether);
-    }
-
-    function test_Escrow_SetEntitlements_OnlyKeeper() public {
-        _doSacrifice(10 ether);
-
-        address[] memory players = new address[](1);
-        uint256[] memory amounts = new uint256[](1);
-        players[0] = bob;
-        amounts[0] = 1 ether;
-
-        vm.prank(alice);
-        vm.expectRevert("Only keeper");
-        escrow.setLeaderboardEntitlements(players, amounts);
-    }
-
-    function test_Escrow_SetEntitlements_ExceedPoolReverts() public {
-        _doSacrifice(10 ether);
-
-        address[] memory players = new address[](1);
-        uint256[] memory amounts = new uint256[](1);
-        players[0] = bob;
-        amounts[0] = 5 ether;  // exceeds the ~4 ether pool
-
-        vm.prank(keeper);
-        vm.expectRevert("Exceeds community pool");
-        escrow.setLeaderboardEntitlements(players, amounts);
-    }
-
-    function test_Escrow_ClaimLeaderboardReward() public {
-        _doSacrifice(10 ether);
-
-        address[] memory players = new address[](1);
-        uint256[] memory amounts = new uint256[](1);
-        players[0] = bob;
-        amounts[0] = 3 ether;
-
-        vm.prank(keeper);
-        escrow.setLeaderboardEntitlements(players, amounts);
-
-        uint256 bobBefore = bob.balance;
-        vm.prank(bob);
-        escrow.claimLeaderboardReward();
-
-        assertEq(bob.balance - bobBefore, 3 ether, "Bob should receive entitlement");
-        assertEq(escrow.hasClaimed(bob), true);
-    }
-
-    function test_Escrow_ClaimDoubleClaim_Reverts() public {
-        _doSacrifice(10 ether);
-
-        address[] memory players = new address[](1);
-        uint256[] memory amounts = new uint256[](1);
-        players[0] = bob;
-        amounts[0] = 3 ether;
-
-        vm.prank(keeper);
-        escrow.setLeaderboardEntitlements(players, amounts);
-
-        vm.prank(bob);
-        escrow.claimLeaderboardReward();
-
-        vm.prank(bob);
-        vm.expectRevert("Already claimed");
-        escrow.claimLeaderboardReward();
-    }
-
-    function test_Escrow_ClaimNoEntitlement_Reverts() public {
-        _doSacrifice(10 ether);
-
-        address[] memory players = new address[](1);
-        uint256[] memory amounts = new uint256[](1);
-        players[0] = bob;
-        amounts[0] = 3 ether;
-
-        vm.prank(keeper);
-        escrow.setLeaderboardEntitlements(players, amounts);
-
-        vm.prank(carol);
-        vm.expectRevert("No entitlement");
-        escrow.claimLeaderboardReward();
-    }
-
-    function test_Escrow_ClaimAfterExpiry_Reverts() public {
-        _doSacrifice(10 ether);
-
-        address[] memory players = new address[](1);
-        uint256[] memory amounts = new uint256[](1);
-        players[0] = bob;
-        amounts[0] = 3 ether;
-
-        vm.prank(keeper);
-        escrow.setLeaderboardEntitlements(players, amounts);
-
-        vm.warp(block.timestamp + 31 days);
-
-        vm.prank(bob);
-        vm.expectRevert("Claim window expired");
-        escrow.claimLeaderboardReward();
-    }
-
-    function test_Escrow_ReleaseSeason2Seed() public {
-        _doSacrifice(10 ether);
-
-        vm.prank(keeper);
-        escrow.setSeason2TreasuryAddress(season2Treasury);
-
-        uint256 seedAmount = escrow.season2Seed();
-        uint256 s2Before = season2Treasury.balance;
-
-        escrow.releaseSeason2Seed();
-
-        assertEq(season2Treasury.balance - s2Before, seedAmount, "Season 2 treasury receives seed");
-        assertEq(escrow.season2SeedReleased(), true);
-    }
-
-    function test_Escrow_SweepUnclaimedRewards() public {
-        _doSacrifice(10 ether);
-
-        // Set minimal entitlements so pool has funds
-        address[] memory players = new address[](1);
-        uint256[] memory amounts = new uint256[](1);
-        players[0] = bob;
-        amounts[0] = 1 ether;
-
-        vm.prank(keeper);
-        escrow.setLeaderboardEntitlements(players, amounts);
-
-        vm.prank(keeper);
-        escrow.setSeason2TreasuryAddress(season2Treasury);
-
-        // Fast-forward past claim window
-        vm.warp(block.timestamp + 31 days);
-
-        uint256 poolBefore = escrow.communityPool();
-        assertGt(poolBefore, 0);
-
-        escrow.sweepUnclaimedRewards();
-
-        assertEq(escrow.communityPool(), 0, "Pool should be emptied");
-    }
-
-    function test_Escrow_SweepBeforeExpiry_Reverts() public {
-        _doSacrifice(10 ether);
-
-        address[] memory players = new address[](1);
-        uint256[] memory amounts = new uint256[](1);
-        players[0] = bob;
-        amounts[0] = 1 ether;
-        vm.prank(keeper);
-        escrow.setLeaderboardEntitlements(players, amounts);
-
-        vm.prank(keeper);
-        escrow.setSeason2TreasuryAddress(season2Treasury);
-
-        vm.warp(block.timestamp + 15 days);
-        vm.expectRevert("Claim window still open");
-        escrow.sweepUnclaimedRewards();
-    }
-
-
-    // ═════════════════════════════════════════════════════════════════════════
-    // 9. TOKEN ADMIN & SECURITY TESTS
+    // 8. TOKEN ADMIN & SECURITY TESTS
     // ═════════════════════════════════════════════════════════════════════════
 
     function test_PauseStopsMinting() public {
@@ -2080,7 +1833,7 @@ contract BlockHuntTest is Test {
         token.pause();
 
         vm.prank(alice);
-        vm.expectRevert();
+        vm.expectRevert();  // Pausable reverts with EnforcedPause
         token.mint{value: MINT_PRICE * 5}(5);
     }
 
@@ -2092,21 +1845,20 @@ contract BlockHuntTest is Test {
         token.unpause();
 
         vm.prank(alice);
-        token.mint{value: MINT_PRICE * 5}(5);
+        token.mint{value: MINT_PRICE * 5}(5);  // should succeed
     }
 
     function test_TestMintDisabledAfterDisableCall() public {
         vm.prank(owner);
         token.disableTestMint();
 
-        vm.prank(owner);
         vm.expectRevert("Test mint disabled");
         token.mintForTest(alice, 7, 10);
     }
 
     function test_OnlyOwnerCanDisableTestMint() public {
         vm.prank(alice);
-        vm.expectRevert();
+        vm.expectRevert();  // OwnableUnauthorizedAccount
         token.disableTestMint();
     }
 
@@ -2149,6 +1901,7 @@ contract BlockHuntTest is Test {
     function test_SetURIByOwner() public {
         vm.prank(owner);
         token.setURI("https://new.api.com/{id}.json");
+        // URI is stored internally; no public getter - just verify no revert
     }
 
     function test_SetURIRevertsForNonOwner() public {
@@ -2159,7 +1912,7 @@ contract BlockHuntTest is Test {
 
 
     // ═════════════════════════════════════════════════════════════════════════
-    // 10. MIGRATION TESTS
+    // 9. MIGRATION TESTS
     // ═════════════════════════════════════════════════════════════════════════
 
     function test_MigrationWindowOpensAndCloses() public {
@@ -2180,7 +1933,7 @@ contract BlockHuntTest is Test {
         vm.prank(owner);
         migration.openMigrationWindow();
 
-        _giveBlocks(alice, 7, 50);
+        _giveBlocks(alice, 7, 50);  // only 50, needs 100
 
         vm.prank(alice);
         vm.expectRevert("Need at least 100 Season 1 blocks");
@@ -2191,7 +1944,7 @@ contract BlockHuntTest is Test {
         vm.prank(owner);
         migration.openMigrationWindow();
 
-        _giveBlocks(alice, 7, 200);
+        _giveBlocks(alice, 7, 200);  // 200 blocks → 100 starters (low tier)
 
         vm.prank(alice);
         migration.migrate();
@@ -2205,7 +1958,7 @@ contract BlockHuntTest is Test {
         vm.prank(owner);
         migration.openMigrationWindow();
 
-        _giveBlocks(alice, 7, 600);
+        _giveBlocks(alice, 7, 600);  // 600 blocks → 150 starters (mid tier)
 
         vm.prank(alice);
         migration.migrate();
@@ -2217,7 +1970,7 @@ contract BlockHuntTest is Test {
         vm.prank(owner);
         migration.openMigrationWindow();
 
-        _giveBlocks(alice, 7, 1000);
+        _giveBlocks(alice, 7, 1000);  // 1000 blocks → 200 starters (high tier)
 
         vm.prank(alice);
         migration.migrate();
@@ -2290,9 +2043,26 @@ contract BlockHuntTest is Test {
         assertGt(migration.totalStartersGiven(), 0,  "Starters given should be tracked");
     }
 
+    function test_MigrationWindowCannotOpenTwice() public {
+        vm.prank(owner);
+        migration.openMigrationWindow();
+
+        vm.prank(owner);
+        vm.expectRevert("Migration already open");
+        migration.openMigrationWindow();
+    }
+
+    function test_MigrationRequiresTokenV2BeforeOpening() public {
+        BlockHuntMigration migration2 = new BlockHuntMigration(address(token));
+        // tokenV2 not set
+
+        vm.expectRevert("Season 2 token not set");
+        migration2.openMigrationWindow();
+    }
+
 
     // ═════════════════════════════════════════════════════════════════════════
-    // 11. SEASON REGISTRY TESTS
+    // 10. SEASON REGISTRY TESTS
     // ═════════════════════════════════════════════════════════════════════════
 
     function test_RegistrySeasonOneRegistered() public view {
@@ -2358,440 +2128,6 @@ contract BlockHuntTest is Test {
         assertEq(finalTreasury, 10 ether,  "Final treasury recorded");
     }
 
-    function test_RegistryOnlyOwnerCanRegister() public {
-        vm.prank(alice);
-        vm.expectRevert();
-        registry.registerSeason(2, address(treasury), address(token), address(mintWindow), address(forge));
-    }
-
-
-    // ═════════════════════════════════════════════════════════════════════════
-    // 12. INTEGRATION / END-TO-END TESTS
-    // ═════════════════════════════════════════════════════════════════════════
-
-    function test_FullGameFlow_Claim() public {
-        vm.prank(alice);
-        token.mint{value: MINT_PRICE * 50}(50);
-
-        for (uint256 tier = 2; tier <= 7; tier++) {
-            _giveBlocks(alice, tier, 1);
-        }
-
-        assertEq(token.countdownActive(), true);
-        assertEq(countdown.isActive(),    true);
-
-        vm.prank(bob);
-        countdown.castVote(false);
-
-        vm.deal(address(treasury), 5 ether);
-        uint256 aliceBefore = alice.balance;
-
-        vm.warp(block.timestamp + 7 days + 1);
-        vm.prank(alice);
-        token.claimTreasury();
-
-        assertGt(alice.balance, aliceBefore,         "Alice should have received ETH");
-        assertEq(token.countdownActive(), false,      "Game should end");
-        assertEq(countdown.isActive(),    false,      "Countdown contract should sync");
-    }
-
-    // [PHASE 2] Full sacrifice flow using Escrow
-    function test_FullGameFlow_Sacrifice_ThenEscrowClaims() public {
-        for (uint256 tier = 2; tier <= 7; tier++) {
-            _giveBlocks(alice, tier, 1);
-        }
-
-        vm.deal(address(treasury), 10 ether);
-
-        vm.warp(block.timestamp + 7 days + 1);
-        vm.prank(alice);
-        token.sacrifice();
-
-        // Alice holds The Origin
-        assertEq(token.balanceOf(alice, 1), 1);
-
-        // Escrow holds community pool + season2 seed
-        assertApproxEqAbs(escrow.communityPool(), 4 ether, 0.001 ether, "40% held in escrow");
-        assertApproxEqAbs(escrow.season2Seed(),   1 ether, 0.001 ether, "10% held in escrow");
-
-        // Keeper sets entitlements
-        address[] memory players = new address[](1);
-        uint256[] memory amounts = new uint256[](1);
-        players[0] = bob;
-        amounts[0] = 3 ether;
-        vm.prank(keeper);
-        escrow.setLeaderboardEntitlements(players, amounts);
-
-        // Bob claims
-        uint256 bobBefore = bob.balance;
-        vm.prank(bob);
-        escrow.claimLeaderboardReward();
-        assertEq(bob.balance - bobBefore, 3 ether, "Bob receives entitlement");
-
-        // Release season 2 seed
-        vm.prank(keeper);
-        escrow.setSeason2TreasuryAddress(season2Treasury);
-        escrow.releaseSeason2Seed();
-        assertGt(season2Treasury.balance, 0, "Season 2 treasury receives seed");
-    }
-
-    function test_FullGameFlow_VRFForge_ThenWin() public withVRFEnabled {
-        _giveBlocks(alice, 7, 20);
-
-        vm.prank(alice);
-        forge.forge(7, 20);
-
-        mockVRFCoordinator.fulfillRequest(1, 0);
-        assertEq(token.balanceOf(alice, 6), 1, "Alice forged a Tier-6 via VRF");
-
-        for (uint256 tier = 2; tier <= 5; tier++) {
-            _giveBlocks(alice, tier, 1);
-        }
-        _giveBlocks(alice, 7, 1);
-        assertEq(token.countdownActive(), true, "Countdown should trigger");
-
-        vm.deal(address(treasury), 5 ether);
-        vm.warp(block.timestamp + 7 days + 1);
-        vm.prank(alice);
-        token.claimTreasury();
-
-        assertFalse(token.countdownActive(), "Game should be over");
-    }
-
-    function test_MultiplePlayersCannotTriggerSimultaneousCountdowns() public {
-        for (uint256 tier = 2; tier <= 7; tier++) {
-            _giveBlocks(alice, tier, 1);
-        }
-        assertEq(token.countdownActive(), true);
-        assertEq(token.countdownHolder(), alice);
-
-        for (uint256 tier = 2; tier <= 7; tier++) {
-            _giveBlocks(bob, tier, 1);
-        }
-
-        assertEq(token.countdownHolder(), alice, "First holder keeps countdown");
-    }
-
-
-    // ═════════════════════════════════════════════════════════════════════════
-    // RESTORED: COUNTDOWN VIEW HELPERS
-    // ═════════════════════════════════════════════════════════════════════════
-
-    function test_GetCountdownInfoReturnsData() public {
-        for (uint256 tier = 2; tier <= 7; tier++) {
-            _giveBlocks(alice, tier, 1);
-        }
-
-        (
-            bool active,
-            address holder,
-            uint256 startTime,
-            uint256 endTime,
-            uint256 remaining,
-            uint256 burnVotes,
-            uint256 claimVotes
-        ) = countdown.getCountdownInfo();
-
-        assertEq(active,      true,  "Should be active");
-        assertEq(holder,      alice, "Holder should be alice");
-        assertGt(startTime,   0,     "Start time should be set");
-        assertGt(endTime,     startTime, "End time should be after start");
-        assertGt(remaining,   0,     "Time should remain");
-        assertEq(burnVotes,   0,     "No votes yet");
-        assertEq(claimVotes,  0,     "No votes yet");
-    }
-
-    function test_ClaimRequiresAllTiers() public {
-        for (uint256 tier = 2; tier <= 7; tier++) {
-            _giveBlocks(alice, tier, 1);
-        }
-        assertEq(token.countdownActive(), true, "Countdown needs all tiers to be active");
-    }
-
-    function test_StartCountdownRevertsIfCalledDirectly() public {
-        vm.prank(alice);
-        vm.expectRevert("Only token contract");
-        countdown.startCountdown(alice);
-    }
-
-    function test_ResetExpiredHolder_NoopIfAlreadyInactive() public {
-        assertFalse(token.countdownActive());
-        vm.prank(address(countdown));
-        token.resetExpiredHolder();
-        assertFalse(token.countdownActive(), "Should still be inactive");
-    }
-
-
-    // ═════════════════════════════════════════════════════════════════════════
-    // RESTORED: MINT VRF - MULTIPLE PENDING & CANCEL EDGE CASES
-    // ═════════════════════════════════════════════════════════════════════════
-
-    function test_MintVRF_MultiplePendingRequestsAllowed() public withMintVRFEnabled {
-        vm.startPrank(alice);
-        token.mint{value: MINT_PRICE * 10}(10);
-        token.mint{value: MINT_PRICE * 10}(10);
-        vm.stopPrank();
-
-        uint256[] memory pending = token.getPendingRequests(alice);
-        assertEq(pending.length, 2, "Alice can have multiple pending requests simultaneously");
-    }
-
-    function test_MintVRF_TwoPlayersHaveSeparatePendingLists() public withMintVRFEnabled {
-        vm.prank(alice);
-        token.mint{value: MINT_PRICE * 10}(10);
-
-        vm.prank(bob);
-        token.mint{value: MINT_PRICE * 10}(10);
-
-        assertEq(token.getPendingRequests(alice).length, 1, "Alice has 1 pending");
-        assertEq(token.getPendingRequests(bob).length,   1, "Bob has 1 pending");
-    }
-
-    function test_MintVRF_CancelEmitsEvent() public withMintVRFEnabled {
-        vm.prank(alice);
-        token.mint{value: MINT_PRICE * 10}(10);
-
-        vm.warp(block.timestamp + 1 hours + 1);
-
-        vm.expectEmit(true, true, false, true);
-        emit BlockHuntToken.MintCancelled(alice, 1, MINT_PRICE * 10);
-
-        vm.prank(alice);
-        token.cancelMintRequest(1);
-    }
-
-    function test_MintVRF_CancelClearsFromPendingList() public withMintVRFEnabled {
-        vm.prank(alice);
-        token.mint{value: MINT_PRICE * 10}(10);
-
-        vm.warp(block.timestamp + 1 hours + 1);
-
-        vm.prank(alice);
-        token.cancelMintRequest(1);
-
-        assertEq(token.getPendingRequests(alice).length, 0, "Pending list should be empty after cancel");
-    }
-
-    function test_MintVRF_CancelNonExistentRequestReverts() public withMintVRFEnabled {
-        vm.warp(block.timestamp + 1 hours + 1);
-
-        vm.prank(alice);
-        vm.expectRevert("Request not found");
-        token.cancelMintRequest(999);
-    }
-
-    function test_MintVRF_CallbackChecksCountdownTrigger() public withMintVRFEnabled {
-        // Give alice all tiers to trigger and resolve countdown first
-        for (uint256 tier = 2; tier <= 7; tier++) {
-            _giveBlocks(alice, tier, 1);
-        }
-        vm.deal(address(treasury), 5 ether);
-        vm.warp(block.timestamp + 7 days + 1);
-        vm.prank(alice);
-        token.claimTreasury();
-        assertEq(token.countdownActive(), false, "Countdown reset after claim");
-
-        // Give bob tiers 2-7 via testMint (countdown triggers on last one)
-        for (uint256 tier = 2; tier <= 7; tier++) {
-            _giveBlocks(bob, tier, 1);
-        }
-        assertEq(token.countdownActive(), true,  "Bob triggered countdown via testMint");
-        assertEq(token.countdownHolder(), bob,   "Bob is holder");
-    }
-
-    function test_MintPseudoRandom_NoPendingRequests() public {
-        vm.prank(alice);
-        token.mint{value: MINT_PRICE * 10}(10);
-
-        assertEq(token.getPendingRequests(alice).length, 0, "Pseudo-random path creates no pending requests");
-    }
-
-    function test_MintVRF_CapReservedBeforeCallbackPreventsOverrun() public withMintVRFEnabled {
-        // Mint a large number - cap should be reserved immediately
-        vm.prank(alice);
-        token.mint{value: MINT_PRICE * 400}(400);
-
-        // Cap reserved at request time; the window cap should be reduced
-        // Second mint should respect remaining cap
-        vm.prank(bob);
-        token.mint{value: MINT_PRICE * 10}(10);
-
-        // Both pending
-        assertEq(token.getPendingRequests(alice).length, 1);
-        assertEq(token.getPendingRequests(bob).length, 1);
-    }
-
-    function test_MintVRF_TierAggregationProducesCorrectTotal() public withMintVRFEnabled {
-        vm.prank(alice);
-        token.mint{value: MINT_PRICE * 50}(50);
-
-        mockVRFCoordinator.fulfillRequest(1, 42);
-
-        uint256 total = 0;
-        for (uint256 tier = 2; tier <= 7; tier++) {
-            total += token.balanceOf(alice, tier);
-        }
-        assertEq(total, 50, "Aggregated tier mint must sum to exactly 50");
-    }
-
-
-    // ═════════════════════════════════════════════════════════════════════════
-    // RESTORED: ESCROW - ADDITIONAL EDGE CASES
-    // ═════════════════════════════════════════════════════════════════════════
-
-    function test_Escrow_EntitlementStoredAfterSacrifice() public {
-        _doSacrifice(10 ether);
-
-        // Keeper sets entitlements
-        address[] memory players = new address[](1);
-        uint256[] memory amounts = new uint256[](1);
-        players[0] = bob;
-        amounts[0] = 4 ether;
-
-        vm.prank(keeper);
-        escrow.setLeaderboardEntitlements(players, amounts);
-
-        assertEq(escrow.leaderboardEntitlement(bob), 4 ether, "Bob entitlement should be stored");
-    }
-
-    function test_Escrow_ClaimWindowSetAfterSacrifice() public {
-        _doSacrifice(10 ether);
-        assertGt(escrow.claimWindowExpiry(), block.timestamp, "Claim window should be in future");
-    }
-
-    function test_Escrow_SweepWithNoSacrifice_Reverts() public {
-        vm.expectRevert("No sacrifice");
-        escrow.sweepUnclaimedRewards();
-    }
-
-    function test_Escrow_MultipleEntrantsClaim() public {
-        _doSacrifice(10 ether);
-
-        address[] memory players = new address[](2);
-        uint256[] memory amounts = new uint256[](2);
-        players[0] = bob;   amounts[0] = 2 ether;
-        players[1] = carol; amounts[1] = 1 ether;
-
-        vm.prank(keeper);
-        escrow.setLeaderboardEntitlements(players, amounts);
-
-        uint256 bobBefore   = bob.balance;
-        uint256 carolBefore = carol.balance;
-
-        vm.prank(bob);
-        escrow.claimLeaderboardReward();
-
-        vm.prank(carol);
-        escrow.claimLeaderboardReward();
-
-        assertEq(bob.balance   - bobBefore,   2 ether, "Bob gets his 2 ether");
-        assertEq(carol.balance - carolBefore, 1 ether, "Carol gets her 1 ether");
-    }
-
-    function test_Escrow_SweepAfterExpiry() public {
-        _doSacrifice(10 ether);
-
-        address[] memory players = new address[](1);
-        uint256[] memory amounts = new uint256[](1);
-        players[0] = bob;
-        amounts[0] = 1 ether;
-
-        vm.prank(keeper);
-        escrow.setLeaderboardEntitlements(players, amounts);
-
-        // Set season2 treasury address so sweep has a destination
-        vm.prank(keeper);
-        escrow.setSeason2TreasuryAddress(season2Treasury);
-
-        // Bob never claims - sweep after 30 days
-        vm.warp(block.timestamp + 31 days);
-        escrow.sweepUnclaimedRewards();
-
-        assertEq(escrow.communityPool(), 0, "Pool should be emptied");
-    }
-
-    function test_Escrow_SweepIsPermissionless() public {
-        _doSacrifice(10 ether);
-
-        address[] memory players = new address[](1);
-        uint256[] memory amounts = new uint256[](1);
-        players[0] = bob;
-        amounts[0] = 1 ether;
-
-        vm.prank(keeper);
-        escrow.setLeaderboardEntitlements(players, amounts);
-
-        vm.prank(keeper);
-        escrow.setSeason2TreasuryAddress(season2Treasury);
-
-        vm.warp(block.timestamp + 31 days);
-
-        // Carol (random non-owner) can trigger the sweep
-        vm.prank(carol);
-        escrow.sweepUnclaimedRewards();
-
-        assertEq(escrow.communityPool(), 0, "Carol should be able to trigger sweep");
-    }
-
-
-    // ═════════════════════════════════════════════════════════════════════════
-    // RESTORED: MIGRATION EDGE CASES
-    // ═════════════════════════════════════════════════════════════════════════
-
-    function test_MigrationWindowCannotOpenTwice() public {
-        vm.prank(owner);
-        migration.openMigrationWindow();
-
-        vm.prank(owner);
-        vm.expectRevert("Migration already open");
-        migration.openMigrationWindow();
-    }
-
-    function test_MigrationRequiresTokenV2BeforeOpening() public {
-        BlockHuntMigration migration2 = new BlockHuntMigration(address(token));
-        // tokenV2 not set
-
-        vm.expectRevert("Season 2 token not set");
-        migration2.openMigrationWindow();
-    }
-
-    function test_FullGameFlow_Sacrifice_ThenMigration() public {
-        // 1. Give alice all tiers and sacrifice
-        for (uint256 tier = 2; tier <= 7; tier++) {
-            _giveBlocks(alice, tier, 1);
-        }
-
-        vm.deal(address(treasury), 10 ether);
-
-        vm.warp(block.timestamp + 7 days + 1);
-        vm.prank(alice);
-        token.sacrifice();
-
-        // 2. Alice holds The Origin
-        assertEq(token.balanceOf(alice, 1), 1);
-
-        // 3. Escrow holds the 40% community pool and 10% season2Seed
-        assertApproxEqAbs(escrow.communityPool(), 4 ether, 0.001 ether, "40% held in escrow");
-        assertApproxEqAbs(escrow.season2Seed(),   1 ether, 0.001 ether, "10% held in escrow");
-
-        // 4. Migration window opens for Season 1 → Season 2
-        _giveBlocks(bob, 7, 500);
-
-        vm.prank(owner);
-        migration.openMigrationWindow();
-
-        vm.prank(bob);
-        migration.migrate();
-
-        assertEq(migration.hasMigrated(bob),    true, "Bob migrated to Season 2");
-        assertEq(migration.migrationReward(bob), 150, "Bob gets 150 starters");
-    }
-
-
-    // ═════════════════════════════════════════════════════════════════════════
-    // RESTORED: SEASON REGISTRY TESTS
-    // ═════════════════════════════════════════════════════════════════════════
-
     function test_RegistryMarkSeasonEndedSacrifice() public {
         vm.prank(owner);
         registry.markSeasonEnded(1, alice, true, 10 ether, 5 ether);
@@ -2803,6 +2139,7 @@ contract BlockHuntTest is Test {
     }
 
     function test_RegistryCannotEndUnlaunchedSeason() public {
+        // Register a second season but don't launch it
         vm.startPrank(owner);
         BlockHuntTreasury   treasury2   = new BlockHuntTreasury(creator);
         BlockHuntToken      token2      = new BlockHuntToken("uri", creator, 1000, address(mockVRFCoordinator));
@@ -2826,6 +2163,7 @@ contract BlockHuntTest is Test {
     }
 
     function test_RegistryGetAuthorisedSeedDestination() public {
+        // Register Season 2 so there's a valid next season
         vm.startPrank(owner);
         BlockHuntTreasury   treasury2   = new BlockHuntTreasury(creator);
         BlockHuntToken      token2      = new BlockHuntToken("uri", creator, 1000, address(mockVRFCoordinator));
@@ -2833,7 +2171,7 @@ contract BlockHuntTest is Test {
         BlockHuntForge      forge2      = new BlockHuntForge(address(mockVRFCoordinator));
 
         registry.registerSeason(2, address(treasury2), address(token2), address(mintWindow2), address(forge2));
-        registry.markSeasonEnded(1, alice, true, 10 ether, 5 ether);
+        registry.markSeasonEnded(1, alice, true, 10 ether, 5 ether); // sacrifice
         vm.stopPrank();
 
         address dest = registry.getAuthorisedSeedDestination(1);
@@ -2848,7 +2186,7 @@ contract BlockHuntTest is Test {
         BlockHuntForge      forge2      = new BlockHuntForge(address(mockVRFCoordinator));
 
         registry.registerSeason(2, address(treasury2), address(token2), address(mintWindow2), address(forge2));
-        registry.markSeasonEnded(1, alice, false, 10 ether, 0);
+        registry.markSeasonEnded(1, alice, false, 10 ether, 0); // claim, not sacrifice
         vm.stopPrank();
 
         vm.expectRevert("Not a sacrifice");
@@ -2870,7 +2208,14 @@ contract BlockHuntTest is Test {
     }
 
     function test_RegistryGetNextSeasonTreasuryFailsIfNotRegistered() public view {
+        // Season 2 not registered
         assertEq(registry.totalSeasons(), 1, "Only Season 1 registered");
+    }
+
+    function test_RegistryOnlyOwnerCanRegister() public {
+        vm.prank(alice);
+        vm.expectRevert();
+        registry.registerSeason(2, address(treasury), address(token), address(mintWindow), address(forge));
     }
 
     function test_RegistryOnlyOwnerCanMarkLaunched() public {
@@ -2886,6 +2231,7 @@ contract BlockHuntTest is Test {
     }
 
     function test_RegistryLogSeedTransfer() public {
+        // Register Season 2 first
         vm.startPrank(owner);
         BlockHuntTreasury   treasury2   = new BlockHuntTreasury(creator);
         BlockHuntToken      token2      = new BlockHuntToken("uri", creator, 1000, address(mockVRFCoordinator));
@@ -2894,8 +2240,9 @@ contract BlockHuntTest is Test {
         registry.registerSeason(2, address(treasury2), address(token2), address(mintWindow2), address(forge2));
         vm.stopPrank();
 
+        // logSeedTransfer can only be called by the from-season treasury
         vm.prank(address(treasury));
-        registry.logSeedTransfer(1, 2, 5 ether);
+        registry.logSeedTransfer(1, 2, 5 ether); // should emit event without reverting
     }
 
     function test_RegistryLogSeedTransferFailsIfNotTreasury() public {
@@ -2914,8 +2261,428 @@ contract BlockHuntTest is Test {
 
 
     // ═════════════════════════════════════════════════════════════════════════
-    // HELPERS
+    // 11. INTEGRATION / END-TO-END TESTS
     // ═════════════════════════════════════════════════════════════════════════
+
+    function test_FullGameFlow_Claim() public {
+        // 1. Mint blocks
+        vm.prank(alice);
+        token.mint{value: MINT_PRICE * 50}(50);
+
+        // 2. Give alice all 6 tiers (simulate grinding) - also triggers countdown
+        for (uint256 tier = 2; tier <= 7; tier++) {
+            _giveBlocks(alice, tier, 1);
+        }
+
+        // 3. Countdown triggers on both Token and Countdown contracts
+        assertEq(token.countdownActive(), true);
+        assertEq(countdown.isActive(),    true);
+
+        // 4. Others can vote
+        vm.prank(bob);
+        countdown.castVote(false);  // vote claim
+
+        // 5. Wait 7 days, then Alice claims
+        vm.deal(address(treasury), 5 ether);
+        uint256 aliceBefore = alice.balance;
+
+        vm.warp(block.timestamp + 7 days + 1);
+        vm.prank(alice);
+        token.claimTreasury();
+
+        assertGt(alice.balance, aliceBefore,         "Alice should have received ETH");
+        assertEq(token.countdownActive(), false,      "Game should end");
+        assertEq(countdown.isActive(),    false,      "Countdown contract should sync");
+    }
+
+    function test_FullGameFlow_Sacrifice_ThenMigration() public {
+        // 1. Give alice all tiers and sacrifice
+        for (uint256 tier = 2; tier <= 7; tier++) {
+            _giveBlocks(alice, tier, 1);
+        }
+
+        vm.deal(address(treasury), 10 ether);
+
+        vm.warp(block.timestamp + 7 days + 1);
+        vm.prank(alice);
+        token.sacrifice(new address[](0), new uint256[](0));
+
+        // 2. Alice holds The Origin
+        assertEq(token.balanceOf(alice, 1), 1);
+
+        // 3. Countdown holds the 40% community pool; 10% already went to season2Seed
+        assertApproxEqAbs(countdown.communityPool(), 4 ether, 0.001 ether, "40% held in countdown");
+        assertApproxEqAbs(season2Seed.balance,       1 ether, 0.001 ether, "10% sent to season2Seed");
+
+        // 4. Migration window opens for Season 1 → Season 2
+        _giveBlocks(bob, 7, 500);
+
+        vm.prank(owner);
+        migration.openMigrationWindow();
+
+        vm.prank(bob);
+        migration.migrate();
+
+        assertEq(migration.hasMigrated(bob),    true, "Bob migrated to Season 2");
+        assertEq(migration.migrationReward(bob), 150, "Bob gets 150 starters");
+    }
+
+    function test_MultiplePlayersCannotTriggerSimultaneousCountdowns() public {
+        // Alice triggers countdown
+        for (uint256 tier = 2; tier <= 7; tier++) {
+            _giveBlocks(alice, tier, 1);
+        }
+        assertEq(token.countdownActive(), true);
+        assertEq(token.countdownHolder(), alice);
+
+        // Bob also collects all tiers - countdown should NOT reassign
+        for (uint256 tier = 2; tier <= 7; tier++) {
+            _giveBlocks(bob, tier, 1);
+        }
+
+        // Holder should still be alice
+        assertEq(token.countdownHolder(), alice, "First holder keeps countdown");
+    }
+
+    function test_FullGameFlow_VRFForge_ThenWin() public withVRFEnabled {
+        // Alice forges using VRF and then wins the game
+
+        // 1. Give alice Tier-7 blocks and forge toward Tier-6 (T7 ratio=20, burn all = 100%)
+        _giveBlocks(alice, 7, 20);
+
+        vm.prank(alice);
+        forge.forge(7, 20);  // requestId = 1 - (20*100)/20 = 100% success
+
+        // Chainlink delivers: randomWord = 0 → 0 % 100 = 0 < 100 → success
+        mockVRFCoordinator.fulfillRequest(1, 0);
+        assertEq(token.balanceOf(alice, 6), 1, "Alice forged a Tier-6 via VRF");
+
+        // 2. Give alice the rest of the tiers and trigger countdown
+        for (uint256 tier = 2; tier <= 5; tier++) {
+            _giveBlocks(alice, tier, 1);
+        }
+        _giveBlocks(alice, 7, 1);  // Tier 7 needed for complete set
+        assertEq(token.countdownActive(), true, "Countdown should trigger");
+
+        // 3. Wait and claim
+        vm.deal(address(treasury), 5 ether);
+        vm.warp(block.timestamp + 7 days + 1);
+        vm.prank(alice);
+        token.claimTreasury();
+
+        assertFalse(token.countdownActive(), "Game should be over");
+    }
+
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 3d. FORGE - NEW PROBABILITY ANCHORING TESTS
+    //
+    // Forge success is now: (blocksBurned * 100) / combineRatioForTier
+    // T7→T6: ratio 20. T6→T5: ratio 20. T5→T4: ratio 30. T4→T3: ratio 30. T3→T2: ratio 50.
+    // Burning the full ratio = 100% (same outcome as combine, but combine is guaranteed).
+    // ═════════════════════════════════════════════════════════════════════════
+
+    function test_ForgeT7_HalfRatioIs50Percent() public withVRFEnabled {
+        // T7 ratio=20. Burn 10 → (10*100)/20 = 50% success.
+        _giveBlocks(alice, 7, 10);
+        vm.prank(alice);
+        forge.forge(7, 10);  // requestId = 1
+        // randomWord=49 → 49%100=49 < 50 → success
+        mockVRFCoordinator.fulfillRequest(1, 49);
+        assertEq(token.balanceOf(alice, 6), 1, "Burn 10 of 20 = 50% - should succeed at 49");
+    }
+
+    function test_ForgeT5_HalfRatioIs50Percent() public withVRFEnabled {
+        // T5 ratio=30. Burn 15 → (15*100)/30 = 50% success.
+        _giveBlocks(alice, 5, 15);
+        vm.prank(alice);
+        forge.forge(5, 15);
+        // randomWord=49 → 49 < 50 → success
+        mockVRFCoordinator.fulfillRequest(1, 49);
+        assertEq(token.balanceOf(alice, 4), 1, "Burn 15 of 30 = 50% - should succeed at 49");
+    }
+
+    function test_ForgeT3_HalfRatioIs50Percent() public withVRFEnabled {
+        // T3 ratio=50. Burn 25 → (25*100)/50 = 50% success.
+        _giveBlocks(alice, 3, 25);
+        vm.prank(alice);
+        forge.forge(3, 25);
+        mockVRFCoordinator.fulfillRequest(1, 49);
+        assertEq(token.balanceOf(alice, 2), 1, "Burn 25 of 50 = 50% - should succeed at 49");
+    }
+
+    function test_ForgeFullRatioIs100Percent() public withVRFEnabled {
+        // Burning the full combine ratio = (ratio*100)/ratio = 100%.
+        // randomWord % 100 is always 0–99, always < 100 → guaranteed success.
+        _giveBlocks(alice, 7, 20);
+        vm.prank(alice);
+        forge.forge(7, 20);
+        mockVRFCoordinator.fulfillRequest(1, 99);  // worst random still succeeds
+        assertEq(token.balanceOf(alice, 6), 1, "Burning full ratio should always succeed");
+    }
+
+    function test_ForgeExceedsRatioReverts() public {
+        _giveBlocks(alice, 7, 21);
+        vm.prank(alice);
+        vm.expectRevert("Burn amount must be 1 to combine ratio for this tier");
+        forge.forge(7, 21);  // T7 ratio=20, 21 exceeds it
+    }
+
+    function test_ForgeZeroReverts() public {
+        _giveBlocks(alice, 7, 5);
+        vm.prank(alice);
+        vm.expectRevert("Burn amount must be 1 to combine ratio for this tier");
+        forge.forge(7, 0);  // minimum is 1
+    }
+
+    function test_ForgeTier2IsInvalid() public {
+        _giveBlocks(alice, 2, 10);
+        vm.prank(alice);
+        vm.expectRevert("Invalid tier");
+        forge.forge(2, 10);  // T2→T1 forge is not possible - sacrifice-only path
+    }
+
+    function test_ForgeT4_QuarterRatioIs25Percent() public withVRFEnabled {
+        // T4 ratio=30. Burn 8 → (8*100)/30 = 26% (integer division: 26).
+        // randomWord=25 → 25 < 26 → success. randomWord=26 → 26 >= 26 → fail.
+        _giveBlocks(alice, 4, 8);
+        vm.prank(alice);
+        forge.forge(4, 8);
+        mockVRFCoordinator.fulfillRequest(1, 26);  // 26 >= 26 → fail
+        assertEq(token.balanceOf(alice, 3), 0, "Should fail when random = successChance");
+    }
+
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 7d. ENDGAME - SACRIFICE DISTRIBUTION TESTS
+    //
+    // Tests the full sacrifice distribution flow:
+    //   50% -> winner | 40% -> entitlement claim pool | 10% -> season2Seed
+    // Players call claimLeaderboardReward() with no arguments - entitlements
+    // are written to storage at sacrifice time and read directly.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /// @dev Helper: builds player/amount arrays for a single leaderboard entrant.
+    function _singleEntitlement(address player, uint256 amount)
+        internal pure returns (address[] memory players, uint256[] memory amounts)
+    {
+        players = new address[](1);
+        amounts  = new uint256[](1);
+        players[0] = player;
+        amounts[0]  = amount;
+    }
+
+    /// @dev Helper: sets up sacrifice state on countdown for direct unit tests.
+    ///      Alice triggers countdown, 7 days pass, then sacrifice is executed.
+    function _doSacrifice(uint256 treasuryAmount, address[] memory players, uint256[] memory amounts) internal {
+        vm.deal(address(treasury), treasuryAmount);
+        _giveAllTiers(alice);
+        vm.warp(block.timestamp + 7 days + 1);
+        vm.prank(alice);
+        token.sacrifice(players, amounts);
+    }
+
+    function test_Sacrifice_EntitlementStoredOnCountdown() public {
+        (address[] memory players, uint256[] memory amounts) = _singleEntitlement(bob, 4 ether);
+        _doSacrifice(10 ether, players, amounts);
+        assertEq(countdown.leaderboardEntitlement(bob), 4 ether, "Bob entitlement should be stored");
+    }
+
+    function test_Sacrifice_ClaimWindowSet() public {
+        (address[] memory players, uint256[] memory amounts) = _singleEntitlement(bob, 4 ether);
+        _doSacrifice(10 ether, players, amounts);
+        assertGt(countdown.claimWindowExpiry(), block.timestamp, "Claim window should be in future");
+    }
+
+    function test_ClaimLeaderboardReward_Valid() public {
+        uint256 bobShare = 4 ether; // 40% of 10 ether
+        (address[] memory players, uint256[] memory amounts) = _singleEntitlement(bob, bobShare);
+        _doSacrifice(10 ether, players, amounts);
+
+        uint256 bobBefore = bob.balance;
+        vm.prank(bob);
+        countdown.claimLeaderboardReward();
+
+        assertEq(bob.balance - bobBefore, bobShare, "Bob should receive his full entitlement");
+        assertEq(countdown.hasClaimed(bob), true,   "Bob should be marked as claimed");
+        assertEq(countdown.communityPool(), 0,       "Pool should be empty after full claim");
+    }
+
+    function test_ClaimLeaderboardReward_NoEntitlement_Reverts() public {
+        (address[] memory players, uint256[] memory amounts) = _singleEntitlement(bob, 4 ether);
+        _doSacrifice(10 ether, players, amounts);
+
+        // Carol has no entitlement - should be rejected
+        vm.prank(carol);
+        vm.expectRevert("No entitlement");
+        countdown.claimLeaderboardReward();
+    }
+
+    function test_ClaimLeaderboardReward_DoubleClaim_Reverts() public {
+        (address[] memory players, uint256[] memory amounts) = _singleEntitlement(bob, 4 ether);
+        _doSacrifice(10 ether, players, amounts);
+
+        vm.prank(bob);
+        countdown.claimLeaderboardReward();
+
+        vm.prank(bob);
+        vm.expectRevert("Already claimed");
+        countdown.claimLeaderboardReward();
+    }
+
+    function test_ClaimLeaderboardReward_AfterExpiry_Reverts() public {
+        (address[] memory players, uint256[] memory amounts) = _singleEntitlement(bob, 4 ether);
+        _doSacrifice(10 ether, players, amounts);
+
+        // Fast-forward past the 30-day claim window
+        vm.warp(block.timestamp + 31 days);
+
+        vm.prank(bob);
+        vm.expectRevert("Claim window has expired");
+        countdown.claimLeaderboardReward();
+    }
+
+    function test_ClaimLeaderboardReward_MultipleEntrants() public {
+        // Bob gets 2 ether, carol gets 1 ether (3 ether of the 4 ether pool, 1 stays as dust)
+        address[] memory players = new address[](2);
+        uint256[] memory amounts  = new uint256[](2);
+        players[0] = bob;   amounts[0] = 2 ether;
+        players[1] = carol; amounts[1] = 1 ether;
+        _doSacrifice(10 ether, players, amounts);
+
+        uint256 bobBefore   = bob.balance;
+        uint256 carolBefore = carol.balance;
+
+        vm.prank(bob);
+        countdown.claimLeaderboardReward();
+
+        vm.prank(carol);
+        countdown.claimLeaderboardReward();
+
+        assertEq(bob.balance   - bobBefore,   2 ether, "Bob gets his 2 ether");
+        assertEq(carol.balance - carolBefore, 1 ether, "Carol gets her 1 ether");
+        assertEq(countdown.communityPool(),   1 ether, "1 ether dust remains unclaimed");
+    }
+
+    function test_SweepUnclaimedRewards_AfterExpiry() public {
+        (address[] memory players, uint256[] memory amounts) = _singleEntitlement(bob, 4 ether);
+        _doSacrifice(10 ether, players, amounts);
+
+        uint256 season2SeedBefore = season2Seed.balance;
+
+        // Bob never claims - sweep after 30 days
+        vm.warp(block.timestamp + 31 days);
+        countdown.sweepUnclaimedRewards();  // permissionless - anyone can call
+
+        assertEq(countdown.communityPool(), 0,                     "Pool should be emptied");
+        assertEq(season2Seed.balance - season2SeedBefore, 4 ether, "Unclaimed funds swept to season2Seed");
+    }
+
+    function test_SweepUnclaimedRewards_BeforeExpiry_Reverts() public {
+        (address[] memory players, uint256[] memory amounts) = _singleEntitlement(bob, 4 ether);
+        _doSacrifice(10 ether, players, amounts);
+
+        // Only 15 days have passed - claim window still open
+        vm.warp(block.timestamp + 15 days);
+        vm.expectRevert("Claim window still open");
+        countdown.sweepUnclaimedRewards();
+    }
+
+    function test_SweepUnclaimedRewards_IsPermissionless() public {
+        (address[] memory players, uint256[] memory amounts) = _singleEntitlement(bob, 4 ether);
+        _doSacrifice(10 ether, players, amounts);
+
+        vm.warp(block.timestamp + 31 days);
+
+        // Carol (random non-owner) can trigger the sweep - Gelato keeper pattern
+        vm.prank(carol);
+        countdown.sweepUnclaimedRewards();
+
+        assertEq(countdown.communityPool(), 0, "Carol should be able to trigger sweep");
+    }
+
+    function test_SweepWithNoSacrifice_Reverts() public {
+        vm.expectRevert("No sacrifice has occurred");
+        countdown.sweepUnclaimedRewards();
+    }
+
+    function test_Sacrifice_NoSeason2SeedAddress_Reverts() public {
+        // Deploy a fresh countdown with no season2SeedAddress set
+        vm.startPrank(owner);
+        BlockHuntCountdown freshCountdown = new BlockHuntCountdown();
+        freshCountdown.setTokenContract(address(token));
+        // deliberately do NOT call setSeason2SeedAddress
+        vm.stopPrank();
+
+        assertEq(freshCountdown.season2SeedAddress(), address(0), "Should be unset");
+    }
+
+    function test_Sacrifice_EntitlementsExceedPool_Reverts() public {
+        // Entitlements that sum to more than the 40% pool should revert
+        vm.deal(address(treasury), 10 ether);  // pool = 4 ether
+        _giveAllTiers(alice);
+        vm.warp(block.timestamp + 7 days + 1);
+
+        address[] memory players = new address[](1);
+        uint256[] memory amounts  = new uint256[](1);
+        players[0] = bob;
+        amounts[0]  = 5 ether;  // exceeds the 4 ether pool
+
+        vm.prank(alice);
+        vm.expectRevert("Entitlements exceed community pool");
+        token.sacrifice(players, amounts);
+    }
+
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 3e. MINT VRF - GAS SCALING TEST
+    // ═════════════════════════════════════════════════════════════════════════
+
+    function test_MintVRF_GasLimitScalesWithQuantity() public withMintVRFEnabled {
+        // Verify that large mint VRF callbacks are delivered without reverting.
+        // A 200-block mint previously failed with the fixed 200k gas limit.
+        // The aggregation optimisation reduces mintBatch to ≤6 entries regardless of quantity.
+
+        // Give alice enough ETH for 200 mints
+        vm.prank(alice);
+        token.mint{value: MINT_PRICE * 200}(200);
+
+        // Simulate Chainlink delivering the callback - must not revert due to gas
+        mockVRFCoordinator.fulfillRequest(1, 99999);
+
+        uint256 total = 0;
+        for (uint256 tier = 1; tier <= 7; tier++) {
+            total += token.balanceOf(alice, tier);
+        }
+        assertEq(total, 200, "All 200 blocks should be delivered via large mint callback");
+    }
+
+    function test_MintVRF_TierAggregationProducesCorrectTotal() public withMintVRFEnabled {
+        // Regardless of how tiers are distributed, total block count must equal minted quantity
+        vm.prank(alice);
+        token.mint{value: MINT_PRICE * 50}(50);
+
+        mockVRFCoordinator.fulfillRequest(1, 42);
+
+        uint256 total = 0;
+        for (uint256 tier = 2; tier <= 7; tier++) {
+            total += token.balanceOf(alice, tier);
+        }
+        assertEq(total, 50, "Aggregated tier mint must sum to exactly 50");
+    }
+
+    /// @dev Modifier: enables VRF on the token contract (mint path)
+    modifier withMintAndForgeVRFEnabled() {
+        vm.startPrank(owner);
+        token.setVrfConfig(1, bytes32(uint256(1)), 500_000);
+        token.setVrfEnabled(true);
+        forge.setVrfConfig(1, bytes32(uint256(0x9e1344a1247c8a1785d0a4681a27152bffdb43666ae5bf7d14d24a5efd44bf71)), 200_000);
+        forge.setVrfEnabled(true);
+        vm.stopPrank();
+        _;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
 
     /// @dev Mints blocks directly to a player via testMint - bypasses window.
     function _giveBlocks(address player, uint256 tier, uint256 amount) internal {
@@ -2923,22 +2690,12 @@ contract BlockHuntTest is Test {
         token.mintForTest(player, tier, amount);
     }
 
-    /// @dev Give a player exactly one block of every tier (2-7), triggering countdown.
+    /// @dev Give a player exactly one block of every tier (2–7), triggering countdown.
     function _giveAllTiers(address player) internal {
         vm.startPrank(owner);
         for (uint256 tier = 2; tier <= 7; tier++) {
             token.mintForTest(player, tier, 1);
         }
         vm.stopPrank();
-    }
-
-    /// @dev Execute a sacrifice with given treasury amount.
-    ///      Alice triggers countdown, 7 days pass, then sacrifice is executed.
-    function _doSacrifice(uint256 treasuryAmount) internal {
-        vm.deal(address(treasury), treasuryAmount);
-        _giveAllTiers(alice);
-        vm.warp(block.timestamp + 7 days + 1);
-        vm.prank(alice);
-        token.sacrifice();
     }
 }

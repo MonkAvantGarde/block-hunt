@@ -7,13 +7,11 @@ dataSources:
     name: BlockHuntToken
     network: base-sepolia
     source:
-      address: "0x57Efa000E28313ed47213C6faF13719500038D75"
+      address: "0x23A15aE0bF86B1227614A1175A1D3A12f8FA747b"
       abi: BlockHuntToken
-      # ⚠️  Replace with the actual deployment block from BaseScan:
-      # 1. Go to https://sepolia.basescan.org/address/0x57Efa000E28313ed47213C6faF13719500038D75
-      # 2. Click the first transaction — that block number goes here
-      # Using 0 works but will take much longer to sync on first deploy
-      startBlock: 38420065
+      # Deployment block from Phase 2 redeploy (March 12, 2026)
+      # Confirmed from deploy tx on Base Sepolia block 38777682
+      startBlock: 38777682
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -27,6 +25,8 @@ dataSources:
       eventHandlers:
         - event: TransferSingle(indexed address,indexed address,indexed address,uint256,uint256)
           handler: handleTransferSingle
-        - event: MintFulfilled(indexed uint256,indexed address,uint256)
+        - event: TransferBatch(indexed address,indexed address,indexed address,uint256[],uint256[])
+          handler: handleTransferBatch
+        - event: MintFulfilled(indexed address,indexed uint256,uint256)
           handler: handleMintFulfilled
       file: ./src/mapping.ts

@@ -45,26 +45,40 @@ export const config = createConfig({
 // Never hardcode addresses anywhere else in the app.
 
 export const CONTRACTS = {
-  TOKEN:     '0x57Efa000E28313ed47213C6faF13719500038D75',
-  TREASURY:  '0x1442EBD149Ac1842e40c72e89cCCD2653F16D39D',
-  WINDOW:    '0xAD0C5f56324ed2116b9Ebc18E4de2794412867BD',
-  FORGE:     '0x99c1F1c9D738528a4Bba537E70f13596cBB599E7',
-  COUNTDOWN: '0xaeBa69BBF66d670EB98Bc59Bc71EF8690f639466',
+  TOKEN:     '0x23A15aE0bF86B1227614A1175A1D3A12f8FA747b',
+  TREASURY:  '0xEd9a0A9DD424aa9CBCe6edd9b5b56236d6e9F4f2',
+  WINDOW:    '0xCf130CBe110980fcb3e0223833Ab005736A2d6dA',
+  FORGE:     '0xA4865336E3e760f6738B0Dea009B574f3d8e0BbC',
+  COUNTDOWN: '0x124de60d7d465BA404c8AAD71709efc5A0209D35',
+  ESCROW:    '0x932E827BA9B8d708C75295E1b8258e6c924F0FF5',
 }
 
 // ── GAME CONSTANTS ────────────────────────────────────────────────────────────
 // Mirror the values locked in the contracts.
 // Used throughout the UI for display and validation.
 
-export const MINT_PRICE_ETH = 0.00025   // per block
+// Mint price is batch-dependent — read current batch from contract, then look up here.
+// Keys are batch numbers (1–6) matching the on-chain batch index.
+export const BATCH_PRICES_ETH = {
+  1: 0.00008,
+  2: 0.00016,
+  3: 0.00032,
+  4: 0.00080,
+  5: 0.00160,
+  6: 0.00200,
+}
 
+// Helper — pass the current batch number returned by the contract
+export const getMintPrice = (batch) => BATCH_PRICES_ETH[batch] ?? BATCH_PRICES_ETH[1]
+
+// Combine ratios — T7 down to T2 only.
+// T2→T1 (The Origin) is NOT available via combine. The Origin is sacrifice-only.
 export const COMBINE_RATIOS = {
   7: 20,   // 20 Tier-7 → 1 Tier-6
   6: 20,   // 20 Tier-6 → 1 Tier-5
-  5: 30,
-  4: 30,
-  3: 50,
-  2: 100,  // 100 Tier-2 → 1 Tier-1 (via sacrifice path only)
+  5: 30,   // 30 Tier-5 → 1 Tier-4
+  4: 30,   // 30 Tier-4 → 1 Tier-3
+  3: 50,   // 50 Tier-3 → 1 Tier-2
 }
 
 export const TIER_NAMES = {

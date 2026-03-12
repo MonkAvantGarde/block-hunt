@@ -44,6 +44,40 @@ export class TransferSingle__Params {
   }
 }
 
+export class TransferBatch extends ethereum.Event {
+  get params(): TransferBatch__Params {
+    return new TransferBatch__Params(this);
+  }
+}
+
+export class TransferBatch__Params {
+  _event: TransferBatch;
+
+  constructor(event: TransferBatch) {
+    this._event = event;
+  }
+
+  get operator(): Address {
+    return this._event.parameters[0].value.toAddress();
+  }
+
+  get from(): Address {
+    return this._event.parameters[1].value.toAddress();
+  }
+
+  get to(): Address {
+    return this._event.parameters[2].value.toAddress();
+  }
+
+  get ids(): Array<BigInt> {
+    return this._event.parameters[3].value.toBigIntArray();
+  }
+
+  get values(): Array<BigInt> {
+    return this._event.parameters[4].value.toBigIntArray();
+  }
+}
+
 export class MintFulfilled extends ethereum.Event {
   get params(): MintFulfilled__Params {
     return new MintFulfilled__Params(this);
@@ -57,12 +91,12 @@ export class MintFulfilled__Params {
     this._event = event;
   }
 
-  get requestId(): BigInt {
-    return this._event.parameters[0].value.toBigInt();
+  get player(): Address {
+    return this._event.parameters[0].value.toAddress();
   }
 
-  get player(): Address {
-    return this._event.parameters[1].value.toAddress();
+  get requestId(): BigInt {
+    return this._event.parameters[1].value.toBigInt();
   }
 
   get quantity(): BigInt {

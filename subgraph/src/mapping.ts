@@ -1,5 +1,5 @@
 import { BigInt, Bytes } from "@graphprotocol/graph-ts"
-import { TransferSingle } from "../generated/BlockHuntToken/BlockHuntToken"
+import { TransferSingle, TransferBatch } from "../generated/BlockHuntToken/BlockHuntToken"
 import { MintFulfilled } from "../generated/BlockHuntToken/BlockHuntToken"
 import { Player, SeasonStat } from "../generated/schema"
 
@@ -135,6 +135,9 @@ export function handleTransferSingle(event: TransferSingle): void {
   if (fromAddr == ADDR_ZERO) {
     let toPlayer = getOrCreatePlayer(toAddr)
     setTierBalance(toPlayer, tier, getTierBalance(toPlayer, tier).plus(amount))
+    // NOTE: totalMints is tracked via MintFulfilled only — not here.
+    // TransferSingle from 0x0 fires for combine/forge outputs too, which
+    // would overcount. MintFulfilled only fires for VRF mint completions.
     recalcPlayer(toPlayer)
     toPlayer.lastUpdated = timestamp
     toPlayer.save()
@@ -160,7 +163,61 @@ export function handleTransferSingle(event: TransferSingle): void {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Event: MintFulfilled — tracks total mints per player for tiebreak ranking
+// Event: TransferBatch — fires when multiple tiers are minted at once (VRF delivery)
+// This is the primary event for mint results since _mintBatch is used.
+// ─────────────────────────────────────────────────────────────────────────────
+export function handleTransferBatch(event: TransferBatch): void {
+  let ids      = event.params.ids
+  let values   = event.params.values
+  let fromAddr = event.params.from.toHexString().toLowerCase()
+  let toAddr   = event.params.to.toHexString().toLowerCase()
+  let timestamp = event.block.timestamp
+  let stats    = getOrCreateStats()
+
+  for (let i = 0; i < ids.length; i++) {
+    let tier   = ids[i].toI32()
+    let amount = values[i]
+
+    // ── Burn ────────────────────────────────────────────────────────────────
+    if (toAddr == ADDR_ZERO) {
+      let fromPlayer = getOrCreatePlayer(fromAddr)
+      let newBal = getTierBalance(fromPlayer, tier).minus(amount)
+      setTierBalance(fromPlayer, tier, newBal.lt(ZERO) ? ZERO : newBal)
+      recalcPlayer(fromPlayer)
+      fromPlayer.lastUpdated = timestamp
+      fromPlayer.save()
+      stats.totalBurned = stats.totalBurned.plus(amount)
+
+    // ── Mint ────────────────────────────────────────────────────────────────
+    } else if (fromAddr == ADDR_ZERO) {
+      let toPlayer = getOrCreatePlayer(toAddr)
+      setTierBalance(toPlayer, tier, getTierBalance(toPlayer, tier).plus(amount))
+      recalcPlayer(toPlayer)
+      toPlayer.lastUpdated = timestamp
+      toPlayer.save()
+      stats.totalMinted = stats.totalMinted.plus(amount)
+
+    // ── Transfer ────────────────────────────────────────────────────────────
+    } else {
+      let fromPlayer = getOrCreatePlayer(fromAddr)
+      let newBal = getTierBalance(fromPlayer, tier).minus(amount)
+      setTierBalance(fromPlayer, tier, newBal.lt(ZERO) ? ZERO : newBal)
+      recalcPlayer(fromPlayer)
+      fromPlayer.lastUpdated = timestamp
+      fromPlayer.save()
+
+      let toPlayer = getOrCreatePlayer(toAddr)
+      setTierBalance(toPlayer, tier, getTierBalance(toPlayer, tier).plus(amount))
+      recalcPlayer(toPlayer)
+      toPlayer.lastUpdated = timestamp
+      toPlayer.save()
+    }
+  }
+
+  stats.save()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
 export function handleMintFulfilled(event: MintFulfilled): void {
   let playerAddr = event.params.player.toHexString().toLowerCase()

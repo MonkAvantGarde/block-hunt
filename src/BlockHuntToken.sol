@@ -26,11 +26,18 @@ interface IBlockHuntTreasury {
 interface IBlockHuntMint {
     function isWindowOpen() external view returns (bool);
     function recordMint(address minter, uint256 quantity) external;
+    function currentBatch() external view returns (uint256);
+    function windowCapForBatch(uint256 batch) external pure returns (uint256);
 }
 
 interface IBlockHuntCountdown {
     function startCountdown(address holder) external;
     function syncReset() external;
+}
+
+// [NEW] Escrow handles all sacrifice fund distribution
+interface IBlockHuntEscrow {
+    function initiateSacrifice(address winner) external;
 }
 
 contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGuard, Pausable {
@@ -43,8 +50,27 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     uint256 public constant TIER_RESTLESS = 6;
     uint256 public constant TIER_INERT    = 7;
 
-    uint256 public constant MINT_PRICE         = 0.00025 ether;
-    uint256 public constant DAILY_CAP          = 50_000;
+    // [FIX H1] DAILY_CAP constant REMOVED — cap is now read dynamically from
+    // MintWindow via windowCapForBatch(currentBatch). This ensures Batches 3–6
+    // can mint at their intended higher caps (50k, 100k, 200k, 100k per window).
+
+    // ── Per-batch mint pricing ────────────────────────────────────────────────
+    function mintPriceForBatch(uint256 batch) public pure returns (uint256) {
+        if (batch == 1) return 0.00008 ether;
+        if (batch == 2) return 0.00016 ether;
+        if (batch == 3) return 0.00032 ether;
+        if (batch == 4) return 0.00080 ether;
+        if (batch == 5) return 0.00160 ether;
+        if (batch == 6) return 0.00200 ether;
+        return 0.00200 ether;
+    }
+
+    function currentMintPrice() public view returns (uint256) {
+        if (mintWindowContract == address(0)) return mintPriceForBatch(1);
+        uint256 batch = IBlockHuntMint(mintWindowContract).currentBatch();
+        return mintPriceForBatch(batch);
+    }
+
     uint256 public constant COUNTDOWN_DURATION = 7 days;
     uint256 public constant MINT_REQUEST_TTL   = 1 hours;
 
@@ -54,6 +80,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     address public treasuryContract;
     address public forgeContract;
     address public countdownContract;
+    address public escrowContract;    // [NEW] holds sacrifice funds
 
     uint256 public currentWindowDay;
     uint256 public windowDayMinted;
@@ -67,22 +94,20 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     bool    public vrfEnabled;
     uint256 public vrfSubscriptionId;
     bytes32 public vrfKeyHash;
-    uint32  public vrfCallbackGasLimit;
+    uint32  public vrfCallbackGasLimit = 150_000;
+    uint32  public constant VRF_GAS_PER_BLOCK = 3_000;
+    uint32  public constant VRF_GAS_MAX = 2_500_000;
 
     // ── Mint VRF pending state ────────────────────────────────────────────────
-
     struct MintRequest {
-        address player;       // who is minting
-        uint256 quantity;     // how many blocks were allocated (cap-adjusted)
-        uint256 amountPaid;   // ETH held by this contract pending delivery
-        uint256 requestedAt;  // timestamp of the request — used for timeout
-        uint256 windowDay;    // daily window at request time (for cap accounting)
+        address player;
+        uint256 quantity;
+        uint256 amountPaid;
+        uint256 requestedAt;
+        uint256 windowDay;
     }
 
-    // requestId (Chainlink) → MintRequest
     mapping(uint256 => MintRequest) public vrfMintRequests;
-
-    // player → list of their pending requestIds (so they can find requests to cancel)
     mapping(address => uint256[]) public pendingRequestsByPlayer;
 
     // ── Pseudo-random nonce (vrfEnabled = false path only) ────────────────────
@@ -93,13 +118,11 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     event BlocksCombined(address indexed by, uint256 indexed fromTier, uint256 indexed toTier);
     event BlocksForged(address indexed by, uint256 indexed fromTier, bool success);
     event CountdownTriggered(address indexed holder);
-     // SESSION 3: emitted when holder loses a tier mid-countdown and Token state is reset
     event CountdownHolderReset(address indexed formerHolder);
     event OriginClaimed(address indexed holder);
     event OriginSacrificed(address indexed holder);
     event DefaultSacrificeExecuted(address indexed holder, address indexed executor);
 
-    // VRF mint lifecycle events — used by frontend to drive player-facing state
     event MintRequested(address indexed player, uint256 indexed requestId, uint256 quantity);
     event MintFulfilled(address indexed player, uint256 indexed requestId, uint256 quantity);
     event MintCancelled(address indexed player, uint256 indexed requestId, uint256 refundAmount);
@@ -116,12 +139,14 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         VRFConsumerBaseV2Plus(vrfCoordinator_)
     {
         _setDefaultRoyalty(royaltyReceiver_, royaltyFee_);
+        // [FIX M7] combineRatio[2] REMOVED — T2→T1 combine is not possible.
+        // The Origin is sacrifice-only. combineRatio[2] was set to 100 previously
+        // but had no valid use case and could mislead the frontend.
         combineRatio[7] = 20;
         combineRatio[6] = 20;
         combineRatio[5] = 30;
         combineRatio[4] = 30;
         combineRatio[3] = 50;
-        combineRatio[2] = 100;
     }
 
     // ── Modifiers ─────────────────────────────────────────────────────────────
@@ -136,8 +161,6 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         _;
     }
 
-    // SESSION 3: Countdown calls back into Token to clear its state after
-    // holder disqualification. This modifier gates that entry point.
     modifier onlyCountdown() {
         require(msg.sender == countdownContract, "Only countdown contract");
         _;
@@ -154,17 +177,12 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     function setTreasuryContract(address addr)   external onlyOwner { treasuryContract   = addr; }
     function setForgeContract(address addr)      external onlyOwner { forgeContract       = addr; }
     function setCountdownContract(address addr)  external onlyOwner { countdownContract   = addr; }
+    function setEscrowContract(address addr)     external onlyOwner { escrowContract      = addr; }
     function setURI(string memory newuri)        external onlyOwner { _setURI(newuri); }
     function setRoyalty(address receiver, uint96 fee) external onlyOwner { _setDefaultRoyalty(receiver, fee); }
     function pause()   external onlyOwner { _pause(); }
     function unpause() external onlyOwner { _unpause(); }
 
-    /**
-     * @notice Configure VRF parameters. Must be called before enabling VRF.
-     * @param subId          Chainlink VRF V2.5 subscription ID
-     * @param keyHash        Key hash for the gas lane (e.g. 30 gwei lane on Base Sepolia)
-     * @param callbackGasLimit Gas limit for fulfillRandomWords callback
-     */
     function setVrfConfig(
         uint256 subId,
         bytes32 keyHash,
@@ -175,11 +193,6 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         vrfCallbackGasLimit  = callbackGasLimit;
     }
 
-    /**
-     * @notice Enable or disable VRF for minting.
-     *         When false (default): synchronous pseudo-random path.
-     *         When true:            async Chainlink VRF path.
-     */
     function setVrfEnabled(bool enabled) external onlyOwner {
         vrfEnabled = enabled;
     }
@@ -189,39 +202,29 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
 
     // ── CORE GAME ACTIONS ─────────────────────────────────────────────────────
 
-    /**
-     * @notice Mint blocks. Behaviour depends on vrfEnabled.
-     *
-     * VRF path (vrfEnabled = true):
-     *   - Validates inputs and cap space.
-     *   - Reserves cap space immediately (prevents cap overrun from simultaneous requests).
-     *   - ETH is held by this contract until the VRF callback delivers blocks.
-     *   - Emits MintRequested. Blocks are NOT minted yet.
-     *   - If VRF does not respond within MINT_REQUEST_TTL (1 hour), player can call
-     *     cancelMintRequest() to reclaim ETH and release reserved cap space.
-     *
-     * Pseudo-random path (vrfEnabled = false, default):
-     *   - Identical to pre-VRF behaviour. Resolves in a single transaction.
-     */
     function mint(uint256 quantity) external payable nonReentrant whenNotPaused notCountdown {
         require(mintWindowContract != address(0), "Mint not configured");
         require(IBlockHuntMint(mintWindowContract).isWindowOpen(), "Window closed");
         require(quantity > 0 && quantity <= 500, "Invalid quantity");
-        require(msg.value >= MINT_PRICE * quantity, "Insufficient payment");
+        uint256 mintPrice = currentMintPrice();
+        require(msg.value >= mintPrice * quantity, "Insufficient payment");
 
-        uint256 dayRemaining = DAILY_CAP - windowDayMinted;
-        require(dayRemaining > 0, "Daily cap reached");
+        // [FIX H1] Read cap dynamically from MintWindow instead of hardcoded constant.
+        // This ensures Batches 3–6 use their intended higher window caps.
+        uint256 windowCap = IBlockHuntMint(mintWindowContract).windowCapForBatch(
+            IBlockHuntMint(mintWindowContract).currentBatch()
+        );
+        uint256 dayRemaining = windowCap - windowDayMinted;
+        require(dayRemaining > 0, "Window cap reached");
         uint256 allocated = quantity > dayRemaining ? dayRemaining : quantity;
 
-        uint256 totalCost = MINT_PRICE * allocated;
+        uint256 totalCost = mintPrice * allocated;
 
-        // Refund excess payment immediately regardless of VRF path
         if (msg.value > totalCost) {
             (bool refunded, ) = payable(msg.sender).call{value: msg.value - totalCost}("");
             require(refunded, "Refund failed");
         }
 
-        // Reserve cap space at request time (both paths)
         windowDayMinted += allocated;
 
         if (vrfEnabled) {
@@ -233,17 +236,13 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
 
     // ── VRF MINT PATH ─────────────────────────────────────────────────────────
 
-    /**
-     * @dev Sends VRF request and stores pending MintRequest.
-     *      ETH is held by this contract until fulfillRandomWords() fires.
-     */
     function _mintVRF(uint256 allocated, uint256 totalCost) internal {
         uint256 requestId = s_vrfCoordinator.requestRandomWords(
             VRFV2PlusClient.RandomWordsRequest({
                 keyHash:             vrfKeyHash,
                 subId:               vrfSubscriptionId,
                 requestConfirmations: 3,
-                callbackGasLimit:    vrfCallbackGasLimit,
+                callbackGasLimit:    _gasLimitForQuantity(allocated),
                 numWords:            1,
                 extraArgs:           VRFV2PlusClient._argsToBytes(
                                          VRFV2PlusClient.ExtraArgsV1({ nativePayment: false })
@@ -264,18 +263,12 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         emit MintRequested(msg.sender, requestId, allocated);
     }
 
-    /**
-     * @dev Chainlink VRF callback. Resolves the pending mint.
-     *      Derives one tier result per block from a single random word using
-     *      keccak256(randomWord, index) — safe because the seed is VRF-secured.
-     */
     function fulfillRandomWords(
         uint256 requestId,
         uint256[] calldata randomWords
     ) internal override {
         MintRequest memory req = vrfMintRequests[requestId];
 
-        // Guard: if request was cancelled before callback arrived, do nothing
         if (req.player == address(0)) return;
 
         delete vrfMintRequests[requestId];
@@ -283,19 +276,34 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
 
         uint256 allocated = req.quantity;
         uint256 seed      = randomWords[0];
+        uint256 batch     = IBlockHuntMint(mintWindowContract).currentBatch();
 
-        uint256[] memory ids     = new uint256[](allocated);
-        uint256[] memory amounts = new uint256[](allocated);
-
+        uint256[8] memory tierCounts;
         for (uint256 i = 0; i < allocated; i++) {
             uint256 derived = uint256(keccak256(abi.encodePacked(seed, i)));
-            uint256 tier    = _tierFromRandom(derived);
-            ids[i]          = tier;
-            amounts[i]      = 1;
-            tierTotalSupply[tier]++;
+            uint256 tier    = _tierFromRandom(derived, batch);
+            tierCounts[tier]++;
         }
 
-        // Forward ETH to treasury now that blocks are being delivered
+        for (uint256 t = 2; t <= 7; t++) {
+            if (tierCounts[t] > 0) tierTotalSupply[t] += tierCounts[t];
+        }
+
+        uint256 uniqueCount;
+        for (uint256 t = 2; t <= 7; t++) {
+            if (tierCounts[t] > 0) uniqueCount++;
+        }
+        uint256[] memory ids     = new uint256[](uniqueCount);
+        uint256[] memory amounts = new uint256[](uniqueCount);
+        uint256 idx;
+        for (uint256 t = 2; t <= 7; t++) {
+            if (tierCounts[t] > 0) {
+                ids[idx]     = t;
+                amounts[idx] = tierCounts[t];
+                idx++;
+            }
+        }
+
         IBlockHuntTreasury(treasuryContract).receiveMintFunds{value: req.amountPaid}();
 
         _mintBatch(req.player, ids, amounts, "");
@@ -307,12 +315,6 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         _checkCountdownTrigger(req.player);
     }
 
-    /**
-     * @notice Cancel a pending mint request after the 1-hour timeout has elapsed.
-     *         Refunds ETH in full. Releases reserved daily cap space.
-     *         Only callable by the player who made the request.
-     * @param requestId The VRF requestId to cancel (visible in MintRequested event)
-     */
     function cancelMintRequest(uint256 requestId) external nonReentrant {
         MintRequest memory req = vrfMintRequests[requestId];
 
@@ -326,37 +328,53 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         delete vrfMintRequests[requestId];
         _removePendingRequest(msg.sender, requestId);
 
-        // Release cap space that was reserved at request time
         windowDayMinted -= req.quantity;
 
-        // Refund ETH
         (bool sent, ) = payable(msg.sender).call{value: req.amountPaid}("");
         require(sent, "Refund failed");
 
         emit MintCancelled(msg.sender, requestId, req.amountPaid);
     }
 
-    /**
-     * @notice Returns all pending VRF requestIds for a given player.
-     *         Used by the frontend to display pending mint state.
-     */
     function getPendingRequests(address player) external view returns (uint256[] memory) {
         return pendingRequestsByPlayer[player];
     }
 
     // ── PSEUDO-RANDOM MINT PATH (vrfEnabled = false) ──────────────────────────
 
+    // [FIX H5] Applied same tier-aggregation optimisation as VRF callback path.
+    // Previous version created a 500-element array for a 500-block mint.
+    // Now tallies tiers into a [8] bucket array first, then builds a compact
+    // mintBatch with at most 6 entries. Cuts gas by ~70% on large mints.
     function _mintPseudoRandom(uint256 allocated, uint256 totalCost) internal {
         IBlockHuntTreasury(treasuryContract).receiveMintFunds{value: totalCost}();
 
-        uint256[] memory ids     = new uint256[](allocated);
-        uint256[] memory amounts = new uint256[](allocated);
-
+        // Step 1: roll tiers and tally into buckets
+        uint256[8] memory tierCounts;
         for (uint256 i = 0; i < allocated; i++) {
             uint256 tier = _rollTier(i);
-            ids[i]       = tier;
-            amounts[i]   = 1;
-            tierTotalSupply[tier]++;
+            tierCounts[tier]++;
+        }
+
+        // Step 2: update tierTotalSupply
+        for (uint256 t = 2; t <= 7; t++) {
+            if (tierCounts[t] > 0) tierTotalSupply[t] += tierCounts[t];
+        }
+
+        // Step 3: build compact mintBatch arrays (max 6 entries)
+        uint256 uniqueCount;
+        for (uint256 t = 2; t <= 7; t++) {
+            if (tierCounts[t] > 0) uniqueCount++;
+        }
+        uint256[] memory ids     = new uint256[](uniqueCount);
+        uint256[] memory amounts = new uint256[](uniqueCount);
+        uint256 idx;
+        for (uint256 t = 2; t <= 7; t++) {
+            if (tierCounts[t] > 0) {
+                ids[idx]     = t;
+                amounts[idx] = tierCounts[t];
+                idx++;
+            }
         }
 
         _mintBatch(msg.sender, ids, amounts, "");
@@ -367,8 +385,12 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
 
     // ── COMBINE ───────────────────────────────────────────────────────────────
 
+    // [FIX C1] Changed fromTier >= 2 to fromTier >= 3.
+    // T2→T1 combine is NOT possible — The Origin is sacrifice-only.
+    // Without this fix, anyone with 100 Tier-2 blocks could mint The Origin
+    // via combine, completely bypassing the endgame sacrifice mechanic.
     function combine(uint256 fromTier) external nonReentrant whenNotPaused {
-        require(fromTier >= 2 && fromTier <= 7, "Invalid tier");
+        require(fromTier >= 3 && fromTier <= 7, "Invalid tier");
         uint256 ratio = combineRatio[fromTier];
         require(balanceOf(msg.sender, fromTier) >= ratio, "Insufficient blocks");
 
@@ -382,10 +404,11 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         _checkCountdownTrigger(msg.sender);
     }
 
+    // [FIX C1] Same fix applied here — fromTier >= 3.
     function combineMany(uint256[] calldata fromTiers) external nonReentrant whenNotPaused {
         for (uint256 i = 0; i < fromTiers.length; i++) {
             uint256 fromTier = fromTiers[i];
-            require(fromTier >= 2 && fromTier <= 7, "Invalid tier");
+            require(fromTier >= 3 && fromTier <= 7, "Invalid tier");
             uint256 ratio = combineRatio[fromTier];
             require(balanceOf(msg.sender, fromTier) >= ratio, "Insufficient blocks");
             uint256 toTier = fromTier - 1;
@@ -400,22 +423,40 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
 
     // ── FORGE (called by BlockHuntForge) ──────────────────────────────────────
 
-    function executeForge(address player, uint256 fromTier, uint256 burnCount, bool success)
+    // [FIX H3] Forge is now a two-step process to prevent VRF callback failures:
+    //
+    //   Step 1: burnForForge()  — Forge calls this at request time. Blocks are
+    //           burned immediately. If the player transfers blocks between
+    //           request and callback, the burn has already happened so the
+    //           callback cannot revert.
+    //
+    //   Step 2: resolveForge()  — Forge calls this at callback time (VRF) or
+    //           immediately (pseudo-random). If success, mints the upgrade.
+    //           If fail, nothing happens — blocks are already gone.
+    //
+    // Old executeForge() is REMOVED — it did both burn and mint in one call,
+    // which meant the VRF callback could revert if blocks were transferred
+    // between request and callback, wasting LINK and leaving the request
+    // permanently unresolved.
+
+    function burnForForge(address player, uint256 tier, uint256 burnCount)
+        external onlyForge
+    {
+        require(tier >= 3 && tier <= 7, "Invalid tier");
+        require(burnCount >= 1, "Invalid burn count");
+        require(balanceOf(player, tier) >= burnCount, "Insufficient blocks");
+        _burn(player, tier, burnCount);
+        tierTotalSupply[tier] -= burnCount;
+    }
+
+    function resolveForge(address player, uint256 fromTier, bool success)
         external onlyForge nonReentrant
     {
-        require(fromTier >= 2 && fromTier <= 7, "Invalid tier");
-        require(burnCount >= 10 && burnCount <= 99, "Invalid burn count");
-        require(balanceOf(player, fromTier) >= burnCount, "Insufficient blocks");
-
-        uint256 toTier = fromTier - 1;
-        _burn(player, fromTier, burnCount);
-        tierTotalSupply[fromTier] -= burnCount;
-
         if (success) {
+            uint256 toTier = fromTier - 1;
             _mint(player, toTier, 1, "");
             tierTotalSupply[toTier]++;
         }
-
         emit BlocksForged(player, fromTier, success);
         if (success) _checkCountdownTrigger(player);
     }
@@ -425,7 +466,6 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     /**
      * @notice Holder actively chooses to claim 100% of the treasury.
      *         Only callable after the full 7-day countdown has expired.
-     *         Must be called by the countdown holder themselves.
      */
     function claimTreasury() external nonReentrant {
         require(countdownActive, "No countdown active");
@@ -450,10 +490,14 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
 
     /**
      * @notice Holder actively chooses to sacrifice.
-     *         Receives The Origin NFT. Treasury splits 50/50 — holder gets half,
-     *         other half seeds Season 2.
-     *         Only callable after the full 7-day countdown has expired.
-     *         Must be called by the countdown holder themselves.
+     *         Receives The Origin NFT. Treasury funds go to Escrow:
+     *           50% -> winner immediately (via Escrow)
+     *           40% -> community pool (held in Escrow, keeper sets entitlements)
+     *           10% -> Season 2 seed (held in Escrow until address confirmed)
+     *
+     * [REDESIGN] No players/amounts params. The winner never controls who
+     * receives the community pool. Entitlements are set by the keeper via
+     * escrow.setLeaderboardEntitlements() after querying the subgraph.
      */
     function sacrifice() external nonReentrant {
         require(countdownActive, "No countdown active");
@@ -473,16 +517,21 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         _mint(msg.sender, TIER_ORIGIN, 1, "");
         tierTotalSupply[TIER_ORIGIN]++;
 
+        // Treasury sends 100% ETH to Escrow; Escrow handles the 50/40/10 split
         IBlockHuntTreasury(treasuryContract).sacrificePayout(msg.sender);
+        IBlockHuntEscrow(escrowContract).initiateSacrifice(msg.sender);
+
         emit OriginSacrificed(msg.sender);
 
         _finaliseEndgame();
     }
 
     /**
-     * @notice Executes Sacrifice automatically on behalf of the holder if they
-     *         took no action after the 7-day countdown expired.
-     *         Callable by anyone — the Gelato keeper calls this automatically at zero.
+     * @notice Executes Sacrifice automatically if the holder takes no action
+     *         after the 7-day countdown expires.
+     *         Callable by anyone — the Gelato keeper calls this at expiry.
+     *
+     * [REDESIGN] No players/amounts params. Same flow as active sacrifice.
      */
     function executeDefaultOnExpiry() external nonReentrant {
         require(countdownActive, "No countdown active");
@@ -504,6 +553,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         tierTotalSupply[TIER_ORIGIN]++;
 
         IBlockHuntTreasury(treasuryContract).sacrificePayout(holder);
+        IBlockHuntEscrow(escrowContract).initiateSacrifice(holder);
         emit OriginSacrificed(holder);
         emit DefaultSacrificeExecuted(holder, msg.sender);
 
@@ -519,20 +569,9 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         _checkCountdownTrigger(msg.sender);
         require(countdownActive, "Does not hold all 6 tiers");
     }
-    
-    // SESSION 3 ───────────────────────────────────────────────────────────────
 
-    /**
-     * @notice Called by BlockHuntCountdown when the countdown holder is
-     *         disqualified mid-countdown (e.g. they transfer away a required tier).
-     *         Resets Token's countdown state so a new countdown can start.
-     *
-     *         Only callable by the Countdown contract — mirrors the trust used
-     *         by Token calling startCountdown() on Countdown.
-     *
-     *         Silently no-ops if countdownActive is already false, to guard
-     *         against any unlikely state drift between the two contracts.
-     */
+    // ── COUNTDOWN RESET (called by Countdown contract) ────────────────────────
+
     function resetExpiredHolder() external onlyCountdown {
         if (!countdownActive) return;
         address former = countdownHolder;
@@ -541,6 +580,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         countdownStartTime = 0;
         emit CountdownHolderReset(former);
     }
+
     // ── INTERNAL ──────────────────────────────────────────────────────────────
 
     function _finaliseEndgame() internal {
@@ -575,39 +615,47 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         }
     }
 
-    /**
-     * @dev Pseudo-random tier roll. Used only when vrfEnabled = false.
-     *      NOT safe for mainnet — susceptible to free-look attacks.
-     *      Replaced by VRF-derived path in fulfillRandomWords().
-     */
+    function _gasLimitForQuantity(uint256 quantity) internal view returns (uint32) {
+        uint256 computed = uint256(vrfCallbackGasLimit) + quantity * uint256(VRF_GAS_PER_BLOCK);
+        return computed > uint256(VRF_GAS_MAX) ? VRF_GAS_MAX : uint32(computed);
+    }
+
     function _rollTier(uint256 salt) internal returns (uint256) {
         _nonce++;
         uint256 rand = uint256(keccak256(abi.encodePacked(
             block.prevrandao, block.timestamp, msg.sender, _nonce, salt
         ))) % 100000;
-        return _tierFromRandom(rand);
+        uint256 batch = IBlockHuntMint(mintWindowContract).currentBatch();
+        return _tierFromRandom(rand, batch);
     }
 
-    /**
-     * @dev Maps a random number (mod 100000) to a tier.
-     *      Shared by both the pseudo-random and VRF paths.
-     *      Probabilities match the GDD exactly.
-     */
-    function _tierFromRandom(uint256 rand) internal pure returns (uint256) {
+    function _tierFromRandom(uint256 rand, uint256 batch) internal pure returns (uint256) {
         rand = rand % 100000;
-        if (rand < 1)     return TIER_ORIGIN;    //  0.001%
-        if (rand < 50)    return TIER_WILLFUL;   //  0.049%
-        if (rand < 300)   return TIER_CHAOTIC;   //  0.250%
-        if (rand < 1500)  return TIER_ORDERED;   //  1.200%
-        if (rand < 6000)  return TIER_REMEMBER;  //  4.500%
-        if (rand < 20000) return TIER_RESTLESS;  // 14.000%
-        return TIER_INERT;                       // 80.000%
+
+        if (batch <= 2) {
+            if (rand < 5)     return TIER_WILLFUL;
+            if (rand < 55)    return TIER_CHAOTIC;
+            if (rand < 355)   return TIER_ORDERED;
+            if (rand < 2355)  return TIER_REMEMBER;
+            if (rand < 12355) return TIER_RESTLESS;
+            return TIER_INERT;
+        } else if (batch <= 4) {
+            if (rand < 30)    return TIER_WILLFUL;
+            if (rand < 230)   return TIER_CHAOTIC;
+            if (rand < 1230)  return TIER_ORDERED;
+            if (rand < 5230)  return TIER_REMEMBER;
+            if (rand < 19230) return TIER_RESTLESS;
+            return TIER_INERT;
+        } else {
+            if (rand < 150)   return TIER_WILLFUL;
+            if (rand < 950)   return TIER_CHAOTIC;
+            if (rand < 3950)  return TIER_ORDERED;
+            if (rand < 11950) return TIER_REMEMBER;
+            if (rand < 29950) return TIER_RESTLESS;
+            return TIER_INERT;
+        }
     }
 
-    /**
-     * @dev Removes a requestId from a player's pendingRequestsByPlayer array.
-     *      Uses swap-and-pop for gas efficiency.
-     */
     function _removePendingRequest(address player, uint256 requestId) internal {
         uint256[] storage pending = pendingRequestsByPlayer[player];
         uint256 len = pending.length;
@@ -652,7 +700,10 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
 
     bool public testMintEnabled = true;
 
-    function mintForTest(address player, uint256 tier, uint256 amount) external {
+    // [FIX C2] Added onlyOwner. Previously anyone could call this and free-mint
+    // unlimited blocks of any tier. On testnet this allows any wallet that reads
+    // the contract to win the game trivially.
+    function mintForTest(address player, uint256 tier, uint256 amount) external onlyOwner {
         require(testMintEnabled, "Test mint disabled");
         require(tier >= 2 && tier <= 7, "Invalid tier");
         _mint(player, tier, amount, "");

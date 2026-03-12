@@ -8,8 +8,9 @@ contract BlockHuntTreasury is Ownable, ReentrancyGuard {
 
     address public tokenContract;
     address public creatorWallet;
+    address public escrowContract;   // [CHANGED] was countdownContract — receives 100% on sacrifice
 
-    uint256 public creatorFeeBps = 500;
+    uint256 public creatorFeeBps = 1000;
     uint256 public constant MAX_CREATOR_FEE = 1000;
 
     uint256 public season;
@@ -19,7 +20,8 @@ contract BlockHuntTreasury is Ownable, ReentrancyGuard {
 
     event FundsReceived(address indexed from, uint256 amount, uint256 creatorFee);
     event TreasuryClaimed(address indexed winner, uint256 amount, uint256 season);
-    event TreasurySacrificed(address indexed winner, uint256 winnerAmount, uint256 seedAmount, uint256 season);
+    // [CHANGED] totalAmount now goes to Escrow (was Countdown)
+    event TreasurySacrificed(address indexed winner, uint256 totalAmount, uint256 season);
     event SeasonReset(uint256 newSeason, uint256 seedAmount);
 
     constructor(address creatorWallet_) Ownable(msg.sender) {
@@ -33,13 +35,21 @@ contract BlockHuntTreasury is Ownable, ReentrancyGuard {
     }
 
     function setTokenContract(address addr) external onlyOwner {
-    require(tokenContract == address(0), "Already set");
-    tokenContract = addr;
+        require(tokenContract == address(0), "Already set");
+        tokenContract = addr;
     }
+
+    // [CHANGED] was setCountdownContract — now points to Escrow
+    function setEscrowContract(address addr) external onlyOwner {
+        require(addr != address(0), "Invalid address");
+        escrowContract = addr;
+    }
+
     function setCreatorWallet(address addr) external onlyOwner {
         require(addr != address(0), "Invalid address");
         creatorWallet = addr;
     }
+
     function setCreatorFee(uint256 bps) external onlyOwner {
         require(bps <= MAX_CREATOR_FEE, "Exceeds max fee");
         creatorFeeBps = bps;
@@ -69,20 +79,24 @@ contract BlockHuntTreasury is Ownable, ReentrancyGuard {
         emit TreasuryClaimed(winner, balance, season);
     }
 
+    /**
+     * @notice Transfers the full treasury balance to BlockHuntEscrow, which
+     *         performs the 50/40/10 split: 50% to winner immediately, 40% held
+     *         as the community leaderboard pool, 10% held as Season 2 seed.
+     *         Called by BlockHuntToken during sacrifice execution.
+     */
     function sacrificePayout(address winner) external onlyTokenContract nonReentrant {
+        require(escrowContract != address(0), "Escrow contract not set");
         uint256 balance = address(this).balance;
         require(balance > 0, "Empty treasury");
 
-        uint256 winnerShare = balance / 2;
-        uint256 seedShare = balance - winnerShare;
+        totalPaidOut += balance;
 
-        totalPaidOut += winnerShare;
-        nextSeasonSeed = seedShare;
+        // [CHANGED] Send to Escrow (was Countdown)
+        (bool sent, ) = payable(escrowContract).call{value: balance}("");
+        require(sent, "Transfer to escrow failed");
 
-        (bool sent, ) = payable(winner).call{value: winnerShare}("");
-        require(sent, "Payout failed");
-
-        emit TreasurySacrificed(winner, winnerShare, seedShare, season);
+        emit TreasurySacrificed(winner, balance, season);
     }
 
     function startNextSeason() external onlyOwner {
@@ -98,6 +112,8 @@ contract BlockHuntTreasury is Ownable, ReentrancyGuard {
         return address(this).balance;
     }
 
+    // NOTE: Remove this function after security audit before mainnet.
+    // Documented in TRANSPARENCY.md and pre-mainnet checklist.
     function emergencyWithdraw(address to, uint256 amount) external onlyOwner {
         require(to != address(0), "Invalid address");
         (bool sent, ) = payable(to).call{value: amount}("");
