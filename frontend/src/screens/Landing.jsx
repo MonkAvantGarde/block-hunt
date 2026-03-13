@@ -18,8 +18,6 @@ const CREAM      = "#f0ead6";
 // GLOBAL CSS
 // ═══════════════════════════════════════════════════════════════
 const LANDING_CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323:wght@400&family=Courier+Prime:wght@400;700&display=swap');
-
   .landing-root { cursor: crosshair; }
 
   @keyframes float-up {
@@ -337,7 +335,7 @@ const liveEth = treasuryData?.value
 
       {/* CRT scanlines */}
       <div style={{
-        position: "fixed", inset: 0, pointerEvents: "none", zIndex: 9999,
+        position: "fixed", inset: 0, pointerEvents: "none", zIndex: 1,
         background: "repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.04) 2px,rgba(0,0,0,0.04) 4px)",
       }} />
 

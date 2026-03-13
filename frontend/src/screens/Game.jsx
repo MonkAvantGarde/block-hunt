@@ -6,7 +6,9 @@ import { CONTRACTS } from '../config/wagmi'
 import { TOKEN_ABI, FORGE_ABI } from '../abis'
 import { BATCH_PRICES_ETH, BATCH_SUPPLY } from '../config/design-tokens'
 import PrizePoolDisplay from '../components/PrizePoolDisplay'
+import GameStatusBar from '../components/GameStatusBar'
 import AllTiersTrigger from './AllTiersTrigger'
+import RevealMoment, { CombineCeremony } from '../components/RevealMoment'
 
 // ═══════════════════════════════════════════════════════════════
 // CARD ASSETS
@@ -93,6 +95,10 @@ const GLOBAL_CSS = `
     30% { transform: scale(1.12); filter: brightness(2) saturate(2); }
     70% { transform: scale(0.95); filter: brightness(1.4); }
     100%{ transform: scale(1); filter: brightness(1); }
+  }
+  @keyframes skeletonPulse {
+    0%,100% { opacity: 0.08; }
+    50%     { opacity: 0.18; }
   }
   @keyframes fadeInDown {
     from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
@@ -260,8 +266,8 @@ function Btn({ onClick, children, color="#c8a84b", disabled=false, danger=false,
     <button
       onClick={disabled ? undefined : onClick}
       style={{
-        width:"100%", padding: sm ? "6px 0" : "10px 0",
-        fontFamily:"'Press Start 2P', monospace", fontSize: sm ? 6 : 7, letterSpacing:1,
+        width:"100%", height: sm ? 44 : 52,
+        fontFamily:"'Press Start 2P', monospace", fontSize: sm ? 7 : 9, letterSpacing:1,
         background:bg, color:clr,
         border: danger ? "2px solid #990000" : disabled ? "2px solid rgba(255,255,255,0.06)" : `2px solid ${GOLD_DK}`,
         boxShadow: disabled ? "none" : `3px 3px 0 ${INK}`,
@@ -281,6 +287,75 @@ function StatBox({ label, value, accent }) {
       <div style={{ fontFamily:"'VT323', monospace", fontSize:22, color: accent || CREAM, marginTop:2 }}>{value}</div>
     </div>
   );
+}
+
+function TxErrorPanel({ error, onRetry, context="transaction" }) {
+  const [expanded, setExpanded] = useState(false);
+  const msg = error?.shortMessage || error?.message || "Transaction failed";
+  const isRejected = msg.toLowerCase().includes("reject") || msg.toLowerCase().includes("denied");
+  return (
+    <div style={{
+      background:'rgba(255,50,30,0.06)', border:'1px solid rgba(255,50,30,0.25)',
+      padding:'14px 16px', display:'flex', flexDirection:'column', gap:10,
+    }}>
+      <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:'#ff8888' }}>
+        ✕ Transaction failed
+      </div>
+      <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:12, color:'rgba(255,255,255,0.5)' }}>
+        "{msg}"
+      </div>
+      <button onClick={() => setExpanded(e => !e)} style={{
+        background:'none', border:'none', cursor:'pointer', textAlign:'left',
+        fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'rgba(255,255,255,0.35)',
+      }}>
+        {expanded ? '▾' : '▸'} What happened?
+      </button>
+      {expanded && (
+        <div style={{
+          background:'rgba(0,0,0,0.3)', border:'1px solid rgba(255,255,255,0.06)',
+          padding:'10px 12px',
+          fontFamily:"'Courier Prime', monospace", fontSize:11, color:'rgba(255,255,255,0.4)', lineHeight:1.6,
+        }}>
+          {isRejected
+            ? "Your wallet rejected the transaction. No blocks burned. No ETH spent. You can try again safely."
+            : `The ${context} failed. If this was a forge, your blocks were NOT burned. You can try again safely.`
+          }
+        </div>
+      )}
+      <Btn onClick={onRetry} sm>← TRY AGAIN</Btn>
+    </div>
+  );
+}
+
+function Skeleton({ height=20, width="100%" }) {
+  return (
+    <div style={{
+      height, width,
+      background:"rgba(255,255,255,0.08)",
+      animation:"skeletonPulse 1.5s ease-in-out infinite",
+      borderRadius:2,
+    }} />
+  )
+}
+
+function LoadingSkeleton() {
+  return (
+    <div style={{ maxWidth:1300, margin:"0 auto", padding:"24px 20px 48px" }}>
+      {/* Collection bar skeleton */}
+      <Skeleton height={40} />
+      {/* Tier grid skeleton */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(7, 1fr)", gap:12, margin:"20px 0" }}>
+        {[1,2,3,4,5,6,7].map(i => <Skeleton key={i} height={140} />)}
+      </div>
+      {/* Status bar skeleton */}
+      <Skeleton height={64} />
+      {/* Tab bar + panel skeleton */}
+      <div style={{ marginTop:20 }}>
+        <Skeleton height={48} />
+        <Skeleton height={300} />
+      </div>
+    </div>
+  )
 }
 
 function VRFStatusHeader({ state }) {
@@ -376,6 +451,14 @@ function PendingMintItem({ item, onDelivered, onRequestId }) {
   }
 
   const isDelivered = item.status === "delivered"
+
+  // Auto-dismiss completed mints after 60 seconds
+  useEffect(() => {
+    if (!isDelivered) return
+    const t = setTimeout(() => onDelivered(item.id), 60_000)
+    return () => clearTimeout(t)
+  }, [isDelivered])
+
   const canCancel = !isDelivered && elapsed >= 3600 && !!item.requestId
   const cancelLabel = cancelling ? "…" : elapsed >= 3600 ? "CANCEL" : fmt(3600 - elapsed)
 
@@ -445,6 +528,7 @@ function savePending(items) {
 function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, prizePool, address, refetchAll, blocks, mintPrice, mintPriceWei, currentBatch }) {
   const [qty, setQty] = useState(10)
   const [pendingMints, setPendingMints] = useState(() => loadPending())
+  const [mintError, setMintError] = useState(null)
   const [, setTick] = useState(0)
   const prevBlocksRef = useRef(null)
   const pollRef = useRef(null)
@@ -487,8 +571,8 @@ function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, prizePool, addres
   // On mount: recover open on-chain requests not tracked in localStorage
   const recoveryRan = useRef(false)
   useEffect(() => {
-    if (!address) return
-    // recoveryRan.current = true
+    if (!address || recoveryRan.current) return
+    recoveryRan.current = true
     async function recover() {
       try {
         const { createPublicClient, http } = await import('viem')
@@ -548,6 +632,7 @@ function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, prizePool, addres
       value: parseEther((qty * mintPrice).toFixed(18)),
     }, {
       onSuccess: (hash) => {
+        setMintError(null)
         const item = { id: Date.now().toString(), txHash: hash, qty, startTime: Date.now(), status: "pending" }
         setPendingMints(prev => {
           const next = [...prev, item]
@@ -555,6 +640,7 @@ function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, prizePool, addres
           return next
         })
       },
+      onError: (err) => setMintError(err),
     })
   }
 
@@ -575,16 +661,20 @@ function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, prizePool, addres
   }
 
   const now = Math.floor(Date.now() / 1000)
-  let timerLabel = "— : — : —"
+  let timerLabel = "Not yet scheduled"
   let timerSub = ""
   if (windowInfo) {
     if (windowInfo.isOpen && windowInfo.closeAt) {
       const secs = Math.max(0, Number(windowInfo.closeAt) - now)
-      const h = Math.floor(secs/3600), m = Math.floor((secs%3600)/60), s = secs%60
-      timerLabel = `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`
+      if (secs > 0) {
+        const h = Math.floor(secs/3600), m = Math.floor((secs%3600)/60), s = secs%60
+        timerLabel = `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`
+      } else {
+        timerLabel = "Closing..."
+      }
       timerSub = "WINDOW CLOSES"
-    } else if (!windowInfo.isOpen && windowInfo.openAt) {
-      const secs = Math.max(0, Number(windowInfo.openAt) - now)
+    } else if (!windowInfo.isOpen && windowInfo.openAt && Number(windowInfo.openAt) > now) {
+      const secs = Number(windowInfo.openAt) - now
       const h = Math.floor(secs/3600), m = Math.floor((secs%3600)/60), s = secs%60
       timerLabel = `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`
       timerSub = "NEXT WINDOW OPENS"
@@ -592,127 +682,159 @@ function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, prizePool, addres
   }
 
   return (
-    <div style={{ display:"flex", flexDirection:"column", gap:10, height:"100%" }}>
-      {pendingMints.length > 0 && (
-        <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
-          <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:5.5, color:"rgba(255,255,255,0.3)", marginBottom:2 }}>
-            IN-FLIGHT MINTS
-          </div>
-          {pendingMints.map(item => (
-            <PendingMintItem key={item.id} item={item} onDelivered={dismissItem} onRequestId={storeRequestId} />
-          ))}
-        </div>
-      )}
-      <div style={{
-        display:"flex", justifyContent:"space-between", alignItems:"center",
-        background: windowOpen ? "rgba(110,255,138,0.08)" : "rgba(255,80,80,0.08)",
-        border: `1px solid ${windowOpen ? "#6eff8a44" : "#ff505044"}`,
-        padding:"6px 10px",
-      }}>
-        <span style={{
-          fontFamily:"'Press Start 2P', monospace", fontSize:6,
-          color: windowOpen ? "#6eff8a" : "#ff8888",
-          animation: windowOpen ? "badgePulse 2s infinite" : "none",
+    <div style={{ display:"flex", gap:20, height:"100%" }}>
+      {/* ── LEFT COLUMN (60%): Action ── */}
+      <div style={{ flex:"0 0 60%", display:"flex", flexDirection:"column", gap:10 }}>
+        {mintError && (
+          <TxErrorPanel error={mintError} context="mint" onRetry={() => setMintError(null)} />
+        )}
+        {/* Window status */}
+        <div style={{
+          display:"flex", justifyContent:"space-between", alignItems:"center",
+          background: windowOpen ? "rgba(110,255,138,0.08)" : "rgba(255,80,80,0.08)",
+          border: `1px solid ${windowOpen ? "#6eff8a44" : "#ff505044"}`,
+          padding:"8px 12px",
         }}>
-          {windowOpen ? "● WINDOW OPEN" : "○ WINDOW CLOSED"}
-        </span>
-        <span style={{ fontFamily:"'Courier Prime', monospace", fontSize:11, color:"rgba(255,255,255,0.4)" }}>
-          {timerLabel !== "— : — : —" ? (windowOpen ? `closes in ${timerLabel}` : `opens in ${timerLabel}`) : ""}
-        </span>
-      </div>
-      {/* Mint remaining bar */}
-      {windowInfo && windowInfo.allocated > 0 && (
-        <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline" }}>
-            <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:5, color:"rgba(255,255,255,0.3)", letterSpacing:0.5 }}>
-              {(() => {
-                const pct = Math.round((windowInfo.minted / windowInfo.allocated) * 100);
-                return pct >= 100 ? "WINDOW SOLD OUT" : pct >= 80 ? "FILLING FAST" : "MINTED THIS WINDOW";
-              })()}
-            </span>
-            <span style={{ fontFamily:"'VT323', monospace", fontSize:16, color:"rgba(255,255,255,0.5)" }}>
-              {windowInfo.minted.toLocaleString()} / {windowInfo.allocated.toLocaleString()}
-            </span>
-          </div>
-          <div style={{ height:8, background:"rgba(0,0,0,0.45)", border:"1px solid rgba(255,255,255,0.06)", overflow:"hidden" }}>
-            <div style={{
-              height:"100%",
-              width:`${Math.min((windowInfo.minted / windowInfo.allocated) * 100, 100)}%`,
-              background: (() => {
-                const pct = (windowInfo.minted / windowInfo.allocated) * 100;
-                return pct >= 80 ? "#ff4433" : pct >= 50 ? "#ffcc33" : "#6eff8a";
-              })(),
-              transition:"width 0.5s, background 0.5s",
-            }} />
-          </div>
+          <span style={{
+            fontFamily:"'Press Start 2P', monospace", fontSize:7,
+            color: windowOpen ? "#6eff8a" : "#ff8888",
+            animation: windowOpen ? "badgePulse 2s infinite" : "none",
+          }}>
+            {windowOpen ? "● WINDOW OPEN" : "○ WINDOW CLOSED"}
+          </span>
+          <span style={{ fontFamily:"'Courier Prime', monospace", fontSize:12, color:"rgba(255,255,255,0.4)" }}>
+            {timerLabel !== "Not yet scheduled" ? (windowOpen ? `closes in ${timerLabel}` : `opens in ${timerLabel}`) : ""}
+          </span>
         </div>
-      )}
 
-      <div style={{ display:"flex", gap:6 }}>
-        <StatBox label="BATCH" value={`${currentBatch} / 6`} />
-        <StatBox label="PRICE" value={`${mintPrice}Ξ`} />
-        <StatBox label="SLOTS" value={slots.toLocaleString()} accent={slots < 5000 ? "#ff6644" : undefined} />
-      </div>
-      {/* Batch price ladder */}
-      <div style={{ background:"rgba(0,0,0,0.25)", border:"1px solid rgba(255,255,255,0.06)", padding:"6px 8px" }}>
-        <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:5, color:"rgba(255,255,255,0.25)", letterSpacing:1, marginBottom:4 }}>BATCH PRICES</div>
-        <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
-          {[1,2,3,4,5,6].map(b => {
-            const isCurrent = b === currentBatch;
+        {/* Quick-set buttons */}
+        <div style={{ display:"flex", gap:6 }}>
+          {[10, 50, 100, slots > 0 ? slots : 500].map((v, i) => {
+            const label = i === 3 ? "MAX" : String(v)
             return (
-              <div key={b} style={{
-                display:"flex", alignItems:"center", gap:6, padding:"2px 4px",
-                background: isCurrent ? "rgba(200,168,75,0.1)" : "transparent",
-                border: isCurrent ? `1px solid ${GOLD_DK}` : "1px solid transparent",
-              }}>
-                <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:5, color: isCurrent ? GOLD : "rgba(255,255,255,0.3)", width:14 }}>B{b}</span>
-                <span style={{ fontFamily:"'VT323', monospace", fontSize:15, color: isCurrent ? GOLD_LT : "rgba(255,255,255,0.35)", flex:1 }}>{BATCH_PRICES_ETH[b]} Ξ</span>
-                <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:4.5, color: isCurrent ? GOLD : "rgba(255,255,255,0.2)" }}>{(BATCH_SUPPLY[b] / 1000).toFixed(0)}K</span>
-                {isCurrent && <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:4.5, color:GOLD, letterSpacing:.5 }}>◄</span>}
-              </div>
-            );
+              <button key={label} onClick={() => setQty(Math.min(v, 500))} style={{
+                flex:1, height:44,
+                fontFamily:"'Press Start 2P', monospace", fontSize:8,
+                color: qty === v ? INK : CREAM,
+                background: qty === v ? GOLD : "rgba(0,0,0,0.35)",
+                border: qty === v ? `2px solid ${GOLD_DK}` : "2px solid rgba(255,255,255,0.12)",
+                cursor:"pointer", letterSpacing:1,
+              }}>{label}</button>
+            )
           })}
         </div>
+
+        {/* Fine-tune quantity controls */}
+        <div style={{ display:"flex", gap:0, alignItems:"stretch", border:"2px solid rgba(255,255,255,0.12)" }}>
+          {[-10,-1].map(d => (
+            <button key={d} onClick={() => setQty(q => Math.max(1, q+d))} style={{
+              flex:"0 0 44px", height:44, background:"rgba(0,0,0,0.4)",
+              border:"none", borderRight:"1px solid rgba(255,255,255,0.1)",
+              color:"rgba(255,255,255,0.6)", fontFamily:"'Press Start 2P', monospace", fontSize:8, cursor:"pointer",
+            }}>{d}</button>
+          ))}
+          <div style={{
+            flex:1, display:"flex", alignItems:"center", justifyContent:"center",
+            fontFamily:"'VT323', monospace", fontSize:36, color:CREAM, background:"rgba(0,0,0,0.2)",
+          }}>{qty}</div>
+          {[1,10].map(d => (
+            <button key={d} onClick={() => setQty(q => Math.min(500, q+d))} style={{
+              flex:"0 0 44px", height:44, background:"rgba(0,0,0,0.4)",
+              border:"none", borderLeft:"1px solid rgba(255,255,255,0.1)",
+              color:"rgba(255,255,255,0.6)", fontFamily:"'Press Start 2P', monospace", fontSize:8, cursor:"pointer",
+            }}>+{d}</button>
+          ))}
+        </div>
+
+        {/* Total */}
+        <div style={{
+          fontFamily:"'Press Start 2P', monospace", fontSize:9, color:"#6eff8a", textAlign:"center",
+          padding:"8px 0",
+          borderTop:"1px solid rgba(255,255,255,0.06)", borderBottom:"1px solid rgba(255,255,255,0.06)",
+        }}>
+          TOTAL: {total} ETH
+        </div>
+
+        {/* MINT NOW — 52px tall */}
+        <Btn onClick={doMint} disabled={!windowOpen}>
+          {windowOpen ? "▶  MINT NOW" : "✕  WINDOW CLOSED"}
+        </Btn>
+
+        <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:5.5, color:"rgba(255,255,255,0.3)", textAlign:"center" }}>
+          Current price: {mintPrice} Ξ (Batch {currentBatch})
+        </div>
       </div>
 
-      <div style={{ fontFamily:"'VT323', monospace", fontSize:44, letterSpacing:4, color:CREAM, textAlign:"center", lineHeight:1 }}>
-        {timerLabel}
-      </div>
-      <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:5.5, color:"rgba(255,255,255,0.3)", textAlign:"center", letterSpacing:1 }}>
-        {timerSub}
-      </div>
-      <div style={{ display:"flex", gap:0, alignItems:"stretch", border:"2px solid rgba(255,255,255,0.12)" }}>
-        {[-100,-10,-1].map(d => (
-          <button key={d} onClick={() => setQty(q => Math.max(1, q+d))} style={{
-            width:36, background:"rgba(0,0,0,0.4)",
-            border:"none", borderRight:"1px solid rgba(255,255,255,0.1)",
-            color:"rgba(255,255,255,0.6)", fontFamily:"'Press Start 2P', monospace", fontSize:7, cursor:"pointer",
-          }}>{d < -9 ? d : d < 0 ? " "+d : "+"+d}</button>
-        ))}
-        <div style={{
-          flex:1, display:"flex", alignItems:"center", justifyContent:"center",
-          fontFamily:"'VT323', monospace", fontSize:36, color:CREAM, background:"rgba(0,0,0,0.2)",
-        }}>{qty}</div>
-        {[1,10,100].map(d => (
-          <button key={d} onClick={() => setQty(q => Math.min(500, q+d))} style={{
-            width:36, background:"rgba(0,0,0,0.4)",
-            border:"none", borderLeft:"1px solid rgba(255,255,255,0.1)",
-            color:"rgba(255,255,255,0.6)", fontFamily:"'Press Start 2P', monospace", fontSize:7, cursor:"pointer",
-          }}>+{d}</button>
-        ))}
-      </div>
-      <div style={{
-        fontFamily:"'Press Start 2P', monospace", fontSize:8, color:"#6eff8a", textAlign:"center",
-        padding:"6px 0",
-        borderTop:"1px solid rgba(255,255,255,0.06)", borderBottom:"1px solid rgba(255,255,255,0.06)",
-      }}>
-        TOTAL: {total} ETH
-      </div>
-      <Btn onClick={doMint} disabled={!windowOpen}>
-        {windowOpen ? "▶  MINT NOW" : "✕  WINDOW CLOSED"}
-      </Btn>
-      <div style={{ marginTop:"auto" }}>
-        <PrizePoolDisplay eth={parseFloat(prizePool)} size="medium" />
+      {/* ── RIGHT COLUMN (40%): Context ── */}
+      <div style={{ flex:"0 0 calc(40% - 20px)", display:"flex", flexDirection:"column", gap:10 }}>
+        {/* Batch price ladder */}
+        <div style={{ background:"rgba(0,0,0,0.25)", border:"1px solid rgba(255,255,255,0.06)", padding:"8px 10px" }}>
+          <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:5.5, color:"rgba(255,255,255,0.25)", letterSpacing:1, marginBottom:6 }}>BATCH PRICES</div>
+          <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
+            {[1,2,3,4,5,6].map(b => {
+              const isCurrent = b === currentBatch;
+              return (
+                <div key={b} style={{
+                  display:"flex", alignItems:"center", gap:6, padding:"3px 6px",
+                  background: isCurrent ? "rgba(200,168,75,0.1)" : "transparent",
+                  border: isCurrent ? `1px solid ${GOLD_DK}` : "1px solid transparent",
+                }}>
+                  <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:5.5, color: isCurrent ? GOLD : "rgba(255,255,255,0.3)", width:16 }}>B{b}</span>
+                  <span style={{ fontFamily:"'VT323', monospace", fontSize:16, color: isCurrent ? GOLD_LT : "rgba(255,255,255,0.35)", flex:1 }}>{BATCH_PRICES_ETH[b]} Ξ</span>
+                  <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:5, color: isCurrent ? GOLD : "rgba(255,255,255,0.2)" }}>{(BATCH_SUPPLY[b] / 1000).toFixed(0)}K</span>
+                  {isCurrent && <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:5, color:GOLD }}>◄</span>}
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:5, color:"rgba(255,255,255,0.2)", marginTop:6, lineHeight:1.6 }}>
+            Batch 1 is the cheapest entry. Prices rise as batches advance.
+          </div>
+        </div>
+
+        {/* Mint remaining bar */}
+        {windowInfo && windowInfo.allocated > 0 && (
+          <div style={{ background:"rgba(0,0,0,0.25)", border:"1px solid rgba(255,255,255,0.06)", padding:"8px 10px" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:4 }}>
+              <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:5.5, color:"rgba(255,255,255,0.3)", letterSpacing:0.5 }}>
+                {(() => {
+                  const pct = Math.round((windowInfo.minted / windowInfo.allocated) * 100);
+                  return pct >= 100 ? "WINDOW SOLD OUT" : pct >= 80 ? "FILLING FAST" : "MINTED THIS WINDOW";
+                })()}
+              </span>
+              <span style={{ fontFamily:"'VT323', monospace", fontSize:16, color:"rgba(255,255,255,0.5)" }}>
+                {windowInfo.minted.toLocaleString()} / {windowInfo.allocated.toLocaleString()}
+              </span>
+            </div>
+            <div style={{ height:8, background:"rgba(0,0,0,0.45)", border:"1px solid rgba(255,255,255,0.06)", overflow:"hidden" }}>
+              <div style={{
+                height:"100%",
+                width:`${Math.min((windowInfo.minted / windowInfo.allocated) * 100, 100)}%`,
+                background: (() => {
+                  const pct = (windowInfo.minted / windowInfo.allocated) * 100;
+                  return pct >= 80 ? "#ff4433" : pct >= 50 ? "#ffcc33" : "#6eff8a";
+                })(),
+                transition:"width 0.5s, background 0.5s",
+              }} />
+            </div>
+          </div>
+        )}
+
+        {/* In-flight mints */}
+        {pendingMints.length > 0 && (
+          <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+            <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:5.5, color:"rgba(255,255,255,0.3)", marginBottom:2 }}>
+              IN-FLIGHT MINTS
+            </div>
+            {pendingMints.map(item => (
+              <PendingMintItem key={item.id} item={item} onDelivered={dismissItem} onRequestId={storeRequestId} />
+            ))}
+          </div>
+        )}
+
+        <div style={{ marginTop:"auto" }}>
+          <PrizePoolDisplay eth={parseFloat(prizePool)} size="medium" />
+        </div>
       </div>
     </div>
   )
@@ -729,6 +851,10 @@ function ForgePanel({ blocks, onForge, address }) {
   const [forgeResult, setForgeResult] = useState(null)
   const [elapsed,   setElapsed]     = useState(0)
   const [forgeTxHash, setForgeTxHash] = useState(null)
+  const [showConfirm, setShowConfirm] = useState(false)
+  const [forgeError, setForgeError]   = useState(null)
+  const [batchMode, setBatchMode]   = useState(false)
+  const [batchAttempts, setBatchAttempts] = useState([]) // [{tier, burnCount}]
   const intervalRef = useRef(null)
   const autoRef     = useRef(null)
   const pollRef     = useRef(null)
@@ -822,10 +948,11 @@ function ForgePanel({ blocks, onForge, address }) {
       args: [BigInt(selTier), BigInt(burnCount)],
     }, {
       onSuccess: (hash) => setForgeTxHash(hash),
-      onError: () => {
+      onError: (err) => {
         stopClock()
         clearTimeout(autoRef.current)
         setVrfState(VRF.IDLE)
+        setForgeError(err)
       },
     })
 
@@ -833,6 +960,48 @@ function ForgePanel({ blocks, onForge, address }) {
       stopClock()
       setVrfState(VRF.TIMEOUT)
     }, 3_600_000)
+  }
+
+  function doBatchForge() {
+    if (batchAttempts.length === 0 || vrfState !== VRF.IDLE) return
+    setVrfState(VRF.PENDING)
+    startClock()
+    setForgeTxHash(null)
+    forgeBlockRef.current = null
+
+    const fromTiers = batchAttempts.map(a => BigInt(a.tier))
+    const burnCounts = batchAttempts.map(a => BigInt(a.burnCount))
+
+    writeContract({
+      address: CONTRACTS.FORGE,
+      abi: FORGE_ABI,
+      functionName: 'forgeBatch',
+      args: [fromTiers, burnCounts],
+    }, {
+      onSuccess: (hash) => setForgeTxHash(hash),
+      onError: (err) => {
+        stopClock()
+        clearTimeout(autoRef.current)
+        setVrfState(VRF.IDLE)
+        setForgeError(err)
+      },
+    })
+
+    autoRef.current = setTimeout(() => {
+      stopClock()
+      setVrfState(VRF.TIMEOUT)
+    }, 3_600_000)
+  }
+
+  function addBatchAttempt() {
+    if (!selTier) return
+    setBatchAttempts(prev => [...prev, { tier: selTier, burnCount }])
+    setSelTier(null)
+    setBurn(10)
+  }
+
+  function removeBatchAttempt(idx) {
+    setBatchAttempts(prev => prev.filter((_, i) => i !== idx))
   }
 
   function reset() {
@@ -843,6 +1012,8 @@ function ForgePanel({ blocks, onForge, address }) {
     setElapsed(0)
     setSelTier(null)
     setForgeTxHash(null)
+    setForgeError(null)
+    setBatchAttempts([])
   }
 
   if (vrfState === VRF.PENDING || vrfState === VRF.DELAYED) {
@@ -912,48 +1083,157 @@ function ForgePanel({ blocks, onForge, address }) {
   }
 
   if (vrfState === VRF.DELIVERED && forgeResult) {
+    const ratio = COMBINE_RATIOS[forgeResult.fromTier] || 20
+    const pct = Math.min(Math.round((burnCount / ratio) * 100), 100)
+    const targetTier = forgeResult.fromTier - 1
+    const targetData = TMAP[targetTier]
+    const sourceData = TMAP[forgeResult.fromTier]
+
+    // Near-miss: simulate a roll that was close (within 10% of threshold)
+    const nearMiss = !forgeResult.success && pct >= 40
+    const fakeRoll = !forgeResult.success ? pct + Math.floor(Math.random() * 8) + 1 : 0
+    const missBy = !forgeResult.success ? Math.max(1, fakeRoll - pct) : 0
+
+    if (forgeResult.success) {
+      // ── Forge SUCCESS ceremony ──
+      return (
+        <div style={{ display:'flex', flexDirection:'column', gap:10, height:'100%', animation:'deliveredPop 0.35s ease-out' }}>
+          <VRFStatusHeader state={VRF.DELIVERED} />
+          <div style={{
+            flex:1, display:'flex', flexDirection:'column', alignItems:'center',
+            justifyContent:'center', gap:14, padding:'20px',
+            background:'rgba(110,255,138,0.04)',
+            border:'1px solid rgba(110,255,138,0.2)',
+          }}>
+            <div style={{
+              fontFamily:"'Press Start 2P', monospace", fontSize:14,
+              color:'#6eff8a',
+              textShadow:'0 0 20px rgba(110,255,138,0.5)',
+            }}>
+              ✓  FORGED
+            </div>
+
+            {/* Card reveal */}
+            <div style={{
+              width:200, height:200, borderRadius:8, overflow:'hidden',
+              boxShadow:`0 0 30px ${targetData?.accent || '#6eff8a'}55, 0 0 60px ${targetData?.accent || '#6eff8a'}22`,
+              animation:'deliveredPop 0.5s ease-out',
+            }}>
+              <img
+                src={CARD_IMAGES[targetTier]}
+                alt={targetData?.name}
+                style={{ width:'100%', height:'100%', objectFit:'cover', imageRendering:'pixelated', display:'block' }}
+              />
+            </div>
+
+            <div style={{ fontFamily:"'VT323', monospace", fontSize:28, color:targetData?.accent || '#6eff8a' }}>
+              {targetData?.name}
+            </div>
+            <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:12, color:'rgba(255,255,255,0.45)' }}>
+              Added to your collection
+            </div>
+
+            {/* Share for T3/T2 forges */}
+            {targetTier <= 3 && (
+              <button
+                onClick={() => {
+                  const text = `I just forged ${targetData?.name} (${targetData?.label}) in @TheBlockHunt! Burned ${burnCount} blocks at ${pct}% odds.`
+                  window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank', 'noopener')
+                }}
+                style={{
+                  height:44, width:160,
+                  fontFamily:"'Press Start 2P', monospace", fontSize:7, letterSpacing:1,
+                  color:CREAM, background:'rgba(255,255,255,0.08)',
+                  border:'1px solid rgba(255,255,255,0.2)', cursor:'pointer',
+                }}
+              >SHARE ON X</button>
+            )}
+          </div>
+          <Btn onClick={reset}>⬡ FORGE AGAIN</Btn>
+        </div>
+      )
+    }
+
+    // ── Forge FAILURE + near-miss ──
     return (
       <div style={{ display:'flex', flexDirection:'column', gap:10, height:'100%', animation:'deliveredPop 0.35s ease-out' }}>
         <VRFStatusHeader state={VRF.DELIVERED} />
         <div style={{
           flex:1, display:'flex', flexDirection:'column', alignItems:'center',
-          justifyContent:'center', gap:16, padding:'20px',
-          background: forgeResult.success ? 'rgba(110,255,138,0.06)' : 'rgba(255,80,80,0.06)',
-          border: `1px solid ${forgeResult.success ? 'rgba(110,255,138,0.3)' : 'rgba(255,80,80,0.3)'}`,
+          justifyContent:'center', gap:14, padding:'20px',
+          background:'rgba(255,80,80,0.04)',
+          border:'1px solid rgba(255,80,80,0.2)',
         }}>
           <div style={{
             fontFamily:"'Press Start 2P', monospace", fontSize:14,
-            color: forgeResult.success ? '#6eff8a' : '#ff8888',
-            textShadow: forgeResult.success ? '0 0 20px rgba(110,255,138,0.5)' : '0 0 20px rgba(255,80,80,0.5)',
+            color:'#ff8888',
+            textShadow:'0 0 20px rgba(255,80,80,0.5)',
           }}>
-            {forgeResult.success ? '✓  SUCCESS' : '✗  FAILED'}
+            ✗  FAILED
           </div>
-          <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:13, color:'rgba(255,255,255,0.55)', textAlign:'center', lineHeight:1.6 }}>
-            {forgeResult.success
-              ? `New ${TMAP[forgeResult.fromTier - 1]?.name} added to your collection`
-              : `${burnCount} ${TMAP[forgeResult.fromTier]?.name} blocks destroyed`
-            }
+
+          <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:13, color:'rgba(255,255,255,0.5)', textAlign:'center', lineHeight:1.6 }}>
+            {burnCount} {sourceData?.name} blocks destroyed
+          </div>
+
+          {/* Near-miss feedback */}
+          <div style={{
+            background:'rgba(0,0,0,0.3)', border:'1px solid rgba(255,255,255,0.08)',
+            padding:'14px 20px', textAlign:'center', width:'100%', maxWidth:300,
+          }}>
+            <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'rgba(255,255,255,0.35)', marginBottom:8 }}>
+              YOUR ODDS
+            </div>
+            <div style={{ fontFamily:"'VT323', monospace", fontSize:36, color:'#ff8888' }}>
+              {pct}%
+            </div>
+            <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:12, color:'rgba(255,255,255,0.4)', marginTop:4 }}>
+              Burned {burnCount} of {ratio} max
+            </div>
+            {nearMiss && (
+              <div style={{
+                fontFamily:"'Press Start 2P', monospace", fontSize:8,
+                color:'#ffcc33', marginTop:10,
+                textShadow:'0 0 8px rgba(255,204,51,0.3)',
+              }}>
+                So close.
+              </div>
+            )}
           </div>
         </div>
-        <button onClick={reset} style={{
-          fontFamily:"'Press Start 2P', monospace", fontSize:7, letterSpacing:1,
-          background: forgeResult.success ? GOLD : 'rgba(255,255,255,0.06)',
-          color: forgeResult.success ? INK : CREAM,
-          border: forgeResult.success ? `2px solid ${INK}` : '1px solid rgba(255,255,255,0.15)',
-          boxShadow: forgeResult.success ? `3px 3px 0 ${INK}` : 'none',
-          padding:'10px', cursor:'pointer',
-        }}>
-          {forgeResult.success ? '⬡ FORGE AGAIN' : '← TRY AGAIN'}
-        </button>
+        <Btn onClick={reset} color="rgba(255,255,255,0.06)">← TRY AGAIN</Btn>
       </div>
     )
   }
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:10, height:'100%' }}>
-      <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'rgba(255,255,255,0.4)', letterSpacing:1 }}>
-        SELECT TIER TO FORGE
+      {forgeError && (
+        <TxErrorPanel error={forgeError} context="forge" onRetry={() => setForgeError(null)} />
+      )}
+
+      {/* Mode toggle */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+        <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'rgba(255,255,255,0.4)', letterSpacing:1 }}>
+          {batchMode ? '⚡ BATCH FORGE' : 'SELECT TIER TO FORGE'}
+        </div>
+        <button
+          onClick={() => { setBatchMode(m => !m); setBatchAttempts([]); setSelTier(null) }}
+          style={{
+            fontFamily:"'Press Start 2P', monospace", fontSize:6,
+            color: batchMode ? '#cc66ff' : 'rgba(255,255,255,0.35)',
+            background: batchMode ? 'rgba(184,107,255,0.1)' : 'transparent',
+            border: `1px solid ${batchMode ? 'rgba(184,107,255,0.3)' : 'rgba(255,255,255,0.1)'}`,
+            padding:'5px 10px', cursor:'pointer', letterSpacing:0.5,
+          }}
+        >{batchMode ? 'SINGLE' : 'BATCH'}</button>
       </div>
+
+      {batchMode && (
+        <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:11, color:'rgba(255,255,255,0.35)' }}>
+          Build multiple forge attempts. One transaction. One VRF call.
+        </div>
+      )}
 
       <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
         {[7,6,5,4,3,2].map(tid => {
@@ -978,50 +1258,231 @@ function ForgePanel({ blocks, onForge, address }) {
 
       {selTier && sel && target ? (
         <>
-          <div style={{ background:'rgba(0,0,0,0.3)', border:'1px solid rgba(255,255,255,0.08)', padding:'10px 12px' }}>
-            <div style={{ display:'flex', justifyContent:'space-between', marginBottom:6 }}>
-              <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:6, color:'rgba(255,255,255,0.4)' }}>BURN COUNT</span>
-              <span style={{ fontFamily:"'VT323', monospace", fontSize:24, color:sel.accent }}>{burnCount}</span>
-            </div>
-            <input type="range" min={10} max={maxBurn} value={burnCount}
-              onChange={e => setBurn(parseInt(e.target.value))}
-              style={{ width:'100%', accentColor:sel.accent }} />
-            <div style={{ display:'flex', justifyContent:'space-between', marginTop:4 }}>
-              <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:5, color:'rgba(255,255,255,0.25)' }}>10 of {COMBINE_RATIOS[selTier]} = {Math.round((10 / COMBINE_RATIOS[selTier]) * 100)}%</span>
-              <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:5, color:'rgba(255,255,255,0.25)' }}>{maxBurn} of {COMBINE_RATIOS[selTier]} = {Math.min(Math.round((maxBurn / COMBINE_RATIOS[selTier]) * 100), 100)}%</span>
-            </div>
-          </div>
-
           {(() => {
             const ratio = COMBINE_RATIOS[selTier] || 20;
             const pct = Math.min(Math.round((burnCount / ratio) * 100), 100);
+            const holdAfter = (blocks[selTier] || 0) - burnCount;
             return (
-              <div style={{
-                background:'rgba(0,0,0,0.25)', border:`1px solid ${sel.accent}33`,
-                padding:'10px 12px', textAlign:'center',
-              }}>
-                <div style={{ fontFamily:"'VT323', monospace", fontSize:38, color: pct >= 80 ? '#6eff8a' : pct >= 50 ? GOLD : '#ff6644' }}>
-                  {pct}% CHANCE
+              <div style={{ display:'flex', gap:16 }}>
+                {/* LEFT: Controls */}
+                <div style={{ flex:'0 0 55%', display:'flex', flexDirection:'column', gap:10 }}>
+                  {/* Burn slider */}
+                  <div style={{ background:'rgba(0,0,0,0.3)', border:'1px solid rgba(255,255,255,0.08)', padding:'10px 12px' }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', marginBottom:6 }}>
+                      <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'rgba(255,255,255,0.4)' }}>BURN COUNT</span>
+                      <span style={{ fontFamily:"'VT323', monospace", fontSize:24, color:sel.accent }}>{burnCount}</span>
+                    </div>
+                    <input type="range" min={10} max={maxBurn} value={burnCount}
+                      onChange={e => setBurn(parseInt(e.target.value))}
+                      style={{ width:'100%', accentColor:sel.accent }} />
+                    <div style={{ display:'flex', justifyContent:'space-between', marginTop:4 }}>
+                      <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'rgba(255,255,255,0.25)' }}>10 = {Math.round((10 / ratio) * 100)}%</span>
+                      <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'rgba(255,255,255,0.25)' }}>{maxBurn} = {Math.min(Math.round((maxBurn / ratio) * 100), 100)}%</span>
+                    </div>
+                  </div>
+
+                  {/* Holdings impact */}
+                  <div style={{ background:'rgba(0,0,0,0.2)', border:'1px solid rgba(255,255,255,0.06)', padding:'8px 12px' }}>
+                    <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'rgba(255,255,255,0.35)', marginBottom:4 }}>HOLDINGS IMPACT</div>
+                    <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:12, color:'rgba(255,255,255,0.5)', lineHeight:1.6 }}>
+                      You hold: <span style={{color:sel.accent}}>{blocks[selTier] || 0}</span> {sel.short}<br/>
+                      After forge: <span style={{color:'#ff6644'}}>{holdAfter}</span> {sel.short} (-{burnCount})
+                    </div>
+                  </div>
+
+                  {/* Warning */}
+                  <div style={{
+                    background:'rgba(255,50,30,0.06)', border:'1px solid rgba(255,50,30,0.2)',
+                    padding:'8px 12px',
+                    fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'rgba(255,80,80,0.7)', lineHeight:1.8,
+                  }}>
+                    ⚠ {burnCount}× {sel.name} burned whether you win or lose
+                  </div>
+
+                  {/* FORGE / ADD ATTEMPT button — 52px */}
+                  {batchMode ? (
+                    <Btn onClick={addBatchAttempt} color="#9933cc">
+                      + ADD ATTEMPT  ({pct}%)
+                    </Btn>
+                  ) : showConfirm ? (
+                    <div style={{
+                      background:'rgba(255,50,30,0.08)', border:'1px solid rgba(255,50,30,0.3)',
+                      padding:'12px', textAlign:'center',
+                    }}>
+                      <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'#ff8888', marginBottom:8 }}>
+                        ⚠ HIGH BURN WARNING
+                      </div>
+                      <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:12, color:'rgba(255,255,255,0.6)', marginBottom:12, lineHeight:1.5 }}>
+                        This will burn {burnCount} of your {blocks[selTier] || 0} T{selTier} blocks ({Math.round((burnCount / (blocks[selTier] || 1)) * 100)}%). Continue?
+                      </div>
+                      <div style={{ display:'flex', gap:8 }}>
+                        <Btn onClick={() => setShowConfirm(false)} color="rgba(255,255,255,0.1)" sm>CANCEL</Btn>
+                        <Btn onClick={() => { setShowConfirm(false); doForge(); }} color="#cc3322" sm>CONFIRM FORGE</Btn>
+                      </div>
+                    </div>
+                  ) : (
+                    <Btn onClick={() => {
+                      const holdings = blocks[selTier] || 0;
+                      if (burnCount > holdings * 0.8) { setShowConfirm(true); }
+                      else { doForge(); }
+                    }} color="#9933cc">
+                      ⚡ FORGE  ({pct}%)
+                    </Btn>
+                  )}
                 </div>
-                <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:11, color:'rgba(255,255,255,0.45)', marginTop:3 }}>
-                  Burning {burnCount} of {ratio} <span style={{color:sel.accent}}>{sel.name}</span> → 1× <span style={{color:target.accent}}>{target.name}</span>
-                </div>
-                <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:5.5, color:'rgba(255,80,80,0.6)', marginTop:6 }}>
-                  ⚠ IF THIS FAILS: {burnCount}× {sel.name} — GONE FOREVER
+
+                {/* RIGHT: Visual */}
+                <div style={{ flex:'0 0 calc(45% - 16px)', display:'flex', flexDirection:'column', alignItems:'center', gap:10 }}>
+                  {/* Source → Target cards */}
+                  <div style={{ display:'flex', alignItems:'center', gap:10, width:'100%', justifyContent:'center' }}>
+                    <div style={{
+                      width:100, height:100, background:sel.bg, border:`2px solid ${sel.border}`,
+                      display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+                      boxShadow:`3px 3px 0 ${INK}`,
+                    }}>
+                      <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:sel.accent }}>T{selTier}</div>
+                      <div style={{ fontFamily:"'VT323', monospace", fontSize:16, color:'rgba(255,255,255,0.5)', marginTop:2 }}>×{burnCount}</div>
+                    </div>
+                    <div style={{ fontFamily:"'VT323', monospace", fontSize:28, color:'rgba(255,255,255,0.3)' }}>→</div>
+                    <div style={{
+                      width:100, height:100, background:target.bg, border:`2px solid ${target.border}`,
+                      display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+                      boxShadow:`3px 3px 0 ${INK}`,
+                    }}>
+                      <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:target.accent }}>T{selTier - 1}</div>
+                      <div style={{ fontFamily:"'VT323', monospace", fontSize:16, color:'rgba(255,255,255,0.5)', marginTop:2 }}>×1</div>
+                    </div>
+                  </div>
+
+                  {/* Percentage display */}
+                  <div style={{
+                    textAlign:'center', padding:'12px 0',
+                    background:'rgba(0,0,0,0.25)', border:`1px solid ${sel.accent}33`,
+                    width:'100%',
+                  }}>
+                    <div style={{ fontFamily:"'VT323', monospace", fontSize:44, color: pct >= 80 ? '#6eff8a' : pct >= 50 ? GOLD : '#ff6644' }}>
+                      {pct}%
+                    </div>
+                    <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'rgba(255,255,255,0.35)' }}>
+                      CHANCE
+                    </div>
+                  </div>
+
+                  {/* Outcomes */}
+                  <div style={{ width:'100%', display:'flex', flexDirection:'column', gap:4 }}>
+                    <div style={{ background:'rgba(110,255,138,0.06)', border:'1px solid rgba(110,255,138,0.15)', padding:'6px 10px' }}>
+                      <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'#6eff8a' }}>✓ WIN: </span>
+                      <span style={{ fontFamily:"'Courier Prime', monospace", fontSize:11, color:'rgba(255,255,255,0.5)' }}>+1 {target.name}</span>
+                    </div>
+                    <div style={{ background:'rgba(255,80,80,0.06)', border:'1px solid rgba(255,80,80,0.15)', padding:'6px 10px' }}>
+                      <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'#ff8888' }}>✗ LOSE: </span>
+                      <span style={{ fontFamily:"'Courier Prime', monospace", fontSize:11, color:'rgba(255,255,255,0.5)' }}>-{burnCount} {sel.name}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             );
           })()}
-
-          <Btn onClick={doForge} color="#9933cc">
-            ⚡ FORGE  ({Math.min(Math.round((burnCount / (COMBINE_RATIOS[selTier] || 20)) * 100), 100)}%)
-          </Btn>
         </>
       ) : (
-        <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center' }}>
-          <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:12, color:'rgba(255,255,255,0.2)', textAlign:'center' }}>
-            Select a tier above<br/>(need 10+ blocks to forge)
+        <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+          {/* Description */}
+          <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:12, color:'rgba(255,255,255,0.45)', lineHeight:1.6 }}>
+            Burn blocks for a chance to upgrade one tier. Higher burn = higher chance.
           </div>
+
+          {/* Per-tier status */}
+          <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
+            {[7,6,5,4,3].map(tid => {
+              const t = TMAP[tid];
+              const count = blocks[tid] || 0;
+              const ratio = COMBINE_RATIOS[tid];
+              const needed = Math.max(0, 10 - count);
+              const canForge = count >= 10;
+              return (
+                <div key={tid} style={{
+                  display:'flex', alignItems:'center', gap:8, padding:'4px 8px',
+                  background: canForge ? `${t.accent}11` : 'transparent',
+                  border: canForge ? `1px solid ${t.accent}33` : '1px solid transparent',
+                }}>
+                  <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:t.accent, width:22 }}>T{tid}</span>
+                  <span style={{ fontFamily:"'VT323', monospace", fontSize:18, color:'rgba(255,255,255,0.5)', width:40 }}>×{count}</span>
+                  <span style={{ fontFamily:"'Courier Prime', monospace", fontSize:11, color: canForge ? '#6eff8a' : 'rgba(255,255,255,0.3)', flex:1 }}>
+                    {canForge ? `Ready — up to ${Math.round((Math.min(count, ratio) / ratio) * 100)}% chance` : `${needed} more needed`}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* How forge works reference */}
+          <div style={{ background:'rgba(0,0,0,0.25)', border:'1px solid rgba(255,255,255,0.06)', padding:'10px 12px' }}>
+            <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'rgba(255,255,255,0.35)', letterSpacing:1, marginBottom:6 }}>
+              HOW THE FORGE WORKS
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
+              {[
+                { from:'T7→T6', ratio:20 },
+                { from:'T6→T5', ratio:20 },
+                { from:'T5→T4', ratio:30 },
+                { from:'T4→T3', ratio:30 },
+                { from:'T3→T2', ratio:50 },
+              ].map(r => (
+                <div key={r.from} style={{ display:'flex', alignItems:'center', gap:8, padding:'2px 0' }}>
+                  <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'rgba(255,255,255,0.45)', width:52 }}>{r.from}</span>
+                  <span style={{ fontFamily:"'Courier Prime', monospace", fontSize:11, color:'rgba(255,255,255,0.35)' }}>
+                    Burn 10-{r.ratio} of {r.ratio} = {Math.round(10/r.ratio*100)}%-100% chance
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:11, color:'rgba(255,255,255,0.25)', marginTop:6 }}>
+              Burned blocks are destroyed whether you succeed or fail.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Batch queue */}
+      {batchMode && batchAttempts.length > 0 && (
+        <div style={{ display:'flex', flexDirection:'column', gap:6, marginTop:4 }}>
+          <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'rgba(255,255,255,0.35)', letterSpacing:1 }}>
+            QUEUED ATTEMPTS
+          </div>
+          {batchAttempts.map((a, i) => {
+            const t = TMAP[a.tier]
+            const tgt = TMAP[a.tier - 1]
+            const r = COMBINE_RATIOS[a.tier] || 20
+            const chance = Math.min(Math.round((a.burnCount / r) * 100), 100)
+            return (
+              <div key={i} style={{
+                display:'flex', alignItems:'center', gap:10,
+                background:'rgba(184,107,255,0.06)',
+                border:'1px solid rgba(184,107,255,0.15)',
+                padding:'8px 12px',
+              }}>
+                <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'rgba(255,255,255,0.3)', width:16 }}>#{i+1}</span>
+                <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:t?.accent || '#fff' }}>T{a.tier} → T{a.tier-1}</span>
+                <span style={{ fontFamily:"'VT323', monospace", fontSize:18, color:'rgba(255,255,255,0.5)', flex:1 }}>
+                  Burn: {a.burnCount}
+                </span>
+                <span style={{ fontFamily:"'VT323', monospace", fontSize:18, color: chance >= 80 ? '#6eff8a' : chance >= 50 ? GOLD : '#ff6644' }}>
+                  {chance}%
+                </span>
+                <button onClick={() => removeBatchAttempt(i)} style={{
+                  background:'none', border:'1px solid rgba(255,80,80,0.25)',
+                  color:'#ff8888', fontFamily:"'Press Start 2P', monospace", fontSize:6,
+                  padding:'3px 8px', cursor:'pointer',
+                }}>✕</button>
+              </div>
+            )
+          })}
+          <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:11, color:'rgba(255,255,255,0.3)' }}>
+            Total burn: {batchAttempts.reduce((s, a) => s + a.burnCount, 0)} blocks across {batchAttempts.length} attempt{batchAttempts.length !== 1 ? 's' : ''}
+          </div>
+          <Btn onClick={doBatchForge} color="#9933cc">
+            ⚡ FORGE ALL  ({batchAttempts.length} attempt{batchAttempts.length !== 1 ? 's' : ''})
+          </Btn>
         </div>
       )}
     </div>
@@ -1033,77 +1494,77 @@ function ForgePanel({ blocks, onForge, address }) {
 // ═══════════════════════════════════════════════════════════════
 
 function TradePanel() {
-  const [listings] = useState([
-    { tier:2, price:"0.0148 Ξ", usd:"$43,200", seller:"0x…a3f" },
-    { tier:3, price:"0.0042 Ξ", usd:"$12,800", seller:"0x…7b2" },
-    { tier:4, price:"0.0011 Ξ", usd:"$3,100",  seller:"0x…f44" },
-    { tier:5, price:"0.00039Ξ", usd:"$1,100",  seller:"0x…e88" },
-    { tier:6, price:"0.00028Ξ", usd:"$800",    seller:"0x…c12" },
-  ]);
-  const [toast, setToast] = useState(null);
-
-  function showToast(msg) { setToast(msg); setTimeout(() => setToast(null), 2200); }
-  function handleBuy(i) { showToast(`Buying ${TMAP[listings[i].tier].name} for ${listings[i].price} — wallet prompt coming`); }
-  function handleList() { showToast("Listing flow — connect wallet to continue"); }
-  function handleOpenSea() { showToast("Opening OpenSea — not live in demo"); }
+  // Combine-path value table: how many mints to reach each tier via combining
+  const VALUE_TABLE = [
+    { tier:7, name:"The Inert",      mints:1,         ethCost:"0.00008",  label:"COMMON" },
+    { tier:6, name:"The Restless",   mints:20,        ethCost:"0.0016",   label:"COMMON" },
+    { tier:5, name:"The Remembered", mints:400,       ethCost:"0.032",    label:"UNCOMMON" },
+    { tier:4, name:"The Ordered",    mints:12000,     ethCost:"0.96",     label:"RARE" },
+    { tier:3, name:"The Chaotic",    mints:360000,    ethCost:"28.8",     label:"EPIC" },
+    { tier:2, name:"The Willful",    mints:18000000,  ethCost:"1,440",    label:"MYTHIC" },
+  ];
 
   return (
-    <div style={{ display:"flex", flexDirection:"column", gap:8, height:"100%", position:"relative" }}>
-      {toast && (
-        <div style={{
-          position:"absolute", bottom:0, left:0, right:0, zIndex:20,
-          background:"rgba(200,168,75,0.95)", color:"#0a0705",
-          fontFamily:"'Press Start 2P', monospace", fontSize:6.5,
-          padding:"10px 12px", letterSpacing:0.5,
-          boxShadow:"0 -2px 0 rgba(0,0,0,0.4)",
-          animation:"deliveredPop 0.25s ease-out",
-        }}>{toast}</div>
-      )}
-      <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:"rgba(255,255,255,0.4)", letterSpacing:1 }}>ACTIVE LISTINGS</div>
-      {listings.map((l, i) => {
-        const t = TMAP[l.tier];
-        return (
-          <div key={i} style={{
-            display:"flex", alignItems:"center", gap:10,
-            background:"rgba(0,0,0,0.3)", border:`1px solid ${t.accent}22`,
-            padding:"8px 10px", transition:"border-color 0.15s",
-          }}
-            onMouseEnter={e=>e.currentTarget.style.borderColor=`${t.accent}55`}
-            onMouseLeave={e=>e.currentTarget.style.borderColor=`${t.accent}22`}
-          >
-            <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:t.accent, width:20 }}>T{l.tier}</div>
-            <div style={{ flex:1 }}>
-              <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:11, color:"rgba(255,255,255,0.6)" }}>{t.name}</div>
-              <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:10, color:"rgba(255,255,255,0.25)" }}>{l.seller}</div>
+    <div style={{ display:"flex", flexDirection:"column", gap:14, height:"100%" }}>
+      {/* Status message */}
+      <div style={{
+        background:"rgba(0,0,0,0.25)", border:"1px solid rgba(255,255,255,0.08)",
+        padding:"14px 16px", textAlign:"center",
+      }}>
+        <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:GOLD, letterSpacing:1, marginBottom:6 }}>
+          SECONDARY MARKET
+        </div>
+        <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:13, color:CREAM, opacity:0.6, lineHeight:1.5 }}>
+          Peer-to-peer trading opens at mainnet launch.
+        </div>
+      </div>
+
+      {/* Combine-path value table */}
+      <div style={{ background:"rgba(0,0,0,0.25)", border:"1px solid rgba(255,255,255,0.06)", padding:"10px 12px" }}>
+        <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:"rgba(255,255,255,0.45)", letterSpacing:1, marginBottom:8 }}>
+          COMBINE-PATH VALUE
+        </div>
+        <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:5.5, color:"rgba(255,255,255,0.25)", marginBottom:8, display:"flex", justifyContent:"space-between" }}>
+          <span>TIER</span><span>MINTS NEEDED</span><span>ETH COST</span>
+        </div>
+        {VALUE_TABLE.map(row => {
+          const t = TMAP[row.tier];
+          return (
+            <div key={row.tier} style={{
+              display:"flex", alignItems:"center", gap:8, padding:"5px 4px",
+              borderBottom:"1px solid rgba(255,255,255,0.04)",
+            }}>
+              <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:t.accent, width:24 }}>T{row.tier}</span>
+              <span style={{ fontFamily:"'Courier Prime', monospace", fontSize:12, color:"rgba(255,255,255,0.5)", flex:1 }}>{t.name}</span>
+              <span style={{ fontFamily:"'VT323', monospace", fontSize:18, color:CREAM, width:80, textAlign:"right" }}>{row.mints.toLocaleString()}</span>
+              <span style={{ fontFamily:"'VT323', monospace", fontSize:16, color:"rgba(255,255,255,0.4)", width:70, textAlign:"right" }}>{row.ethCost} Ξ</span>
             </div>
-            <div style={{ textAlign:"right" }}>
-              <div style={{ fontFamily:"'VT323', monospace", fontSize:18, color:t.accent }}>{l.price}</div>
-              <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:10, color:"rgba(255,255,255,0.3)" }}>{l.usd}</div>
-            </div>
-            <button onClick={() => handleBuy(i)} style={{
-              background:t.accent, color:"#0a0705", border:`1px solid ${GOLD_DK}`,
-              boxShadow:`2px 2px 0 ${INK}`,
-              fontFamily:"'Press Start 2P', monospace", fontSize:5.5,
-              padding:"5px 8px", cursor:"pointer", transition:"transform 0.05s",
-            }}
-              onMouseDown={e=>e.currentTarget.style.transform="translate(1px,1px)"}
-              onMouseUp={e=>e.currentTarget.style.transform=""}
-            >BUY</button>
-          </div>
-        );
-      })}
+          );
+        })}
+        <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:11, color:"rgba(255,255,255,0.3)", marginTop:8, lineHeight:1.5 }}>
+          Cost assumes Batch 1 pricing via pure combine path. Forge offers a probabilistic shortcut.
+        </div>
+      </div>
+
       <div style={{ flex:1 }} />
-      <Btn onClick={handleList} color="#8a5a20">+ LIST FOR SALE</Btn>
-      <button onClick={handleOpenSea} style={{
-        width:"100%", padding:"7px 0", marginTop:4,
-        fontFamily:"'Press Start 2P', monospace", fontSize:6,
-        background:"transparent", color:"rgba(255,255,255,0.45)",
-        border:"1px solid rgba(255,255,255,0.18)", cursor:"pointer",
-        transition:"color 0.1s, border-color 0.1s",
-      }}
+
+      {/* OpenSea link — 48px */}
+      <a
+        href="https://testnets.opensea.io/collection/the-block-hunt"
+        target="_blank"
+        rel="noreferrer"
+        style={{
+          display:"flex", alignItems:"center", justifyContent:"center",
+          width:"100%", height:48,
+          fontFamily:"'Press Start 2P', monospace", fontSize:8, letterSpacing:1,
+          background:"transparent", color:CREAM,
+          border:`2px solid rgba(255,255,255,0.2)`,
+          cursor:"pointer", textDecoration:"none",
+          transition:"color 0.1s, border-color 0.1s",
+        }}
         onMouseEnter={e=>{e.currentTarget.style.color=GOLD;e.currentTarget.style.borderColor=GOLD_DK;}}
-        onMouseLeave={e=>{e.currentTarget.style.color="rgba(255,255,255,0.45)";e.currentTarget.style.borderColor="rgba(255,255,255,0.18)";}}
-      >↗ VIEW ON OPENSEA</button>
+        onMouseLeave={e=>{e.currentTarget.style.color=CREAM;e.currentTarget.style.borderColor="rgba(255,255,255,0.2)";}}
+      >↗ VIEW ON OPENSEA (TESTNET)</a>
     </div>
   );
 }
@@ -1124,6 +1585,7 @@ export default function GameScreen({ onOpenModal, onNavigate }) {
     mintPrice,
     mintPriceWei,
     refetchAll,
+    isLoading,
   } = useGameState()
 
   const blocks = {
@@ -1171,6 +1633,10 @@ const { data: countdownHolder } = useReadContract({
   const [activePanel, setPanel]      = useState("mint")
   const [combineMsg,  setCombineMsg] = useState(null)
   const [resetAlert,  setResetAlert] = useState(false)
+  const [revealTier,  setRevealTier] = useState(null)     // T5-T2 mint reveal
+  const [ceremonyCombineTier, setCeremonyCombineTier] = useState(null) // combine ceremony
+  const [rankToast,   setRankToast]  = useState(null)    // { direction:'up'|'down', from, to }
+  const prevBalancesRef = useRef(null)
 
   // ── CountdownHolderReset WebSocket alert ─────────────────────
   // When countdown resets, notify any player who holds all 6 tiers
@@ -1203,11 +1669,16 @@ const { data: countdownHolder } = useReadContract({
   useEffect(() => {
     if (!combineSuccess) return
     setTimeout(() => refetchAll(), 1500)
-    // Task 1: show success banner
     const toTier = lastCombinedToTierRef.current
     if (toTier != null) {
-      setCombineMsg(`✓ Combined! ${TIER_NAMES[toTier] ?? `Tier ${toTier}`} added to collection`)
-      setTimeout(() => setCombineMsg(null), 2200)
+      // If this is a NEW tier (previously 0), show ceremony instead of banner
+      const prevCount = blocks[toTier] || 0
+      if (prevCount === 0 && toTier >= 2 && toTier <= 5) {
+        setCeremonyCombineTier(toTier)
+      } else {
+        setCombineMsg(`✓ Combined! ${TIER_NAMES[toTier] ?? `Tier ${toTier}`} added to collection`)
+        setTimeout(() => setCombineMsg(null), 2200)
+      }
     }
     setCombiningTier(null)
     setCombineTxHash(null)
@@ -1230,8 +1701,58 @@ const { data: countdownHolder } = useReadContract({
     })
   }
 
+  // Detect rare pulls by comparing before/after balances
+  useEffect(() => {
+    if (!prevBalancesRef.current) {
+      prevBalancesRef.current = { ...balances }
+      return
+    }
+    // Check T2-T5 for new additions (highest rarity first)
+    for (const tier of [2, 3, 4, 5]) {
+      const prev = prevBalancesRef.current[tier] || 0
+      const curr = balances[tier] || 0
+      if (curr > prev) {
+        setRevealTier(tier)
+        break
+      }
+    }
+    prevBalancesRef.current = { ...balances }
+  }, [balances])
+
   function handleMint()  { refetchAll() }
   function handleForge() { refetchAll() }
+
+  // ── Rank change notifications — poll subgraph every 60s ──
+  const SUBGRAPH_URL = "https://api.studio.thegraph.com/query/1744131/blok-hunt/version/latest"
+  const BURN_ADDRS = ["0x0000000000000000000000000000000000000000","0x000000000000000000000000000000000000dead"]
+  useEffect(() => {
+    if (!address) return
+    async function checkRank() {
+      try {
+        const query = `{ players(orderBy: progressionScore, orderDirection: desc, where: { id_not_in: ${JSON.stringify(BURN_ADDRS)} }) { id } }`
+        const res = await fetch(SUBGRAPH_URL, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ query }) })
+        const json = await res.json()
+        const players = json?.data?.players || []
+        const idx = players.findIndex(p => p.id.toLowerCase() === address.toLowerCase())
+        if (idx === -1) return
+        const rank = idx + 1
+        const RANK_KEY = `blockhunt_rank_${address.toLowerCase()}`
+        const lastRank = parseInt(localStorage.getItem(RANK_KEY) || "0")
+        if (lastRank > 0 && rank !== lastRank) {
+          if (rank < lastRank) {
+            setRankToast({ direction:'up', from:lastRank, to:rank })
+          } else {
+            setRankToast({ direction:'down', from:lastRank, to:rank })
+          }
+          setTimeout(() => setRankToast(null), 5000)
+        }
+        localStorage.setItem(RANK_KEY, String(rank))
+      } catch {}
+    }
+    checkRank()
+    const interval = setInterval(checkRank, 60_000)
+    return () => clearInterval(interval)
+  }, [address])
 
   // Task 3: all 6 tiers held = show takeover
   const all6held = [2,3,4,5,6,7].every(t => (blocks[t] ?? 0) >= 1)
@@ -1283,7 +1804,7 @@ const { data: countdownHolder } = useReadContract({
 
       {/* CRT overlay */}
       <div style={{
-        position:"fixed", inset:0, pointerEvents:"none", zIndex:9999,
+        position:"fixed", inset:0, pointerEvents:"none", zIndex:1,
         background:"repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.012) 2px,rgba(0,0,0,0.012) 4px)",
       }} />
 
@@ -1304,6 +1825,54 @@ const { data: countdownHolder } = useReadContract({
         }}>
           {combineMsg}
         </div>
+      )}
+
+      {/* ── Rank change toast ── */}
+      {rankToast && (
+        <div
+          onClick={() => setRankToast(null)}
+          style={{
+            position:"fixed", bottom:32, right:24, zIndex:8000,
+            background: rankToast.direction === 'up' ? "rgba(20,60,20,0.95)" : "rgba(60,40,10,0.95)",
+            border: `2px solid ${rankToast.direction === 'up' ? '#6eff8a' : '#ffcc33'}`,
+            borderRadius:4, padding:"12px 20px", cursor:"pointer",
+            boxShadow: `0 4px 20px ${rankToast.direction === 'up' ? 'rgba(110,255,138,0.3)' : 'rgba(255,204,51,0.3)'}`,
+            animation:"fadeInDown 0.3s ease-out",
+            display:"flex", alignItems:"center", gap:10,
+          }}
+        >
+          <span style={{ fontFamily:"'VT323', monospace", fontSize:28, color: rankToast.direction === 'up' ? '#6eff8a' : '#ffcc33' }}>
+            {rankToast.direction === 'up' ? '↑' : '↓'}
+          </span>
+          <div>
+            <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color: rankToast.direction === 'up' ? '#6eff8a' : '#ffcc33', letterSpacing:1 }}>
+              {rankToast.direction === 'up' ? 'RANK UP' : 'RANK DOWN'}
+            </div>
+            <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:12, color:'rgba(255,255,255,0.6)', marginTop:2 }}>
+              {rankToast.direction === 'up'
+                ? `You moved from #${rankToast.from} to #${rankToast.to}`
+                : `You dropped from #${rankToast.from} to #${rankToast.to}`
+              }
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Reveal Moment (T5-T2 mint reveal) ── */}
+      {revealTier && (
+        <RevealMoment
+          tier={revealTier}
+          prizePool={prizePool}
+          onDismiss={() => setRevealTier(null)}
+        />
+      )}
+
+      {/* ── Combine Ceremony (new tier unlock) ── */}
+      {ceremonyCombineTier && (
+        <CombineCeremony
+          tier={ceremonyCombineTier}
+          onDismiss={() => setCeremonyCombineTier(null)}
+        />
       )}
 
       {/* Countdown navigation handled by useEffect above */}
@@ -1365,14 +1934,6 @@ const { data: countdownHolder } = useReadContract({
 
         {/* ── Task 2: Wallet connect/disconnect ── */}
         <div style={{ display:"flex", gap:12, alignItems:"center" }}>
-          <div style={{
-            fontFamily:"'Press Start 2P', monospace", fontSize:7.5,
-            color:GOLD, border:`2px solid ${GOLD_DK}`,
-            padding:"5px 12px", background:"rgba(200,168,75,0.1)", whiteSpace:"nowrap",
-          }}>
-            ◈ Ξ {prizePool}
-          </div>
-
           <div style={{ position:"relative" }}>
             {isConnected && address ? (
               <>
@@ -1481,7 +2042,7 @@ const { data: countdownHolder } = useReadContract({
       </div>
 
       {/* ── MAIN CONTENT ── */}
-      <div style={{ maxWidth:1300, margin:"0 auto", padding:"24px 20px 48px" }}>
+      <div style={{ maxWidth:1300, margin:"0 auto", padding:"24px 20px 48px", opacity: isLoading ? 0.5 : 1, transition:"opacity 0.3s" }}>
 
         {/* Collection progress bar */}
         <div style={{
@@ -1522,30 +2083,63 @@ const { data: countdownHolder } = useReadContract({
           </div>
         </div>
 
-        {/* ── 3 BOTTOM PANELS ── */}
-        <div style={{
-          display:"grid", gridTemplateColumns:"repeat(3, minmax(280px, 1fr))",
-          gap:12, overflowX:"auto", paddingBottom:4,
-        }}>
-          {panels.map(p => (
-            <div key={p.id} style={{
-              background:p.bg, border:`3px solid ${INK}`,
-              boxShadow:`5px 5px 0 rgba(0,0,0,0.55)`,
-              padding:"20px", minHeight:460,
-              display:"flex", flexDirection:"column",
-            }}>
+        {/* ── LAYER 2: STATUS BAR ── */}
+        <div style={{ marginBottom:20 }}>
+          <GameStatusBar
+            prizePool={prizePool}
+            windowInfo={windowInfo}
+            currentBatch={currentBatch}
+            mintPrice={mintPrice}
+          />
+        </div>
+
+        {/* ── TAB BAR + ACTIVE PANEL ── */}
+        <div>
+          {/* Tab bar — 48px height, full clickable */}
+          <div style={{ display:"flex", gap:0 }}>
+            {panels.map(p => {
+              const active = activePanel === p.id
+              const hasBadge = (p.id === "mint" && windowOpen) || (p.id === "forge" && [7,6,5,4,3,2].some(t => (blocks[t] || 0) >= 10))
+              return (
+                <button key={p.id} onClick={() => setPanel(p.id)} style={{
+                  flex:1, height:48,
+                  fontFamily:"'Press Start 2P', monospace",
+                  fontSize: active ? 9 : 7,
+                  letterSpacing: 2,
+                  color: active ? p.titleColor : "rgba(255,255,255,0.5)",
+                  background: active ? p.bg : "rgba(0,0,0,0.3)",
+                  border:"none",
+                  borderBottom: active ? `3px solid ${p.titleColor}` : "3px solid transparent",
+                  cursor:"pointer",
+                  display:"flex", alignItems:"center", justifyContent:"center", gap:8,
+                  opacity: active ? 1 : 0.5,
+                  transition:"opacity 0.1s, font-size 0.1s",
+                }}>
+                  {p.label}
+                  {hasBadge && <div style={{ width:6, height:6, borderRadius:"50%", background: p.id === "mint" ? "#6eff8a" : "#cc66ff" }} />}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Active panel — full width, shared bg with tab */}
+          {(() => {
+            const p = panels.find(p => p.id === activePanel) || panels[0]
+            return (
               <div style={{
-                fontFamily:"'Press Start 2P', monospace", fontSize:10, letterSpacing:2,
-                color:p.titleColor, paddingBottom:12, marginBottom:14,
-                borderBottom:"1px solid rgba(255,255,255,0.07)",
-              }}>{p.label}</div>
-              <div style={{ flex:1, display:"flex", flexDirection:"column", minHeight:0 }}>
-                {p.id==="mint"  && <VRFMintPanel onMint={handleMint} windowOpen={windowOpen} windowInfo={windowInfo} slots={slots} prizePool={prizePool} address={address} refetchAll={refetchAll} blocks={blocks} mintPrice={mintPrice} mintPriceWei={mintPriceWei} currentBatch={currentBatch} />}
-                {p.id==="forge" && <ForgePanel blocks={blocks} onForge={handleForge} address={address} />}
-                {p.id==="trade" && <TradePanel />}
+                background: p.bg, border:`3px solid ${INK}`, borderTop:"none",
+                boxShadow:`5px 5px 0 rgba(0,0,0,0.55)`,
+                padding:"20px", minHeight:460,
+                display:"flex", flexDirection:"column",
+              }}>
+                <div style={{ flex:1, display:"flex", flexDirection:"column", minHeight:0 }}>
+                  {p.id==="mint"  && <VRFMintPanel onMint={handleMint} windowOpen={windowOpen} windowInfo={windowInfo} slots={slots} prizePool={prizePool} address={address} refetchAll={refetchAll} blocks={blocks} mintPrice={mintPrice} mintPriceWei={mintPriceWei} currentBatch={currentBatch} />}
+                  {p.id==="forge" && <ForgePanel blocks={blocks} onForge={handleForge} address={address} />}
+                  {p.id==="trade" && <TradePanel />}
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })()}
         </div>
 
       </div>

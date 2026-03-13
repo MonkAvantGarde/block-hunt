@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useGameState } from '../hooks/useGameState';
 
 // ═══════════════════════════════════════════════════════════════
 // TOKENS
@@ -15,8 +16,6 @@ const PURPLE  = "#b86bff";
 const ORANGE  = "#ffa84b";
 
 const MODAL_CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323:wght@400&family=Courier+Prime:wght@400;700&display=swap');
-
   @keyframes overlay-in { from { opacity:0; } to { opacity:1; } }
   @keyframes modal-in   { from { opacity:0; transform:translateY(12px) scale(.98); } to { opacity:1; transform:none; } }
   @keyframes pulse-dot  { 0%,100% { opacity:1; } 50% { opacity:.3; } }
@@ -554,161 +553,114 @@ export function LeaderboardModal({ onClose, onOpenProfile, connectedAddress }) {
 // ═══════════════════════════════════════════════════════════════
 // MODAL 3 — PROFILE
 // ═══════════════════════════════════════════════════════════════
-const HOLDINGS = [
-  { t: 7, name: "THE INERT",      col: "#9ba8b0", qty: 64 },
-  { t: 6, name: "THE RESTLESS",   col: "#8fa8c8", qty: 11 },
-  { t: 5, name: "THE REMEMBERED", col: "#8fb87a", qty: 3 },
-  { t: 4, name: "THE ORDERED",    col: "#c8c870", qty: 1 },
-  { t: 3, name: "THE CHAOTIC",    col: "#c87a7a", qty: 0 },
-  { t: 2, name: "THE WILLFUL",    col: "#c8a84b", qty: 0 },
+const TIER_META = [
+  { t: 7, name: "THE INERT",      col: "#9ba8b0" },
+  { t: 6, name: "THE RESTLESS",   col: "#8fa8c8" },
+  { t: 5, name: "THE REMEMBERED", col: "#8fb87a" },
+  { t: 4, name: "THE ORDERED",    col: "#c8c870" },
+  { t: 3, name: "THE CHAOTIC",    col: "#c87a7a" },
+  { t: 2, name: "THE WILLFUL",    col: "#c8a84b" },
+  { t: 1, name: "THE ORIGIN",     col: "#4466ff" },
 ];
 
-const FEED_DATA = [
-  { type: "mint",    label: "MINT",       col: GREEN,  desc: "Minted 200 blocks — 157 Inert, 28 Restless, 12 Remembered, 3 Ordered", time: "2 hours ago",  tx: "0x4fa1...b22c" },
-  { type: "forge-w", label: "FORGE WIN",  col: PURPLE, desc: "Forged 50 × Restless → 1 Remembered (50% odds)", time: "5 hours ago",  tx: "0x9c3d...441f" },
-  { type: "combine", label: "COMBINE",    col: GOLD,   desc: "Combined 20 × Inert → 1 Restless", time: "8 hours ago",  tx: "0x1b7e...9920" },
-  { type: "forge-l", label: "FORGE LOSS", col: EMBER,  desc: "Forged 25 × Inert — all 25 blocks destroyed (25% odds)", time: "1 day ago",   tx: "0x8d2a...cc01" },
-  { type: "trade",   label: "TRADE",      col: ORANGE, desc: "Sold 5 × Inert for 0.002 Ξ on OpenSea", time: "1 day ago",   tx: "0x3e9f...7714" },
-  { type: "mint",    label: "MINT",       col: GREEN,  desc: "Minted 500 blocks — 398 Inert, 71 Restless, 23 Remembered, 6 Ordered, 2 Chaotic", time: "2 days ago",  tx: "0x6f4b...2288" },
-  { type: "combine", label: "COMBINE",    col: GOLD,   desc: "Combined 20 × Inert → 1 Restless", time: "2 days ago",  tx: "0x2c8e...5531" },
-  { type: "trade",   label: "TRADE",      col: ORANGE, desc: "Bought 2 × Restless for 0.008 Ξ", time: "3 days ago",  tx: "0x7a1d...8840" },
-];
-
-export function ProfileModal({ onClose }) {
-  const [filter, setFilter] = useState("all");
+export function ProfileModal({ onClose, connectedAddress }) {
+  const { balances, isConnected } = useGameState();
   const [copied, setCopied] = useState(false);
 
-  const FILTERS = ["ALL", "MINT", "COMBINE", "FORGE", "TRADE"];
-  const filtered = filter === "all"
-    ? FEED_DATA
-    : FEED_DATA.filter(i => filter === "forge" ? i.type.startsWith("forge") : i.type === filter);
+  const addr = connectedAddress || "";
+  const shortAddr = addr ? `${addr.slice(0,6)}...${addr.slice(-4)}` : "Not connected";
 
   function copyAddr() {
-    navigator.clipboard.writeText("0x4f3a9b2e7c8d1f4a5e6b3c9d2e7f8a1b4c5d6e21").catch(() => {});
+    if (!addr) return;
+    navigator.clipboard.writeText(addr).catch(() => {});
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }
 
+  const totalBlocks = [1,2,3,4,5,6,7].reduce((sum, t) => sum + (balances[t] || 0), 0);
+  const tiersHeld = [2,3,4,5,6,7].filter(t => (balances[t] || 0) > 0).length;
+
   return (
-    <ModalShell onClose={onClose} width={620}>
+    <ModalShell onClose={onClose} width={560}>
       {/* Header */}
       <div style={{ padding: "22px 28px 18px", borderBottom: "1px solid rgba(255,255,255,.06)" }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 14, flexWrap: "wrap" }}>
           <div>
-            <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 11, color: GOLD, letterSpacing: 1, textShadow: `2px 2px 0 ${GOLD_DK}`, marginBottom: 6 }}>
-              vitalik.eth
-            </div>
-            <div style={{ fontFamily: "'Courier Prime', monospace", fontSize: 12, color: CREAM, opacity: .45, letterSpacing: .5, display: "flex", alignItems: "center", gap: 8 }}>
-              0x4f3a...d6e21
-              <button onClick={copyAddr} style={{
-                fontFamily: "'Press Start 2P', monospace", fontSize: 5,
+            <div style={{ fontFamily: "'Courier Prime', monospace", fontSize: 13, color: CREAM, opacity: .6, letterSpacing: .5, display: "flex", alignItems: "center", gap: 8 }}>
+              {shortAddr}
+              {addr && <button onClick={copyAddr} style={{
+                fontFamily: "'Press Start 2P', monospace", fontSize: 7,
                 color: CREAM, opacity: .45, background: "none",
                 border: "1px solid rgba(255,255,255,.1)", padding: "3px 7px",
                 cursor: "pointer", letterSpacing: 1,
-              }}>{copied ? "COPIED" : "COPY"}</button>
+              }}>{copied ? "COPIED" : "COPY"}</button>}
             </div>
           </div>
           <div style={{
-            fontFamily: "'Press Start 2P', monospace", fontSize: 6, color: CREAM,
+            fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: CREAM,
             border: `1px solid ${GOLD_DK}`, padding: "6px 12px", letterSpacing: 1,
-            opacity: .8, background: `rgba(200,168,75,.06)`, flexShrink: 0, alignSelf: "flex-start",
-          }}>SEASON 1 PLAYER</div>
+            opacity: .8, background: `rgba(200,168,75,.06)`, flexShrink: 0,
+          }}>SEASON 1</div>
         </div>
 
-        {/* Stats row */}
+        {/* Stats row — live data */}
         <div style={{ display: "flex", border: "1px solid rgba(255,255,255,.06)", background: "rgba(0,0,0,.2)" }}>
           {[
-            { label: "MINTED", val: "2,840" },
-            { label: "BURNED", val: "680" },
-            { label: "COMBINED", val: "14" },
-            { label: "FORGED", val: "7" },
-            { label: "TRADED", val: "22" },
+            { label: "TOTAL BLOCKS", val: totalBlocks.toLocaleString() },
+            { label: "TIERS HELD", val: `${tiersHeld} / 6` },
           ].map((s, i) => (
             <div key={s.label} style={{
               flex: 1, padding: "10px 14px", textAlign: "center",
-              borderRight: i < 4 ? "1px solid rgba(255,255,255,.05)" : "none",
+              borderRight: i < 1 ? "1px solid rgba(255,255,255,.05)" : "none",
             }}>
-              <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 5, color: CREAM, opacity: .35, letterSpacing: 1, marginBottom: 4 }}>{s.label}</div>
+              <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: CREAM, opacity: .35, letterSpacing: 1, marginBottom: 4 }}>{s.label}</div>
               <div style={{ fontFamily: "'VT323', monospace", fontSize: 22, color: CREAM, opacity: .85 }}>{s.val}</div>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Holdings */}
+      {/* Holdings — live from chain */}
       <div style={{ padding: "18px 28px", borderBottom: "1px solid rgba(255,255,255,.05)" }}>
-        <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 6, color: CREAM, opacity: .4, letterSpacing: 2, marginBottom: 10 }}>▸ CURRENT HOLDINGS</div>
+        <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: CREAM, opacity: .4, letterSpacing: 2, marginBottom: 10 }}>CURRENT HOLDINGS</div>
         <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
-          {HOLDINGS.map(h => (
-            <div key={h.t} style={{
-              display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
-              padding: "8px 10px", border: `1px solid ${h.col}`,
-              background: "rgba(0,0,0,.2)", minWidth: 72,
-              opacity: h.qty === 0 ? .35 : 1,
-            }}>
-              <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 5, color: h.col, opacity: .5, letterSpacing: 1 }}>TIER {h.t}</div>
-              <div style={{ fontFamily: "'VT323', monospace", fontSize: 14, color: h.col, letterSpacing: .5, textAlign: "center" }}>{h.name}</div>
-              <div style={{ fontFamily: "'VT323', monospace", fontSize: 18, color: h.col, opacity: .7 }}>{h.qty}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Activity */}
-      <div style={{ padding: "18px 28px 24px" }}>
-        <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 6, color: CREAM, opacity: .4, letterSpacing: 2, marginBottom: 10 }}>▸ ACTIVITY</div>
-
-        {/* Filters */}
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
-          {FILTERS.map(f => {
-            const active = filter === f.toLowerCase();
+          {TIER_META.map(h => {
+            const qty = balances[h.t] || 0;
             return (
-              <button
-                key={f}
-                className="pf-filter-btn"
-                onClick={() => setFilter(f.toLowerCase())}
-                style={{
-                  fontFamily: "'Press Start 2P', monospace", fontSize: 5, letterSpacing: 1,
-                  padding: "4px 9px",
-                  border: active ? `1px solid ${GOLD_DK}` : "1px solid rgba(255,255,255,.1)",
-                  background: active ? "rgba(200,168,75,.08)" : "rgba(0,0,0,.2)",
-                  color: active ? GOLD : CREAM,
-                  opacity: active ? 1 : .55,
-                  cursor: "pointer",
-                }}
-              >{f}</button>
+              <div key={h.t} style={{
+                display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
+                padding: "8px 10px", border: `1px solid ${h.col}${qty > 0 ? '' : '44'}`,
+                background: "rgba(0,0,0,.2)", minWidth: 68,
+                opacity: qty === 0 ? .35 : 1,
+              }}>
+                <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: h.col, opacity: .5, letterSpacing: 1 }}>T{h.t}</div>
+                <div style={{ fontFamily: "'VT323', monospace", fontSize: 14, color: h.col, letterSpacing: .5, textAlign: "center" }}>{h.name}</div>
+                <div style={{ fontFamily: "'VT323', monospace", fontSize: 18, color: h.col, opacity: .7 }}>{qty}</div>
+              </div>
             );
           })}
         </div>
+      </div>
 
-        {/* Feed */}
-        <div style={{ display: "flex", flexDirection: "column" }}>
-          {filtered.map((item, i) => (
-            <div key={i} style={{
-              display: "grid", gridTemplateColumns: "auto 1fr auto",
-              gap: 12, alignItems: "start",
-              padding: "10px 0",
-              borderBottom: i < filtered.length - 1 ? "1px solid rgba(255,255,255,.04)" : "none",
-            }}>
-              <div style={{
-                fontFamily: "'Press Start 2P', monospace", fontSize: 5, letterSpacing: 1,
-                padding: "3px 7px", border: `1px solid ${item.col}44`,
-                color: item.col, whiteSpace: "nowrap", marginTop: 2,
-              }}>{item.label}</div>
-              <div>
-                <div style={{ fontFamily: "'VT323', monospace", fontSize: 18, color: CREAM, opacity: .85, lineHeight: 1.3, marginBottom: 3 }}>{item.desc}</div>
-                <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 5, color: CREAM, opacity: .35, letterSpacing: .5 }}>{item.time}</div>
-              </div>
-              <a href="#" style={{
-                fontFamily: "'Courier Prime', monospace", fontSize: 10,
-                color: GOLD, opacity: .55, textDecoration: "none",
-                whiteSpace: "nowrap", marginTop: 4, display: "block", textAlign: "right",
-              }}
-                onMouseEnter={e => { e.currentTarget.style.opacity = 1; }}
-                onMouseLeave={e => { e.currentTarget.style.opacity = .55; }}
-              >{item.tx} ↗</a>
+      {/* Activity — honest empty state */}
+      <div style={{ padding: "18px 28px 24px" }}>
+        <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: CREAM, opacity: .4, letterSpacing: 2, marginBottom: 10 }}>ACTIVITY</div>
+        <div style={{
+          textAlign: "center", padding: "24px 0",
+          fontFamily: "'Courier Prime', monospace", fontSize: 13, color: "rgba(255,255,255,0.3)", lineHeight: 1.6,
+        }}>
+          Transaction history will be available at mainnet launch.
+          {addr && (
+            <div style={{ marginTop: 12 }}>
+              <a
+                href={`https://sepolia.basescan.org/address/${addr}`}
+                target="_blank" rel="noreferrer"
+                style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: GOLD, opacity: .6, textDecoration: "none", letterSpacing: 1 }}
+                onMouseEnter={e => { e.currentTarget.style.opacity = '1'; }}
+                onMouseLeave={e => { e.currentTarget.style.opacity = '.6'; }}
+              >VIEW ON BASESCAN ↗</a>
             </div>
-          ))}
+          )}
         </div>
       </div>
     </ModalShell>
@@ -725,7 +677,7 @@ export default function Modals({ open, onClose, onOpenProfile, connectedAddress 
       <style>{MODAL_CSS}</style>
       {open === "rules"       && <GameRulesModal   onClose={onClose} />}
       {open === "leaderboard" && <LeaderboardModal onClose={onClose} onOpenProfile={onOpenProfile} connectedAddress={connectedAddress} />}
-      {open === "profile"     && <ProfileModal     onClose={onClose} />}
+      {open === "profile"     && <ProfileModal     onClose={onClose} connectedAddress={connectedAddress} />}
     </>
   );
 }

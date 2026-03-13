@@ -18,7 +18,6 @@ const INK      = "#1a1208";
 const GREEN    = "#6eff8a";
 
 const SPECTATOR_CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323:wght@400&family=Courier+Prime:wght@400;700&display=swap');
   .spectator-root { cursor: crosshair; }
   @keyframes ember-breathe {
     0%,100% { opacity:.7; transform:translateX(-50%) scaleX(1); }
@@ -351,7 +350,7 @@ function Ticker({ holderShort, eth, claimPct, secondsRemaining = 999999 }) {
         `PRIZE POOL: Ξ ${eth.toFixed(4)}`,
         `COMMUNITY VOTE: ${claimPct}% CLAIM`,
         "SEASON 1",
-        "MINTING LOCKED",
+        "MINTING SUSPENDED",
         "TRADING STILL OPEN",
       ];
   const doubled = [...items, ...items];
@@ -374,42 +373,105 @@ function Ticker({ holderShort, eth, claimPct, secondsRemaining = 999999 }) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// LEADERBOARD — still dummy (needs indexer, future session)
+// LEADERBOARD — live from subgraph
 // ═══════════════════════════════════════════════════════════════
-const LEADERS = [
-  { rank: 1, addr: "0x…a3f2", tiers: "T2–T7", note: "HOLDER",  col: EMBER_LT },
-  { rank: 2, addr: "0x…b7c1", tiers: "T3–T7", note: "2 away",  col: GOLD },
-  { rank: 3, addr: "0x…f44e", tiers: "T4–T7", note: "3 away",  col: CREAM },
-  { rank: 4, addr: "0x…9d3a", tiers: "T5–T7", note: "4 away",  col: "rgba(255,255,255,.4)" },
-  { rank: 5, addr: "0x…22cc", tiers: "T6–T7", note: "5 away",  col: "rgba(255,255,255,.4)" },
+const SUBGRAPH_URL = "https://api.studio.thegraph.com/query/1744131/blok-hunt/version/latest";
+const BURN_ADDRESSES = [
+  "0x0000000000000000000000000000000000000000",
+  "0x000000000000000000000000000000000000dead",
 ];
+const TIER_COLS_LB = ["#9ba8b0", "#8fa8c8", "#8fb87a", "#c8c870", "#c87a7a", "#c8a84b"];
 
-function Leaderboard() {
+function Leaderboard({ holderAddress }) {
+  const [players, setPlayers] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchLb() {
+      try {
+        const query = `{
+          players(
+            first: 5,
+            orderBy: progressionScore,
+            orderDirection: desc,
+            where: { id_not_in: ${JSON.stringify(BURN_ADDRESSES)} }
+          ) {
+            id
+            tier2Balance tier3Balance tier4Balance
+            tier5Balance tier6Balance tier7Balance
+            tiersUnlocked
+            progressionScore
+          }
+        }`;
+        const res = await fetch(SUBGRAPH_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query }),
+        });
+        const json = await res.json();
+        setPlayers(json?.data?.players || []);
+      } catch (e) {
+        console.warn("Spectator leaderboard fetch failed:", e);
+      }
+      setLoading(false);
+    }
+    fetchLb();
+    const interval = setInterval(fetchLb, 30_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const holderLower = holderAddress?.toLowerCase();
+
   return (
     <div style={{
       border: "1px solid rgba(255,255,255,.06)", background: "rgba(0,0,0,.2)",
       padding: "18px 20px", marginBottom: 24,
     }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 14 }}>
-        <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: CREAM, opacity: .7, letterSpacing: 2 }}>TIER LEADERBOARD</div>
-        <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 5, color: "rgba(255,255,255,.25)", letterSpacing: 1 }}>DEMO — LIVE IN FUTURE SESSION</div>
+      <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: CREAM, opacity: .7, letterSpacing: 2, marginBottom: 14 }}>
+        THE RACE — WHO'S CLOSEST
       </div>
-      {LEADERS.map(l => (
-        <div key={l.rank} style={{
-          display: "flex", alignItems: "center", gap: 14,
-          padding: "8px 0", borderBottom: "1px solid rgba(255,255,255,.04)",
-        }}>
-          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: l.col, width: 20, flexShrink: 0 }}>#{l.rank}</div>
-          <div style={{ fontFamily: "'VT323', monospace", fontSize: 20, color: l.col, flex: 1 }}>{l.addr}</div>
-          <div style={{ fontFamily: "'Courier Prime', monospace", fontSize: 11, color: "rgba(255,255,255,.35)", width: 70 }}>{l.tiers}</div>
-          <div style={{
-            fontFamily: "'Press Start 2P', monospace", fontSize: 5.5,
-            color: l.rank === 1 ? EMBER_LT : "rgba(255,255,255,.3)",
-            border: `1px solid ${l.rank === 1 ? EMBER_LT + "44" : "rgba(255,255,255,.08)"}`,
-            padding: "3px 7px",
-          }}>{l.note}</div>
-        </div>
-      ))}
+      {loading ? (
+        <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:12, color:"rgba(255,255,255,0.3)", padding:"12px 0" }}>Loading...</div>
+      ) : players.length === 0 ? (
+        <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:12, color:"rgba(255,255,255,0.3)", padding:"12px 0" }}>No players yet</div>
+      ) : players.map((p, i) => {
+        const addr = p.id;
+        const short = `${addr.slice(0,6)}…${addr.slice(-4)}`;
+        const isHolder = addr.toLowerCase() === holderLower;
+        const tiersHeld = Number(p.tiersUnlocked || 0);
+        const away = 6 - tiersHeld;
+        const dots = [
+          Number(p.tier7Balance) > 0,
+          Number(p.tier6Balance) > 0,
+          Number(p.tier5Balance) > 0,
+          Number(p.tier4Balance) > 0,
+          Number(p.tier3Balance) > 0,
+          Number(p.tier2Balance) > 0,
+        ];
+        const col = isHolder ? EMBER_LT : i === 0 ? GOLD : CREAM;
+        return (
+          <div key={addr} style={{
+            display: "flex", alignItems: "center", gap: 12,
+            padding: "8px 0", borderBottom: "1px solid rgba(255,255,255,.04)",
+          }}>
+            <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: col, width: 20, flexShrink: 0 }}>#{i + 1}</div>
+            <div style={{ fontFamily: "'VT323', monospace", fontSize: 20, color: col, flex: 1 }}>{short}</div>
+            <div style={{ display: "flex", gap: 3 }}>
+              {dots.map((held, di) => (
+                <div key={di} style={{ width: 6, height: 6, background: held ? TIER_COLS_LB[di] : "rgba(255,255,255,0.08)" }} />
+              ))}
+            </div>
+            <div style={{
+              fontFamily: "'Press Start 2P', monospace", fontSize: 7,
+              color: isHolder ? EMBER_LT : away <= 2 ? GOLD : "rgba(255,255,255,.3)",
+              border: `1px solid ${isHolder ? EMBER_LT + "44" : "rgba(255,255,255,.08)"}`,
+              padding: "3px 7px",
+            }}>
+              {isHolder ? "HOLDER" : `${away} AWAY`}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -490,7 +552,7 @@ export default function CountdownSpectator({ onBack }) {
       }} />
 
       <div style={{
-        position: "fixed", inset: 0, pointerEvents: "none", zIndex: 9999,
+        position: "fixed", inset: 0, pointerEvents: "none", zIndex: 1,
         background: "repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.05) 2px,rgba(0,0,0,0.05) 4px)",
       }} />
 
@@ -521,16 +583,16 @@ export default function CountdownSpectator({ onBack }) {
       COUNTDOWN ACTIVE
     </div>
     <button onClick={onBack} style={{
-      fontFamily: "'Press Start 2P', monospace", fontSize: 6,
+      fontFamily: "'Press Start 2P', monospace", fontSize: 7,
       background: "transparent", color: "rgba(255,255,255,0.4)",
-      border: "1px solid rgba(255,255,255,0.15)", padding: "6px 12px",
-      cursor: "pointer", letterSpacing: 1,
-    }}>◀ BACK</button>
+      border: "1px solid rgba(255,255,255,0.15)", padding: "0 16px",
+      cursor: "pointer", letterSpacing: 1, height: 44,
+    }}>← BACK TO GAME</button>
     <button onClick={() => { disconnect(); onBack(); }} style={{
-      fontFamily: "'Press Start 2P', monospace", fontSize: 6,
+      fontFamily: "'Press Start 2P', monospace", fontSize: 7,
       background: "transparent", color: "rgba(255,255,255,0.4)",
-      border: "1px solid rgba(255,255,255,0.15)", padding: "6px 12px",
-      cursor: "pointer", letterSpacing: 1,
+      border: "1px solid rgba(255,255,255,0.15)", padding: "0 16px",
+      cursor: "pointer", letterSpacing: 1, height: 44,
     }}>DISCONNECT</button>
   </div>
 </div>
@@ -563,14 +625,14 @@ export default function CountdownSpectator({ onBack }) {
 
         <VoteSection burnVotes={burnVotes} claimVotes={claimVotes} />
 
-        <Leaderboard />
+        <Leaderboard holderAddress={countdownHolder} />
 
         <div style={{
           textAlign: "center", padding: "24px",
           border: `1px solid ${GOLD_DK}44`, background: "rgba(0,0,0,.2)",
         }}>
           <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: CREAM, opacity: .7, letterSpacing: 2, marginBottom: 10 }}>
-            MINTING IS LOCKED
+            MINTING SUSPENDED
           </div>
           <div style={{ fontFamily: "'VT323', monospace", fontSize: 22, color: CREAM, opacity: .8, marginBottom: 8 }}>
             The countdown has begun. No new blocks can be minted.

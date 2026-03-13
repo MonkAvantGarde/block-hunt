@@ -27,7 +27,6 @@ const TIER_META = {
 };
 
 const HOLDER_CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323:wght@400&family=Courier+Prime:wght@400;700&display=swap');
   .holder-root { cursor: crosshair; }
   @keyframes ember-breathe {
     0%,100% { opacity:.7; transform:translateX(-50%) scaleX(1); }
@@ -482,7 +481,7 @@ export default function CountdownHolder({ onBack }) {
 
       {/* CRT scanlines */}
       <div style={{
-        position: "fixed", inset: 0, pointerEvents: "none", zIndex: 9999,
+        position: "fixed", inset: 0, pointerEvents: "none", zIndex: 1,
         background: "repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.05) 2px,rgba(0,0,0,0.05) 4px)",
       }} />
 
