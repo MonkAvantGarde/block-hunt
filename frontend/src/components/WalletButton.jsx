@@ -2,11 +2,9 @@
 // WalletButton.jsx — Connect / disconnect wallet button
 //
 // Handles three states:
-//   1. Not connected — shows "Connect Wallet" button
+//   1. Not connected — shows "▶ CONNECT" button with wallet picker
 //   2. Wrong network — shows "Switch to Base Sepolia" warning
-//   3. Connected — shows truncated address + disconnect option
-//
-// Drop this component into the header. It handles everything internally.
+//   3. Connected — shows truncated address + dropdown (disconnect, BaseScan)
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { useState } from 'react'
@@ -18,10 +16,11 @@ import {
 } from 'wagmi'
 import { baseSepolia } from 'wagmi/chains'
 
-// Truncate 0x1234...5678 format for display
+import { WOOD, GOLD, GOLD_DK, INK, CREAM } from '../config/design-tokens'
+
 function truncateAddress(address) {
   if (!address) return ''
-  return `${address.slice(0, 6)}...${address.slice(-4)}`
+  return `${address.slice(0, 6)}…${address.slice(-4)}`
 }
 
 export function WalletButton() {
@@ -34,45 +33,87 @@ export function WalletButton() {
 
   const isWrongNetwork = isConnected && chain?.id !== baseSepolia.id
 
-  // ── WRONG NETWORK ──────────────────────────────────────────────────────────
+  const btnBase = {
+    fontFamily: "'Press Start 2P', monospace",
+    fontSize: 7,
+    color: CREAM,
+    background: 'rgba(200,168,75,0.1)',
+    border: `2px solid ${GOLD_DK}`,
+    boxShadow: `3px 3px 0 ${INK}`,
+    padding: '7px 14px',
+    letterSpacing: 1,
+    whiteSpace: 'nowrap',
+    cursor: 'pointer',
+  }
+
+  // ── WRONG NETWORK ──
   if (isWrongNetwork) {
     return (
       <button
         onClick={() => switchChain({ chainId: baseSepolia.id })}
-        style={styles.wrongNetwork}
+        style={{ ...btnBase, background: '#cc3322', color: CREAM, border: `2px solid ${INK}` }}
       >
-        ⚠ Switch to Base Sepolia
+        ⚠ Switch Network
       </button>
     )
   }
 
-  // ── CONNECTED ─────────────────────────────────────────────────────────────
+  // ── CONNECTED ──
   if (isConnected) {
     return (
       <div style={{ position: 'relative' }}>
-        <button
-          onClick={() => setShowMenu(v => !v)}
-          style={styles.connected}
-        >
-          ● {truncateAddress(address)}
+        <button onClick={() => setShowMenu(v => !v)} style={btnBase}>
+          {truncateAddress(address)} ▾
         </button>
 
         {showMenu && (
-          <div style={styles.menu}>
-            <button
-              onClick={() => { disconnect(); setShowMenu(false) }}
-              style={styles.menuItem}
-            >
-              Disconnect
-            </button>
-          </div>
+          <>
+            <div onClick={() => setShowMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 900 }} />
+            <div style={{
+              position: 'absolute', top: 'calc(100% + 6px)', right: 0,
+              zIndex: 901, background: WOOD,
+              border: `2px solid ${GOLD}`,
+              borderRadius: 4, overflow: 'hidden',
+              minWidth: 160,
+              boxShadow: '0 8px 24px rgba(0,0,0,0.7)',
+            }}>
+              <button
+                onClick={() => { disconnect(); setShowMenu(false) }}
+                style={{
+                  display: 'block', width: '100%', padding: '10px 16px',
+                  background: 'transparent', border: 'none',
+                  borderBottom: `1px solid rgba(200,168,75,0.2)`,
+                  fontFamily: "'Press Start 2P', monospace", fontSize: 7,
+                  color: CREAM, cursor: 'pointer', textAlign: 'left', letterSpacing: 1,
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(200,168,75,0.12)' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+              >
+                Disconnect
+              </button>
+              <a
+                href={`https://sepolia.basescan.org/address/${address}`}
+                target="_blank" rel="noreferrer"
+                onClick={() => setShowMenu(false)}
+                style={{
+                  display: 'block', padding: '10px 16px',
+                  fontFamily: "'Press Start 2P', monospace", fontSize: 7,
+                  color: 'rgba(240,234,214,0.45)', textDecoration: 'none',
+                  textAlign: 'left', letterSpacing: 1,
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(200,168,75,0.12)' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+              >
+                BaseScan ↗
+              </a>
+            </div>
+          </>
         )}
       </div>
     )
   }
 
-  // ── NOT CONNECTED — wallet picker ─────────────────────────────────────────
-  // Deduplicate connectors by name so we don't show "MetaMask" twice
+  // ── NOT CONNECTED ──
   const seen = new Set()
   const uniqueConnectors = connectors.filter(c => {
     if (seen.has(c.name)) return false
@@ -85,28 +126,52 @@ export function WalletButton() {
       <button
         onClick={() => setShowPicker(v => !v)}
         disabled={isConnecting}
-        style={styles.connect}
+        style={{
+          ...btnBase,
+          background: 'linear-gradient(180deg,#ffcc44,#c8a800)',
+          color: INK,
+          border: '2px solid #8a6800',
+          boxShadow: `3px 3px 0 ${INK}, 0 0 12px rgba(255,170,0,0.3)`,
+        }}
       >
-        {isConnecting ? 'Connecting...' : 'Connect Wallet'}
+        {isConnecting ? '…' : '▶ CONNECT'}
       </button>
 
       {showPicker && (
         <>
-          {/* Backdrop — click outside to close */}
-          <div
-            onClick={() => setShowPicker(false)}
-            style={{ position: 'fixed', inset: 0, zIndex: 99 }}
-          />
-          <div style={styles.picker}>
-            <div style={styles.pickerTitle}>SELECT WALLET</div>
+          <div onClick={() => setShowPicker(false)} style={{ position: 'fixed', inset: 0, zIndex: 99 }} />
+          <div style={{
+            position: 'absolute', top: '100%', right: 0, marginTop: 4,
+            background: '#2c1810', border: '2px solid #8a6820',
+            boxShadow: `4px 4px 0 ${INK}`, zIndex: 100, minWidth: 180,
+          }}>
+            <div style={{
+              fontFamily: "'Press Start 2P', monospace", fontSize: 7,
+              color: GOLD, opacity: 0.6, letterSpacing: 1,
+              padding: '10px 14px 6px', borderBottom: '1px solid rgba(255,255,255,0.06)',
+            }}>
+              SELECT WALLET
+            </div>
             {uniqueConnectors.length === 0 && (
-              <div style={styles.pickerEmpty}>No wallets detected</div>
+              <div style={{
+                fontFamily: "'Press Start 2P', monospace", fontSize: 7,
+                color: CREAM, opacity: 0.4, padding: '12px 14px',
+              }}>
+                No wallets detected
+              </div>
             )}
             {uniqueConnectors.map(c => (
               <button
                 key={c.id}
                 onClick={() => { connect({ connector: c }); setShowPicker(false) }}
-                style={styles.pickerItem}
+                style={{
+                  fontFamily: "'Press Start 2P', monospace", fontSize: 7,
+                  display: 'block', width: '100%', background: 'transparent',
+                  color: CREAM, border: 'none',
+                  borderBottom: '1px solid rgba(255,255,255,0.04)',
+                  textAlign: 'left', padding: '12px 14px',
+                  cursor: 'pointer', letterSpacing: 0.5,
+                }}
                 onMouseEnter={e => { e.currentTarget.style.background = 'rgba(200,168,75,0.1)' }}
                 onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
               >
@@ -119,101 +184,3 @@ export function WalletButton() {
     </div>
   )
 }
-
-// ── STYLES ────────────────────────────────────────────────────────────────────
-// Matches the design system: wood background, pixel font, gold accent
-
-const base = {
-  fontFamily: "'Press Start 2P', monospace",
-  fontSize: '9px',
-  padding: '10px 16px',
-  border: '2px solid #1a1208',
-  cursor: 'pointer',
-  letterSpacing: '1px',
-}
-
-const styles = {
-  connect: {
-    ...base,
-    background: '#c8a84b',
-    color: '#1a1208',
-    boxShadow: '4px 4px 0 #1a1208',
-  },
-  connected: {
-    ...base,
-    background: 'rgba(110,255,138,0.12)',
-    color: '#6eff8a',
-    border: '2px solid #6eff8a',
-    boxShadow: 'none',
-  },
-  wrongNetwork: {
-    ...base,
-    background: '#cc3322',
-    color: '#f0ead6',
-    boxShadow: '4px 4px 0 #1a1208',
-    animation: 'pulse 2s infinite',
-  },
-  menu: {
-    position: 'absolute',
-    top: '100%',
-    right: 0,
-    marginTop: '4px',
-    background: '#2c1810',
-    border: '2px solid #1a1208',
-    boxShadow: '4px 4px 0 #1a1208',
-    zIndex: 100,
-    minWidth: '140px',
-  },
-  menuItem: {
-    ...base,
-    display: 'block',
-    width: '100%',
-    background: 'transparent',
-    color: '#f0ead6',
-    border: 'none',
-    boxShadow: 'none',
-    textAlign: 'left',
-    padding: '12px 14px',
-  },
-  picker: {
-    position: 'absolute',
-    top: '100%',
-    right: 0,
-    marginTop: '4px',
-    background: '#2c1810',
-    border: '2px solid #8a6820',
-    boxShadow: '4px 4px 0 #1a1208',
-    zIndex: 100,
-    minWidth: '180px',
-  },
-  pickerTitle: {
-    fontFamily: "'Press Start 2P', monospace",
-    fontSize: '6px',
-    color: '#c8a84b',
-    opacity: 0.6,
-    letterSpacing: '1px',
-    padding: '10px 14px 6px',
-    borderBottom: '1px solid rgba(255,255,255,0.06)',
-  },
-  pickerItem: {
-    fontFamily: "'Press Start 2P', monospace",
-    fontSize: '7px',
-    display: 'block',
-    width: '100%',
-    background: 'transparent',
-    color: '#f0ead6',
-    border: 'none',
-    borderBottom: '1px solid rgba(255,255,255,0.04)',
-    textAlign: 'left',
-    padding: '12px 14px',
-    cursor: 'pointer',
-    letterSpacing: '0.5px',
-    transition: 'background 0.1s',
-  },
-  pickerEmpty: {
-    fontFamily: "'Press Start 2P', monospace",
-    fontSize: '6px',
-    color: '#f0ead6',
-    opacity: 0.4,
-    padding: '12px 14px',
-  },

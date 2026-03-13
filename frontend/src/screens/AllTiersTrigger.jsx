@@ -14,7 +14,7 @@
  *
  * Contract:
  *   BlockHuntToken.claimHolderStatus()
- *   address: 0x57Efa000E28313ed47213C6faF13719500038D75
+ *   address: see CONTRACTS.TOKEN in config/wagmi.js
  * ─────────────────────────────────────────────────────────────────
  */
 

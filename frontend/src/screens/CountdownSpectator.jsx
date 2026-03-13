@@ -3,19 +3,10 @@ import { useAccount, useReadContract, useWriteContract, useWaitForTransactionRec
 import { useBalance } from "wagmi";
 import { CONTRACTS } from "../config/wagmi";
 import { TOKEN_ABI, COUNTDOWN_ABI } from "../abis";
-
-// ═══════════════════════════════════════════════════════════════
-// TOKENS
-// ═══════════════════════════════════════════════════════════════
-const WOOD     = "#2c1810";
-const GOLD     = "#c8a84b";
-const GOLD_DK  = "#8a6820";
-const GOLD_LT  = "#e8c86b";
-const EMBER    = "#cc3322";
-const EMBER_LT = "#ff4433";
-const CREAM    = "#f0ead6";
-const INK      = "#1a1208";
-const GREEN    = "#6eff8a";
+import {
+  WOOD_LIGHT as WOOD, GOLD, GOLD_DK, GOLD_LT,
+  EMBER, EMBER_LT, CREAM, INK_DEEP as INK, GREEN,
+} from '../config/design-tokens';
 
 const SPECTATOR_CSS = `
   .spectator-root { cursor: crosshair; }

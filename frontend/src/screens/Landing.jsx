@@ -14,6 +14,8 @@ const GOLD_LT    = "#e8c86b";
 const INK        = "#1a1208";
 const CREAM      = "#f0ead6";
 
+const ETH_USD = 2500;
+
 // ═══════════════════════════════════════════════════════════════
 // GLOBAL CSS
 // ═══════════════════════════════════════════════════════════════
@@ -68,9 +70,17 @@ const LANDING_CSS = `
     0%,100% { box-shadow: 5px 5px 0 ${INK}, 0 0 20px ${GOLD}44; }
     50%     { box-shadow: 5px 5px 0 ${INK}, 0 0 40px ${GOLD}99; }
   }
-  @keyframes badge-fade {
-    from { opacity:0; }
-    to   { opacity:1; }
+  @keyframes prize-glow {
+    0%,100% { text-shadow: 0 0 30px rgba(200,168,75,.35), 0 0 60px rgba(200,168,75,.15); }
+    50%     { text-shadow: 0 0 60px rgba(200,168,75,.7),  0 0 120px rgba(200,168,75,.3); }
+  }
+  @keyframes chevron-bounce {
+    0%,100% { transform: translateY(0); }
+    50%     { transform: translateY(6px); }
+  }
+  @keyframes growth-pulse {
+    0%,100% { opacity: 0.5; }
+    50%     { opacity: 1; }
   }
   @keyframes scanline-move {
     0%   { transform:translateY(-100%); }
@@ -121,20 +131,15 @@ function SpinningBlock() {
             <stop offset="100%" stopColor="black"  stopOpacity="0.08"/>
           </linearGradient>
         </defs>
-        {/* Top face */}
         <polygon points="60,8 108,34 60,60 12,34" fill="#e8c86b"/>
         <polygon points="60,8 108,34 60,60 12,34" fill="url(#top-shade)"/>
-        {/* Left face */}
         <polygon points="12,34 60,60 60,100 12,74" fill="#8a6820"/>
-        {/* Right face */}
         <polygon points="108,34 60,60 60,100 108,74" fill="#b8902a"/>
-        {/* Edges */}
         <polyline points="60,8 108,34 108,74 60,100 12,74 12,34 60,8" stroke="#1a1208" strokeWidth="2.5" fill="none"/>
         <line x1="60" y1="8"  x2="60"  y2="60" stroke="#1a1208" strokeWidth="1.5"/>
         <line x1="60" y1="60" x2="60"  y2="100" stroke="#1a1208" strokeWidth="1.5"/>
         <line x1="60" y1="60" x2="12"  y2="34"  stroke="#1a1208" strokeWidth="1"/>
         <line x1="60" y1="60" x2="108" y2="34"  stroke="#1a1208" strokeWidth="1"/>
-        {/* Top highlight */}
         <polygon points="60,12 104,36 60,58 16,36" fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth="1"/>
       </svg>
     </div>
@@ -142,7 +147,7 @@ function SpinningBlock() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// RAYS (rotating burst behind the block)
+// RAYS
 // ═══════════════════════════════════════════════════════════════
 function Rays() {
   const RAY_COUNT = 16;
@@ -176,7 +181,7 @@ function Rays() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// SPARKS (pixel squares orbiting the block)
+// SPARKS
 // ═══════════════════════════════════════════════════════════════
 const SPARK_CONFIGS = [
   [22,  70, 4, 0],   [67,  58, 3, 0.3],  [112, 75, 5, 0.6],  [157, 60, 3, 0.1],
@@ -242,52 +247,24 @@ function Particles() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// TREASURY COUNTER
-// ═══════════════════════════════════════════════════════════════
-function TreasuryCounter({ targetEth = 12.4375 }) {
-  const [display, setDisplay] = useState("Ξ 0.000");
-
-  useEffect(() => {
-    const startTime = Date.now() + 2200;
-    let raf;
-    function animate() {
-      const now = Date.now();
-      if (now < startTime) { raf = requestAnimationFrame(animate); return; }
-      const elapsed = now - startTime;
-      const t = Math.min(elapsed / 2000, 1);
-      const eased = 1 - Math.pow(1 - t, 3);
-      setDisplay("Ξ " + (targetEth * eased).toFixed(4));
-      if (t < 1) raf = requestAnimationFrame(animate);
-    }
-    raf = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(raf);
-  }, [targetEth]);
-
-  return <span>{display}</span>;
-}
-
-// ═══════════════════════════════════════════════════════════════
-// TIER BADGES
-// ═══════════════════════════════════════════════════════════════
-const TIER_BADGES = [
-  { label: "T7 THE INERT",      color: "#aaaaaa" },
-  { label: "T6 THE RESTLESS",   color: "#8fa8c8" },
-  { label: "T5 THE REMEMBERED", color: "#8fb87a" },
-  { label: "T4 THE ORDERED",    color: "#c8c870" },
-  { label: "T3 THE CHAOTIC",    color: "#c87a7a" },
-  { label: "T2 THE WILLFUL",    color: "#c8a84b" },
-  { label: "T1 THE ORIGIN ★",   color: "#ffffff", dim: true },
-];
-
-// ═══════════════════════════════════════════════════════════════
-// ACTION PILLS
+// ACTION PILLS (moved below fold)
 // ═══════════════════════════════════════════════════════════════
 const ACTIONS = [
-  { icon: "⬡", label: "COLLECT", sub: "Mint blocks",       accent: "#6eff8a" },
-  { icon: "◈", label: "COMBINE", sub: "Merge tiers",       accent: "#ffcc33" },
-  { icon: "⇄", label: "TRADE",   sub: "Buy & sell",        accent: "#ff9944" },
-  { icon: "⚡", label: "FORGE",   sub: "Risk the burn",     accent: "#cc66ff" },
-  { icon: "★", label: "CLAIM",   sub: "Win the treasury",  accent: GOLD      },
+  { icon: "\u2B21", label: "COLLECT", sub: "Mint blocks",         accent: "#6eff8a" },
+  { icon: "\u25C8", label: "COMBINE", sub: "Merge tiers",         accent: "#ffcc33" },
+  { icon: "\u21C4", label: "TRADE",   sub: "Buy & sell",          accent: "#ff9944" },
+  { icon: "\u26A1", label: "FORGE",   sub: "Risk the burn",       accent: "#cc66ff" },
+  { icon: "\u2605", label: "CLAIM",   sub: "Win the prize pool",  accent: GOLD      },
+];
+
+const TIER_TABLE = [
+  { tier: 7, name: "The Inert",      label: "COMMON",    color: "#aaaaaa" },
+  { tier: 6, name: "The Restless",   label: "COMMON",    color: "#8fa8c8" },
+  { tier: 5, name: "The Remembered", label: "UNCOMMON",  color: "#8fb87a" },
+  { tier: 4, name: "The Ordered",    label: "RARE",      color: "#c8c870" },
+  { tier: 3, name: "The Chaotic",    label: "EPIC",      color: "#c87a7a" },
+  { tier: 2, name: "The Willful",    label: "MYTHIC",    color: "#c8a84b" },
+  { tier: 1, name: "The Origin",     label: "LEGENDARY", color: "#ffffff", dim: true },
 ];
 
 // ═══════════════════════════════════════════════════════════════
@@ -295,28 +272,40 @@ const ACTIONS = [
 // ═══════════════════════════════════════════════════════════════
 export default function LandingScreen({ onEnter }) {
   const [entering, setEntering] = useState(false);
+  const [showChevron, setShowChevron] = useState(true);
+  const scrollHandled = useRef(false);
+
+  useEffect(() => {
+    function onScroll() {
+      if (!scrollHandled.current) {
+        scrollHandled.current = true;
+        setShowChevron(false);
+      }
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
   const { data: treasuryData } = useBalance({
-  address: CONTRACTS.TREASURY,
-  query: { refetchInterval: 10000 },
-});
-const liveEth = treasuryData?.value
-  ? parseFloat(treasuryData.value.toString()) / 1e18
-  : 0;
+    address: CONTRACTS.TREASURY,
+    query: { refetchInterval: 10000 },
+  });
+  const liveEth = treasuryData?.value
+    ? parseFloat(treasuryData.value.toString()) / 1e18
+    : 0;
+  const usd = (liveEth * ETH_USD).toFixed(0);
+
   function handleEnter() {
     if (entering) return;
     setEntering(true);
-    setTimeout(() => {
-      if (onEnter) onEnter();
-    }, 800);
+    setTimeout(() => { if (onEnter) onEnter(); }, 800);
   }
 
   return (
     <div className="landing-root" style={{
       minHeight: "100vh",
       background: FELT_DEEP,
-      backgroundImage: `
-        radial-gradient(ellipse 110% 80% at 50% 60%, #2a6644 0%, #1e4d32 45%, #0e2a1a 100%)
-      `,
+      backgroundImage: `radial-gradient(ellipse 110% 80% at 50% 60%, #2a6644 0%, #1e4d32 45%, #0e2a1a 100%)`,
       fontFamily: "'Courier Prime', monospace",
       color: CREAM,
       position: "relative",
@@ -345,27 +334,25 @@ const liveEth = treasuryData?.value
       <div style={{ position:"fixed", top:0, left:0, bottom:0, width:18, background:WOOD, borderRight:`3px solid ${GOLD_DK}`, zIndex:20 }} />
       <div style={{ position:"fixed", top:0, right:0, bottom:0, width:18, background:WOOD, borderLeft:`3px solid ${GOLD_DK}`, zIndex:20 }} />
 
-      {/* Floating particles */}
       <Particles />
 
-      {/* ── MAIN CONTENT ── */}
+      {/* ══════════ ZONE 1: THE HOOK (above fold, 100vh) ══════════ */}
       <div style={{
-        position: "fixed",
-        inset: 18,
+        minHeight: "100vh",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
+        position: "relative",
         zIndex: 5,
-        overflow: "hidden",
-        gap: 0,
+        padding: "18px 24px",
       }}>
 
         {/* Season badge — top left */}
         <div style={{
-          position: "absolute", top: 14, left: 18,
+          position: "absolute", top: 24, left: 28,
           fontFamily: "'Press Start 2P', monospace",
-          fontSize: 6, color: GOLD,
+          fontSize: 7, color: GOLD,
           border: `1px solid ${GOLD_DK}`,
           padding: "5px 9px", letterSpacing: 1,
           animation: "fade-in 1s ease 2s both",
@@ -375,10 +362,10 @@ const liveEth = treasuryData?.value
 
         {/* Network badge — top right */}
         <div style={{
-          position: "absolute", top: 14, right: 18,
+          position: "absolute", top: 24, right: 28,
           display: "flex", alignItems: "center", gap: 6,
           fontFamily: "'Press Start 2P', monospace",
-          fontSize: 6, color: "#6eff8a",
+          fontSize: 7, color: "#6eff8a",
           border: "1px solid rgba(110,255,138,0.25)",
           padding: "5px 9px", letterSpacing: 1,
           animation: "fade-in 1s ease 2s both",
@@ -387,38 +374,17 @@ const liveEth = treasuryData?.value
           BASE SEPOLIA
         </div>
 
-        {/* Treasury bar — top center */}
-        <div style={{
-          position: "absolute", top: 14, left: "50%", transform: "translateX(-50%)",
-          display: "flex", alignItems: "center", gap: 12,
-          border: `2px solid ${GOLD_DK}`,
-          background: "rgba(0,0,0,0.35)",
-          padding: "7px 20px", whiteSpace: "nowrap",
-          animation: "fade-in 1.2s ease 2s both",
-        }}>
-          <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:GOLD, opacity:0.6, letterSpacing:2 }}>PRIZE POOL</div>
-          <div style={{ fontFamily:"'VT323', monospace", fontSize:28, color:GOLD_LT, letterSpacing:2, lineHeight:1 }}>
-            {liveEth > 0
-            ? <TreasuryCounter targetEth={liveEth} />
-            : <span style={{ opacity: 0.4 }}>Ξ —</span>
-            }
-          </div>
-          <div style={{ width:8, height:8, background:GOLD, animation:"pulse-dot 1.5s ease-in-out infinite" }} />
-          <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:GOLD, opacity:0.6, letterSpacing:2 }}>LIVE</div>
-        </div>
-
-        {/* ── HERO BLOCK ── */}
+        {/* Spinning block — 120px */}
         <div style={{
           position: "relative",
-          width: 160, height: 160,
-          marginBottom: 20,
+          width: 120, height: 120,
+          marginBottom: 16,
           animation: "fade-in 0.9s ease both",
           flexShrink: 0,
         }}>
           <Rays />
-          {/* Halo */}
           <div style={{
-            position: "absolute", inset: 20, borderRadius: "50%",
+            position: "absolute", inset: 10, borderRadius: "50%",
             background: "radial-gradient(circle, rgba(200,168,75,0.22) 0%, transparent 70%)",
             animation: "halo-pulse 3s ease-in-out infinite",
             zIndex: 0,
@@ -427,7 +393,7 @@ const liveEth = treasuryData?.value
           <SpinningBlock />
         </div>
 
-        {/* ── LOGO / TITLE ── */}
+        {/* Title */}
         <div style={{
           fontFamily: "'Press Start 2P', monospace",
           fontSize: "clamp(18px, 3.5vw, 32px)",
@@ -436,27 +402,137 @@ const liveEth = treasuryData?.value
           lineHeight: 1.3,
           textAlign: "center",
           animation: "title-glow 3s ease-in-out infinite, fade-in 0.8s ease 0.3s both",
-          marginBottom: 6,
+          marginBottom: 12,
         }}>
           <span style={{ fontSize: "0.55em", color: "rgba(240,234,214,0.6)", display: "block", marginBottom: 4, letterSpacing: 6 }}>THE</span>
           BLOCK HUNT
         </div>
 
+        {/* Divider */}
+        <div style={{
+          display: "flex", alignItems: "center", width: "min(360px, 80%)",
+          marginBottom: 20,
+          animation: "fade-in 0.8s ease 0.6s both",
+        }}>
+          <div style={{ flex:1, height:1, background:`linear-gradient(90deg, transparent, ${GOLD_DK})` }} />
+          <div style={{ width:10, height:10, background:GOLD_DK, transform:"rotate(45deg)", margin:"0 10px" }} />
+          <div style={{ flex:1, height:1, background:`linear-gradient(90deg, ${GOLD_DK}, transparent)` }} />
+        </div>
+
+        {/* ── PRIZE POOL — FOCAL POINT ── */}
+        <div style={{
+          textAlign: "center",
+          marginBottom: 8,
+          animation: "fade-in 0.8s ease 0.8s both",
+        }}>
+          <div style={{
+            fontFamily: "'Press Start 2P', monospace",
+            fontSize: 8, color: GOLD, opacity: 0.7,
+            letterSpacing: 3, marginBottom: 6,
+          }}>
+            PRIZE POOL
+          </div>
+          <div style={{
+            fontFamily: "'VT323', monospace",
+            fontSize: "clamp(64px, 8vw, 96px)",
+            color: GOLD_LT,
+            lineHeight: 1,
+            animation: "prize-glow 3s ease-in-out infinite",
+          }}>
+            {liveEth > 0 ? `\u039E ${liveEth.toFixed(4)}` : "\u039E \u2014"}
+          </div>
+          <div style={{
+            fontFamily: "'Press Start 2P', monospace",
+            fontSize: 8, color: GOLD, opacity: 0.7,
+            letterSpacing: 2, marginTop: 4,
+          }}>
+            {liveEth > 0 ? `\u2248 $${usd} USD` : ""}
+          </div>
+          {liveEth > 0 && (
+            <div style={{
+              fontFamily: "'Press Start 2P', monospace",
+              fontSize: 10, color: "#6eff8a",
+              letterSpacing: 1, marginTop: 6,
+              animation: "growth-pulse 3s ease-in-out infinite",
+            }}>
+              ▲ growing
+            </div>
+          )}
+        </div>
+
         {/* Tagline */}
         <div style={{
           fontFamily: "'Courier Prime', monospace",
-          fontSize: 13, color: "rgba(240,234,214,0.45)",
-          letterSpacing: 2, marginBottom: 22,
-          animation: "fade-in 0.8s ease 0.6s both",
+          fontSize: 14, color: "rgba(240,234,214,0.55)",
+          textAlign: "center", lineHeight: 1.6,
+          marginBottom: 24,
+          animation: "fade-in 0.8s ease 1s both",
         }}>
-          collect · combine · forge · claim
+          One player wins everything.<br/>
+          The community watches it happen.
         </div>
 
-        {/* ── ACTION PILLS ── */}
+        {/* ── ENTER BUTTON — 52px, 240px min ── */}
+        <button
+          className="enter-btn"
+          onClick={handleEnter}
+          disabled={entering}
+          style={{
+            fontFamily: "'Press Start 2P', monospace",
+            fontSize: 13, letterSpacing: 3,
+            background: entering ? "rgba(200,168,75,0.6)" : GOLD,
+            color: INK,
+            border: `3px solid ${INK}`,
+            boxShadow: `5px 5px 0 ${INK}`,
+            padding: "0 48px",
+            height: 52,
+            minWidth: 240,
+            cursor: entering ? "not-allowed" : "pointer",
+            marginBottom: 14,
+            animation: "fade-in 0.8s ease 1.2s both, enter-pulse 2s ease-in-out 2s infinite",
+          }}
+        >
+          {entering ? "\u25B6 ENTERING..." : "\u25B6  ENTER THE HUNT"}
+        </button>
+
+        {/* Stats line */}
+        <div style={{
+          fontFamily: "'Press Start 2P', monospace",
+          fontSize: 7, color: "rgba(255,255,255,0.45)",
+          letterSpacing: 2,
+          animation: "fade-in 0.8s ease 1.4s both",
+        }}>
+          7 tiers  &middot;  10M blocks  &middot;  1 winner
+        </div>
+
+        {/* Scroll indicator chevron */}
+        {showChevron && (
+          <div style={{
+            position: "absolute",
+            bottom: 50,
+            left: "50%",
+            transform: "translateX(-50%)",
+            fontFamily: "'VT323', monospace",
+            fontSize: 20,
+            color: "rgba(255,255,255,0.4)",
+            animation: "chevron-bounce 2s ease-in-out infinite, fade-in 1s ease 2s both",
+            pointerEvents: "none",
+          }}>
+            ▾
+          </div>
+        )}
+      </div>
+
+      {/* ══════════ ZONE 2: MECHANICS (below fold) ══════════ */}
+      <div style={{
+        position: "relative", zIndex: 5,
+        maxWidth: 700, margin: "0 auto",
+        padding: "60px 28px 80px",
+      }}>
+        {/* Action pills */}
         <div style={{
           display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center",
-          marginBottom: 20,
-          animation: "fade-in 0.8s ease 0.9s both",
+          marginBottom: 32,
         }}>
           {ACTIONS.map(a => (
             <div className="action-pill" key={a.label} style={{
@@ -469,74 +545,34 @@ const liveEth = treasuryData?.value
               minWidth: 72,
             }}>
               <span style={{ fontSize: 18, color: a.accent }}>{a.icon}</span>
-              <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:6.5, color:CREAM, letterSpacing:0.5 }}>{a.label}</span>
-              <span style={{ fontFamily:"'Courier Prime', monospace", fontSize:10, color:"rgba(255,255,255,0.35)" }}>{a.sub}</span>
+              <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:CREAM, letterSpacing:0.5 }}>{a.label}</span>
+              <span style={{ fontFamily:"'Courier Prime', monospace", fontSize:11, color:"rgba(255,255,255,0.45)" }}>{a.sub}</span>
             </div>
           ))}
         </div>
 
-        {/* Divider */}
+        {/* Tier table */}
         <div style={{
-          display: "flex", alignItems: "center", width: "min(360px, 80%)",
-          marginBottom: 18,
-          animation: "fade-in 0.8s ease 1.1s both",
+          background: "rgba(0,0,0,0.25)",
+          border: "1px solid rgba(255,255,255,0.06)",
+          padding: "16px 20px",
         }}>
-          <div style={{ flex:1, height:1, background:`linear-gradient(90deg, transparent, ${GOLD_DK})` }} />
-          <div style={{
-            width:10, height:10, background:GOLD_DK,
-            transform:"rotate(45deg)", margin:"0 10px",
-          }} />
-          <div style={{ flex:1, height:1, background:`linear-gradient(90deg, ${GOLD_DK}, transparent)` }} />
-        </div>
-
-        {/* ── ENTER BUTTON ── */}
-        <button
-          className="enter-btn"
-          onClick={handleEnter}
-          disabled={entering}
-          style={{
-            fontFamily: "'Press Start 2P', monospace",
-            fontSize: 13, letterSpacing: 3,
-            background: entering ? "rgba(200,168,75,0.6)" : GOLD,
-            color: INK,
-            border: `3px solid ${INK}`,
-            boxShadow: `5px 5px 0 ${INK}`,
-            padding: "14px 48px",
-            cursor: entering ? "not-allowed" : "pointer",
-            marginBottom: 10,
-            animation: "fade-in 0.8s ease 1.3s both, enter-pulse 2s ease-in-out 2.1s infinite",
-          }}
-        >
-          {entering ? "▶ ENTERING..." : "▶ ENTER"}
-        </button>
-
-        <div style={{
-          fontFamily: "'Press Start 2P', monospace",
-          fontSize: 5.5, color: "rgba(255,255,255,0.25)",
-          letterSpacing: 2, marginBottom: 18,
-          animation: "fade-in 0.8s ease 1.5s both",
-        }}>
-          CONNECT WALLET INSIDE
-        </div>
-
-        {/* ── TIER BADGES ── */}
-        <div style={{
-          display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center",
-          animation: "fade-in 0.8s ease 1.7s both",
-        }}>
-          {TIER_BADGES.map(b => (
-            <span key={b.label} style={{
-              fontFamily: "'Press Start 2P', monospace",
-              fontSize: 5.5, letterSpacing: 0.5,
-              color: b.color,
-              border: `1px solid ${b.color}`,
-              padding: "3px 7px",
-              opacity: b.dim ? 0.25 : 0.8,
-              whiteSpace: "nowrap",
-            }}>{b.label}</span>
+          <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:GOLD, opacity:0.6, letterSpacing:2, marginBottom:12 }}>
+            THE 7 TIERS
+          </div>
+          {TIER_TABLE.map(t => (
+            <div key={t.tier} style={{
+              display: "flex", alignItems: "center", gap: 10,
+              padding: "5px 0",
+              borderBottom: "1px solid rgba(255,255,255,0.04)",
+              opacity: t.dim ? 0.35 : 0.8,
+            }}>
+              <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:t.color, width:22 }}>T{t.tier}</span>
+              <span style={{ fontFamily:"'Courier Prime', monospace", fontSize:12, color:CREAM, flex:1 }}>{t.name}</span>
+              <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:t.color, letterSpacing:1 }}>{t.label}</span>
+            </div>
           ))}
         </div>
-
       </div>
     </div>
   );

@@ -1,19 +1,9 @@
 import { useState, useEffect } from "react";
 import { useGameState } from '../hooks/useGameState';
-
-// ═══════════════════════════════════════════════════════════════
-// TOKENS
-// ═══════════════════════════════════════════════════════════════
-const WOOD    = "#2c1810";
-const GOLD    = "#c8a84b";
-const GOLD_DK = "#8a6820";
-const GOLD_LT = "#e8c86b";
-const EMBER   = "#cc3322";
-const CREAM   = "#f0ead6";
-const INK     = "#1a1208";
-const GREEN   = "#6eff8a";
-const PURPLE  = "#b86bff";
-const ORANGE  = "#ffa84b";
+import {
+  WOOD_LIGHT as WOOD, GOLD, GOLD_DK, GOLD_LT,
+  EMBER, CREAM, INK_DEEP as INK, GREEN, PURPLE, ORANGE,
+} from '../config/design-tokens';
 
 const MODAL_CSS = `
   @keyframes overlay-in { from { opacity:0; } to { opacity:1; } }
