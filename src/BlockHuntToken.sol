@@ -55,20 +55,18 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     // can mint at their intended higher caps (50k, 100k, 200k, 100k per window).
 
     // ── Per-batch mint pricing ────────────────────────────────────────────────
-    function mintPriceForBatch(uint256 batch) public pure returns (uint256) {
-        if (batch == 1) return 0.00008 ether;
-        if (batch == 2) return 0.00016 ether;
-        if (batch == 3) return 0.00032 ether;
-        if (batch == 4) return 0.00080 ether;
-        if (batch == 5) return 0.00160 ether;
-        if (batch == 6) return 0.00200 ether;
-        return 0.00200 ether;
+    mapping(uint256 => uint256) public mintPriceForBatch;
+
+    function setMintPrice(uint256 batch, uint256 price) external onlyOwner {
+        require(testMintEnabled, "Test mode disabled");
+        require(batch >= 1 && batch <= 6, "Invalid batch");
+        mintPriceForBatch[batch] = price;
     }
 
     function currentMintPrice() public view returns (uint256) {
-        if (mintWindowContract == address(0)) return mintPriceForBatch(1);
+        if (mintWindowContract == address(0)) return mintPriceForBatch[1];
         uint256 batch = IBlockHuntMint(mintWindowContract).currentBatch();
-        return mintPriceForBatch(batch);
+        return mintPriceForBatch[batch];
     }
 
     uint256 public constant COUNTDOWN_DURATION = 7 days;
@@ -140,6 +138,15 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         VRFConsumerBaseV2Plus(vrfCoordinator_)
     {
         _setDefaultRoyalty(royaltyReceiver_, royaltyFee_);
+
+        // Mint prices per batch (adjustable via setMintPrice while testMintEnabled)
+        mintPriceForBatch[1] = 0.00008 ether;
+        mintPriceForBatch[2] = 0.00016 ether;
+        mintPriceForBatch[3] = 0.00032 ether;
+        mintPriceForBatch[4] = 0.00080 ether;
+        mintPriceForBatch[5] = 0.00160 ether;
+        mintPriceForBatch[6] = 0.00200 ether;
+
         // [FIX M7] combineRatio[2] REMOVED — T2→T1 combine is not possible.
         // The Origin is sacrifice-only. combineRatio[2] was set to 100 previously
         // but had no valid use case and could mislead the frontend.

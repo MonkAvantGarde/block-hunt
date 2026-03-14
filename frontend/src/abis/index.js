@@ -107,6 +107,9 @@ export const WINDOW_ABI = [
     outputs: [{ name: '', type: 'uint256' }] },
   { name: 'perUserDayCap', type: 'function', stateMutability: 'view',
     inputs: [], outputs: [{ name: '', type: 'uint256' }] },
+  { name: 'userDayMints', type: 'function', stateMutability: 'view',
+    inputs: [{ name: '', type: 'uint256' }, { name: '', type: 'address' }],
+    outputs: [{ name: '', type: 'uint256' }] },
 ];
 
 

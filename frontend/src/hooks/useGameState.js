@@ -103,6 +103,29 @@ export function useGameState() {
     query: { refetchInterval: 60_000 },
   })
 
+  // ── PER-USER WINDOW CAP ────────────────────────────────────────────────────
+  const windowDay = windowRaw ? Number(windowRaw[1]) : 0
+
+  const {
+    data: perUserCapRaw,
+    refetch: refetchPerUserCap,
+  } = useReadContract({
+    address: CONTRACTS.WINDOW,
+    abi: WINDOW_ABI,
+    functionName: 'perUserDayCap',
+  })
+
+  const {
+    data: userMintsRaw,
+    refetch: refetchUserMints,
+  } = useReadContract({
+    address: CONTRACTS.WINDOW,
+    abi: WINDOW_ABI,
+    functionName: 'userDayMints',
+    args: [BigInt(Math.max(windowDay, 1)), address || '0x0000000000000000000000000000000000000000'],
+    query: { enabled: isConnected && !!address && windowDay > 0 },
+  })
+
   // ── ESCROW INFO (sacrifice distribution state) ─────────────────────────────
   const {
     data: escrowRaw,
@@ -170,6 +193,12 @@ export function useGameState() {
       }
     : null
 
+  // Per-user window cap tracking
+  const perUserCap = perUserCapRaw ? Number(perUserCapRaw) : 500
+  const userMintedThisWindow = userMintsRaw ? Number(userMintsRaw) : 0
+  const userMintsRemaining = Math.max(0, perUserCap - userMintedThisWindow)
+  const userCapReached = userMintedThisWindow >= perUserCap
+
   // How many tiers (2-7) does the connected player hold at least 1 of?
   const tiersHeld = isConnected
     ? [2, 3, 4, 5, 6, 7].filter(tier => balances[tier] > 0).length
@@ -185,6 +214,8 @@ export function useGameState() {
     refetchTreasury()
     refetchBatch()
     refetchMintPrice()
+    refetchPerUserCap()
+    refetchUserMints()
     refetchEscrow()
   }
 
@@ -204,6 +235,10 @@ export function useGameState() {
     mintPrice,              // number in ETH (e.g. 0.00008)
     mintPriceWei,           // bigint for transaction value
     escrowInfo,
+    perUserCap,
+    userMintedThisWindow,
+    userMintsRemaining,
+    userCapReached,
 
     // Utils
     isLoading,

@@ -95,6 +95,10 @@ export default function GameScreen({ onOpenModal, onNavigate }) {
     currentBatch,
     mintPrice,
     mintPriceWei,
+    userCapReached,
+    userMintsRemaining,
+    userMintedThisWindow,
+    perUserCap,
     refetchAll,
     isLoading,
   } = useGameState()
@@ -544,7 +548,7 @@ const { data: countdownHolder } = useReadContract({
                 display:"flex", flexDirection:"column",
               }}>
                 <div style={{ flex:1, display:"flex", flexDirection:"column", minHeight:0 }}>
-                  {p.id==="mint"  && <VRFMintPanel onMint={handleMint} windowOpen={windowOpen} windowInfo={windowInfo} slots={slots} prizePool={prizePool} address={address} refetchAll={refetchAll} blocks={blocks} mintPrice={mintPrice} mintPriceWei={mintPriceWei} currentBatch={currentBatch} />}
+                  {p.id==="mint"  && <VRFMintPanel onMint={handleMint} windowOpen={windowOpen} windowInfo={windowInfo} slots={slots} prizePool={prizePool} address={address} refetchAll={refetchAll} blocks={blocks} mintPrice={mintPrice} mintPriceWei={mintPriceWei} currentBatch={currentBatch} userCapReached={userCapReached} userMintsRemaining={userMintsRemaining} userMintedThisWindow={userMintedThisWindow} perUserCap={perUserCap} />}
                   {p.id==="forge" && <ForgePanel blocks={blocks} onForge={handleForge} address={address} />}
                   {p.id==="trade" && <TradePanel />}
                 </div>

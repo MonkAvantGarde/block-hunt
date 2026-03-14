@@ -133,8 +133,9 @@ function savePending(items) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(items)) } catch {}
 }
 
-export default function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, prizePool, address, refetchAll, blocks, mintPrice, mintPriceWei, currentBatch }) {
-  const [qty, setQty] = useState(10)
+export default function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, prizePool, address, refetchAll, blocks, mintPrice, mintPriceWei, currentBatch, userCapReached, userMintsRemaining, userMintedThisWindow, perUserCap }) {
+  const maxMintable = userMintsRemaining != null ? Math.min(500, userMintsRemaining) : 500
+  const [qty, setQty] = useState(Math.min(10, maxMintable))
   const [pendingMints, setPendingMints] = useState(() => loadPending())
   const [mintError, setMintError] = useState(null)
   const [, setTick] = useState(0)
@@ -316,10 +317,11 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, pr
 
         {/* Quick-set buttons */}
         <div style={{ display:"flex", gap:6 }}>
-          {[10, 50, 100, slots > 0 ? slots : 500].map((v, i) => {
+          {[10, 50, 100, Math.min(slots > 0 ? slots : 500, maxMintable)].map((v, i) => {
             const label = i === 3 ? "MAX" : String(v)
+            const capped = Math.min(v, maxMintable)
             return (
-              <button key={label} onClick={() => setQty(Math.min(v, 500))} style={{
+              <button key={label} onClick={() => setQty(Math.min(capped, 500))} style={{
                 flex:1, height:44,
                 fontFamily:"'Press Start 2P', monospace", fontSize:8,
                 color: qty === v ? INK : CREAM,
@@ -345,7 +347,7 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, pr
             fontFamily:"'VT323', monospace", fontSize:36, color:CREAM, background:"rgba(0,0,0,0.2)",
           }}>{qty}</div>
           {[1,10].map(d => (
-            <button key={d} onClick={() => setQty(q => Math.min(500, q+d))} style={{
+            <button key={d} onClick={() => setQty(q => Math.min(maxMintable, q+d))} style={{
               flex:"0 0 44px", height:44, background:"rgba(0,0,0,0.4)",
               border:"none", borderLeft:"1px solid rgba(255,255,255,0.1)",
               color:"rgba(255,255,255,0.6)", fontFamily:"'Press Start 2P', monospace", fontSize:8, cursor:"pointer",
@@ -362,12 +364,28 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, pr
           TOTAL: {total} ETH
         </div>
 
-        <Btn onClick={doMint} disabled={!windowOpen}>
-          {windowOpen ? "▶  MINT NOW" : "✕  WINDOW CLOSED"}
+        {userCapReached && windowOpen && (
+          <div style={{
+            background:"rgba(255,80,80,0.1)",
+            border:"1px solid rgba(255,80,80,0.3)",
+            padding:"8px 12px",
+            fontFamily:"'Press Start 2P', monospace", fontSize:7,
+            color:"#ff8888", textAlign:"center", lineHeight:1.8,
+          }}>
+            MINT CAP REACHED ({perUserCap}/{perUserCap})<br/>
+            Wait for next window to open
+          </div>
+        )}
+
+        <Btn onClick={doMint} disabled={!windowOpen || userCapReached || qty < 1}>
+          {!windowOpen ? "✕  WINDOW CLOSED" : userCapReached ? "✕  WINDOW CAP REACHED" : "▶  MINT NOW"}
         </Btn>
 
         <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:"rgba(255,255,255,0.45)", textAlign:"center" }}>
           Current price: {mintPrice} Ξ (Batch {currentBatch})
+          {windowOpen && !userCapReached && userMintedThisWindow > 0 && (
+            <span style={{ color:"#ffcc33" }}> — {userMintsRemaining} mints left this window</span>
+          )}
         </div>
       </div>
 

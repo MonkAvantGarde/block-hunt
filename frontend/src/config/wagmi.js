@@ -45,7 +45,7 @@ export const config = createConfig({
 // Never hardcode addresses anywhere else in the app.
 
 export const CONTRACTS = {
-  TOKEN:     '0x4C4DFE9A763F7ebeD0A2C18c12Bf7c022ad396a7',
+  TOKEN:     '0x5A5335f138950C127Dc9baaA2618e89ADEce09aC',
   TREASURY:  '0x6c264D2aBc88bB52D8D1B8769360cad71cB6730f',
   WINDOW:    '0xd6041d73C9B5C8dde6df6a1b35F7d22C1A087aEa',
   FORGE:     '0xA4865336E3e760f6738B0Dea009B574f3d8e0BbC',
