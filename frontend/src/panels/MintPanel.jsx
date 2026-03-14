@@ -238,6 +238,7 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, pr
       functionName: "mint",
       args: [BigInt(qty)],
       value: parseEther((qty * mintPrice).toFixed(18)),
+      gas: BigInt(500_000) + BigInt(qty) * BigInt(30_000),
     }, {
       onSuccess: (hash) => {
         setMintError(null)
