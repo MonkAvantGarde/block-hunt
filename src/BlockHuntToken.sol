@@ -119,6 +119,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     event BlocksForged(address indexed by, uint256 indexed fromTier, bool success);
     event CountdownTriggered(address indexed holder);
     event CountdownHolderReset(address indexed formerHolder);
+    event CountdownHolderUpdated(address indexed newHolder, uint256 timestamp);
     event OriginClaimed(address indexed holder);
     event OriginSacrificed(address indexed holder);
     event DefaultSacrificeExecuted(address indexed holder, address indexed executor);
@@ -173,13 +174,31 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
 
     // ── Admin setters ─────────────────────────────────────────────────────────
 
-    function setMintWindowContract(address addr) external onlyOwner { mintWindowContract = addr; }
-    function setTreasuryContract(address addr)   external onlyOwner { treasuryContract   = addr; }
-    function setForgeContract(address addr)      external onlyOwner { forgeContract       = addr; }
-    function setCountdownContract(address addr)  external onlyOwner { countdownContract   = addr; }
-    function setEscrowContract(address addr)     external onlyOwner { escrowContract      = addr; }
+    function setMintWindowContract(address addr) external onlyOwner {
+        require(mintWindowContract == address(0) || testMintEnabled, "Already set");
+        mintWindowContract = addr;
+    }
+    function setTreasuryContract(address addr) external onlyOwner {
+        require(treasuryContract == address(0) || testMintEnabled, "Already set");
+        treasuryContract = addr;
+    }
+    function setForgeContract(address addr) external onlyOwner {
+        require(forgeContract == address(0) || testMintEnabled, "Already set");
+        forgeContract = addr;
+    }
+    function setCountdownContract(address addr) external onlyOwner {
+        require(countdownContract == address(0) || testMintEnabled, "Already set");
+        countdownContract = addr;
+    }
+    function setEscrowContract(address addr) external onlyOwner {
+        require(escrowContract == address(0) || testMintEnabled, "Already set");
+        escrowContract = addr;
+    }
     function setURI(string memory newuri)        external onlyOwner { _setURI(newuri); }
-    function setRoyalty(address receiver, uint96 fee) external onlyOwner { _setDefaultRoyalty(receiver, fee); }
+    function setRoyalty(address receiver, uint96 fee) external onlyOwner {
+        require(fee <= 1000, "Exceeds 10% cap");
+        _setDefaultRoyalty(receiver, fee);
+    }
     function pause()   external onlyOwner { _pause(); }
     function unpause() external onlyOwner { _unpause(); }
 
@@ -581,6 +600,20 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         emit CountdownHolderReset(former);
     }
 
+    /**
+     * @notice Called by the Countdown contract to update the countdown holder
+     *         when a successful challenge shifts the countdown to a new player.
+     * @dev Only callable by the registered Countdown contract.
+     *      Resets countdownStartTime to block.timestamp (full 7-day reset).
+     *      Does NOT change countdownActive — countdown remains active.
+     */
+    function updateCountdownHolder(address newHolder) external onlyCountdown {
+        require(countdownActive, "No active countdown");
+        countdownHolder    = newHolder;
+        countdownStartTime = block.timestamp;
+        emit CountdownHolderUpdated(newHolder, block.timestamp);
+    }
+
     // ── INTERNAL ──────────────────────────────────────────────────────────────
 
     function _finaliseEndgame() internal {
@@ -720,7 +753,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     address public migrationContract;
 
     function setMigrationContract(address addr) external onlyOwner {
-        require(migrationContract == address(0), "Already set");
+        require(migrationContract == address(0) || testMintEnabled, "Already set");
         migrationContract = addr;
     }
 

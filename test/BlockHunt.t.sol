@@ -90,6 +90,32 @@ contract MockTokenV2 {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// RevertOnReceive — malicious contract that reverts when receiving ETH
+// ─────────────────────────────────────────────────────────────────────────────
+contract RevertOnReceive {
+    receive() external payable {
+        revert("I reject ETH");
+    }
+
+    // Must implement ERC1155Receiver to accept NFTs
+    function onERC1155Received(address, address, uint256, uint256, bytes calldata)
+        external pure returns (bytes4)
+    {
+        return 0xf23a6e61;
+    }
+
+    function onERC1155BatchReceived(address, address, uint256[] calldata, uint256[] calldata, bytes calldata)
+        external pure returns (bytes4)
+    {
+        return 0xbc197c81;
+    }
+
+    function supportsInterface(bytes4) external pure returns (bool) {
+        return true;
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main test contract
 // ─────────────────────────────────────────────────────────────────────────────
 contract BlockHuntTest is Test {
@@ -200,8 +226,8 @@ contract BlockHuntTest is Test {
     }
 
     function test_MintFailsWhenWindowClosed() public {
-        // Fast-forward past 6-hour window so it expires
-        vm.warp(block.timestamp + 6 hours + 1);
+        // Fast-forward past 3-hour window so it expires
+        vm.warp(block.timestamp + 3 hours + 1);
 
         vm.prank(alice);
         vm.expectRevert("Window closed");
@@ -1216,9 +1242,18 @@ contract BlockHuntTest is Test {
     }
 
     function test_TreasuryTokenContractCanOnlyBeSetOnce() public {
+        // In test mode, re-calling is allowed
         vm.prank(owner);
+        treasury.setTokenContract(address(alice));
+        assertEq(treasury.tokenContract(), address(alice));
+
+        // After disabling test mode, it locks
+        vm.startPrank(owner);
+        treasury.setTokenContract(address(token)); // restore for other tests
+        treasury.disableTestMode();
         vm.expectRevert("Already set");
         treasury.setTokenContract(address(alice));
+        vm.stopPrank();
     }
 
     function test_TreasuryEmergencyWithdraw() public {
@@ -1240,7 +1275,7 @@ contract BlockHuntTest is Test {
         assertEq(mintWindow.isWindowOpen(), true, "Window should be open after setUp");
 
         // [PHASE 2] closeWindow is now permissionless but only works after window expires
-        vm.warp(block.timestamp + 6 hours + 1);
+        vm.warp(block.timestamp + 3 hours + 1);
         mintWindow.closeWindow();
 
         assertEq(mintWindow.isWindowOpen(), false, "Window should be closed");
@@ -1248,15 +1283,15 @@ contract BlockHuntTest is Test {
 
     function test_RolloverAccumulates() public {
         // Close window after expiry without minting - full window cap rolls over
-        vm.warp(block.timestamp + 6 hours + 1);
+        vm.warp(block.timestamp + 3 hours + 1);
         mintWindow.closeWindow();
 
         // [PHASE 2] openWindow is permissionless with MIN_WINDOW_GAP time guard
-        vm.warp(block.timestamp + 12 hours);
+        vm.warp(block.timestamp + 4 hours);
         mintWindow.openWindow();
 
         (, , , , uint256 allocated, , , ) = mintWindow.getWindowInfo();
-        assertEq(allocated, 50_000, "2x windowCapForBatch(1) (25k each) should accumulate");
+        assertEq(allocated, 33_332, "2x windowCapForBatch(1) (16,666 each) should accumulate");
     }
 
     function test_WindowInfoReturnsCorrectData() public {
@@ -1274,11 +1309,11 @@ contract BlockHuntTest is Test {
         assertEq(day,       1,      "Should be day 1");
         assertGt(openAt,    0,      "Open timestamp should be set");
         assertGt(closeAt,   openAt, "Close should be after open");
-        assertEq(allocated, 25_000, "Batch 1 window cap should be 25,000");
+        assertEq(allocated, 16_666, "Batch 1 window cap should be 16,666");
     }
 
     function test_WindowExpiresByTime() public {
-        vm.warp(block.timestamp + 6 hours + 1);
+        vm.warp(block.timestamp + 3 hours + 1);
         assertEq(mintWindow.isWindowOpen(), false, "Window should be expired");
     }
 
@@ -1307,7 +1342,7 @@ contract BlockHuntTest is Test {
     // [PHASE 2] Permissionless openWindow with MIN_WINDOW_GAP time guard
     function test_OpenWindowPermissionless() public {
         // Fast-forward past window + gap
-        vm.warp(block.timestamp + 12 hours + 1);
+        vm.warp(block.timestamp + 4 hours + 1);
 
         // Anyone can call openWindow (not just owner)
         vm.prank(alice);
@@ -1318,8 +1353,8 @@ contract BlockHuntTest is Test {
     }
 
     function test_OpenWindowTooEarlyReverts() public {
-        // Try to open a new window too soon (< MIN_WINDOW_GAP = 12 hours)
-        vm.warp(block.timestamp + 6 hours);
+        // Try to open a new window too soon (< MIN_WINDOW_GAP = 4 hours)
+        vm.warp(block.timestamp + 3 hours);
 
         vm.prank(alice);
         vm.expectRevert("Too early for next window");
@@ -1328,7 +1363,7 @@ contract BlockHuntTest is Test {
 
     function test_CloseWindowPermissionless() public {
         // closeWindow is permissionless but requires window to be past closeAt
-        vm.warp(block.timestamp + 6 hours + 1);
+        vm.warp(block.timestamp + 3 hours + 1);
 
         vm.prank(alice);
         mintWindow.closeWindow();
@@ -1337,7 +1372,7 @@ contract BlockHuntTest is Test {
     }
 
     function test_CloseWindowTooEarlyReverts() public {
-        // Window is still active (within 6 hours)
+        // Window is still active (within 3 hours)
         vm.prank(alice);
         vm.expectRevert("Window still active");
         mintWindow.closeWindow();
@@ -1374,6 +1409,95 @@ contract BlockHuntTest is Test {
         assertEq(mintWindow.userDayMints(1, bob),   50);
     }
 
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 5B. FORCE OPEN WINDOW TESTS
+    // ═════════════════════════════════════════════════════════════════════════
+
+    function test_ForceOpenWindow_OwnerCanForceOpen() public {
+        // Close current window
+        vm.warp(block.timestamp + 3 hours + 1);
+        mintWindow.closeWindow();
+
+        vm.prank(owner);
+        mintWindow.forceOpenWindow();
+
+        assertEq(mintWindow.isWindowOpen(), true, "Window should be open after force open");
+        assertEq(mintWindow.currentDay(), 2, "Day should advance to 2");
+    }
+
+    function test_ForceOpenWindow_BypassesTimeGuard() public {
+        // Close current window
+        vm.warp(block.timestamp + 3 hours + 1);
+        mintWindow.closeWindow();
+
+        // Don't wait for MIN_WINDOW_GAP — force open immediately
+        vm.prank(owner);
+        mintWindow.forceOpenWindow();
+
+        assertEq(mintWindow.isWindowOpen(), true, "Force open should bypass time guard");
+    }
+
+    function test_ForceOpenWindow_NonOwnerReverts() public {
+        vm.warp(block.timestamp + 3 hours + 1);
+        mintWindow.closeWindow();
+
+        vm.prank(alice);
+        vm.expectRevert();
+        mintWindow.forceOpenWindow();
+    }
+
+    function test_ForceOpenWindow_FailsWhenTestModeDisabled() public {
+        vm.startPrank(owner);
+        mintWindow.disableTestMode();
+
+        vm.expectRevert("Test mode disabled");
+        mintWindow.forceOpenWindow();
+        vm.stopPrank();
+    }
+
+    function test_ForceOpenWindow_FailsWhenWindowAlreadyOpen() public {
+        // Window is already open from setUp — force open should settle it and open a new one
+        // (same behavior as openWindow when previous window is still open)
+        vm.prank(owner);
+        mintWindow.forceOpenWindow();
+
+        assertEq(mintWindow.isWindowOpen(), true, "New window should be open");
+        assertEq(mintWindow.currentDay(), 2, "Day should advance");
+    }
+
+    function test_ForceOpenWindow_CorrectDuration() public {
+        vm.warp(block.timestamp + 3 hours + 1);
+        mintWindow.closeWindow();
+
+        uint256 openTime = block.timestamp;
+        vm.prank(owner);
+        mintWindow.forceOpenWindow();
+
+        (, , uint256 openAt, uint256 closeAt, , , , ) = mintWindow.getWindowInfo();
+        assertEq(openAt, openTime, "Open time should be current timestamp");
+        assertEq(closeAt, openTime + 3 hours, "Close time should be 3 hours after open");
+    }
+
+    function test_ForceOpenWindow_NormalOpenStillRespectsTimeGuard() public {
+        // Force open a window
+        vm.warp(block.timestamp + 3 hours + 1);
+        mintWindow.closeWindow();
+        vm.prank(owner);
+        mintWindow.forceOpenWindow();
+
+        // Try normal openWindow too soon — should revert
+        vm.warp(block.timestamp + 3 hours + 1);
+        vm.prank(alice);
+        vm.expectRevert("Too early for next window");
+        mintWindow.openWindow();
+
+        // After MIN_WINDOW_GAP it should work
+        vm.warp(block.timestamp + 4 hours);
+        vm.prank(alice);
+        mintWindow.openWindow();
+        assertEq(mintWindow.isWindowOpen(), true);
+    }
 
     // ═════════════════════════════════════════════════════════════════════════
     // 6. COUNTDOWN TESTS
@@ -1415,7 +1539,7 @@ contract BlockHuntTest is Test {
 
         assertEq(countdown.votesBurn(),    1, "Should have 1 burn vote");
         assertEq(countdown.votesClaim(),   0, "Should have 0 claim votes");
-        assertEq(countdown.hasVoted(bob),  true, "Bob should be marked as voted");
+        assertEq(countdown.hasVoted(countdown.countdownRound(), bob),  true, "Bob should be marked as voted");
     }
 
     function test_CastVoteClaimSucceeds() public {
@@ -1447,6 +1571,69 @@ contract BlockHuntTest is Test {
         vm.prank(bob);
         vm.expectRevert("No active countdown");
         countdown.castVote(true);
+    }
+
+    // ── Fix H-3: Voter List DoS — Round-based voting ──────────────────────────
+
+    function test_VoterListDoS_ResetIsConstantGas() public {
+        _giveAllTiers(alice);
+
+        // Cast 100 votes from different addresses
+        for (uint256 i = 1; i <= 100; i++) {
+            address voter = address(uint160(0xBEEF000 + i));
+            vm.prank(voter);
+            countdown.castVote(true);
+        }
+
+        // Reset via checkHolderStatus (alice loses a tier)
+        vm.prank(alice);
+        token.safeTransferFrom(alice, bob, 2, 1, "");
+
+        uint256 gasBefore = gasleft();
+        countdown.checkHolderStatus();
+        uint256 gasUsed = gasBefore - gasleft();
+
+        // Should be well under 100k gas regardless of voter count
+        assertLt(gasUsed, 100_000, "Reset should be O(1), not O(n)");
+    }
+
+    function test_VotesResetAfterRound() public {
+        _giveAllTiers(alice);
+        uint256 round1 = countdown.countdownRound();
+
+        vm.prank(bob);
+        countdown.castVote(true);
+        assertEq(countdown.hasVoted(round1, bob), true);
+
+        // Reset countdown (alice loses a tier)
+        vm.prank(alice);
+        token.safeTransferFrom(alice, bob, 2, 1, "");
+        countdown.checkHolderStatus();
+
+        uint256 round2 = countdown.countdownRound();
+        assertGt(round2, round1, "Round should increment");
+        // Bob's vote in old round still stored, but new round is clean
+        assertEq(countdown.hasVoted(round2, bob), false, "Bob should not be voted in new round");
+    }
+
+    function test_CanVoteInNewRound() public {
+        _giveAllTiers(alice);
+
+        vm.prank(bob);
+        countdown.castVote(true);
+
+        // Reset
+        vm.prank(alice);
+        token.safeTransferFrom(alice, bob, 2, 1, "");
+        countdown.checkHolderStatus();
+
+        // Start new countdown
+        _giveAllTiers(carol);
+
+        // Bob can vote again in the new round
+        vm.prank(bob);
+        countdown.castVote(false);
+        assertEq(countdown.votesClaim(), 1, "Bob should be able to vote in new round");
     }
 
     function test_TimeRemainingDecreases() public {
@@ -1560,8 +1747,13 @@ contract BlockHuntTest is Test {
         vm.prank(alice);
         token.sacrifice();
 
-        // 50% to winner immediately (via Escrow)
-        assertApproxEqAbs(alice.balance - aliceBefore, 5 ether, 0.001 ether, "Alice gets 50%");
+        // 50% stored as pending withdrawal (pull-payment)
+        assertEq(alice.balance, aliceBefore, "Alice should NOT receive ETH yet");
+        assertApproxEqAbs(escrow.pendingWithdrawal(alice), 5 ether, 0.001 ether, "50% stored for withdrawal");
+        // Alice withdraws
+        vm.prank(alice);
+        escrow.withdrawWinnerShare();
+        assertApproxEqAbs(alice.balance - aliceBefore, 5 ether, 0.001 ether, "Alice gets 50% after withdrawal");
         // 40% held in escrow as communityPool
         assertApproxEqAbs(escrow.communityPool(), 4 ether, 0.001 ether, "Escrow holds 40% as communityPool");
         // 10% held in escrow as season2Seed
@@ -1881,6 +2073,539 @@ contract BlockHuntTest is Test {
         countdown.checkHolderStatus();
     }
 
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 7d. TOKEN — updateCountdownHolder
+    // ═════════════════════════════════════════════════════════════════════════
+
+    function test_UpdateCountdownHolder_OnlyCountdownContract() public {
+        _giveAllTiers(alice);
+        assertTrue(token.countdownActive());
+
+        // Non-countdown contract should revert
+        vm.prank(alice);
+        vm.expectRevert("Only countdown contract");
+        token.updateCountdownHolder(bob);
+    }
+
+    function test_UpdateCountdownHolder_UpdatesState() public {
+        _giveAllTiers(alice);
+        assertTrue(token.countdownActive());
+
+        uint256 challengeTime = block.timestamp + 1 days;
+        vm.warp(challengeTime);
+
+        vm.prank(address(countdown));
+        token.updateCountdownHolder(bob);
+
+        assertEq(token.countdownHolder(), bob, "Holder should be updated to bob");
+        assertEq(token.countdownStartTime(), challengeTime, "Start time should reset");
+        assertTrue(token.countdownActive(), "Countdown should remain active");
+    }
+
+    function test_UpdateCountdownHolder_RevertsNoActiveCountdown() public {
+        assertFalse(token.countdownActive());
+
+        vm.prank(address(countdown));
+        vm.expectRevert("No active countdown");
+        token.updateCountdownHolder(bob);
+    }
+
+    function test_UpdateCountdownHolder_EmitsEvent() public {
+        _giveAllTiers(alice);
+
+        vm.expectEmit(true, false, false, true);
+        emit BlockHuntToken.CountdownHolderUpdated(bob, block.timestamp);
+
+        vm.prank(address(countdown));
+        token.updateCountdownHolder(bob);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 7e. COUNTDOWN CHALLENGE — SCORING
+    // ═════════════════════════════════════════════════════════════════════════
+
+    function test_CalculateScore_Empty() public view {
+        assertEq(countdown.calculateScore(alice), 0, "Empty player should have score 0");
+    }
+
+    function test_CalculateScore_T7Only() public {
+        _giveBlocks(alice, 7, 1000);
+        assertEq(countdown.calculateScore(alice), 1000, "1000 T7 = 1000 points");
+    }
+
+    function test_CalculateScore_AllTiers() public {
+        // Give known balances: 2×T2, 3×T3, 5×T4, 10×T5, 50×T6, 100×T7
+        _giveBlocks(alice, 2, 2);
+        _giveBlocks(alice, 3, 3);
+        _giveBlocks(alice, 4, 5);
+        _giveBlocks(alice, 5, 10);
+        _giveBlocks(alice, 6, 50);
+        _giveBlocks(alice, 7, 100);
+
+        // 2*10000 + 3*2000 + 5*500 + 10*100 + 50*20 + 100*1 = 20000+6000+2500+1000+1000+100 = 30600
+        assertEq(countdown.calculateScore(alice), 30600, "Weighted score should be 30600");
+    }
+
+    function test_CalculateScore_ExcludesT1() public {
+        // calculateScore formula only sums T2-T7 weights.
+        // Verify that a player with ONLY T7 blocks gets score = count * WEIGHT_T7.
+        // If T1 were included, the formula would differ.
+        // Also verify the score formula doesn't accidentally include index 0 or 1.
+        _giveBlocks(alice, 7, 100);
+        _giveBlocks(alice, 2, 1);
+        // Score should be exactly 100*1 + 1*10000 = 10100
+        // If T1 (index 1) were counted, it would be different since alice has 0 T1
+        assertEq(countdown.calculateScore(alice), 10100, "Score should only count T2-T7");
+    }
+
+    function test_CalculateScore_ChangesWithBalance() public {
+        _giveBlocks(alice, 7, 100);
+        assertEq(countdown.calculateScore(alice), 100);
+
+        _giveBlocks(alice, 7, 100);
+        assertEq(countdown.calculateScore(alice), 200, "Score should update with new mints");
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 7f. COUNTDOWN CHALLENGE — startCountdown records score
+    // ═════════════════════════════════════════════════════════════════════════
+
+    function test_ClaimHolderStatus_RecordsScore() public {
+        // Give alice blocks across tiers so she has a score
+        _giveBlocks(alice, 2, 1);
+        _giveBlocks(alice, 3, 1);
+        _giveBlocks(alice, 4, 1);
+        _giveBlocks(alice, 5, 1);
+        _giveBlocks(alice, 6, 1);
+        // T7 given last triggers countdown
+        _giveBlocks(alice, 7, 10);
+
+        uint256 expectedScore = 1 * 10000 + 1 * 2000 + 1 * 500 + 1 * 100 + 1 * 20 + 10 * 1;
+        assertEq(countdown.holderScore(), expectedScore, "holderScore should match calculateScore");
+    }
+
+    function test_ClaimHolderStatus_SetsLastChallengeTime() public {
+        _giveAllTiers(alice);
+        assertEq(countdown.lastChallengeTime(), block.timestamp, "lastChallengeTime should be set");
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 7g. COUNTDOWN CHALLENGE — SUCCESS CASES
+    // ═════════════════════════════════════════════════════════════════════════
+
+    function test_Challenge_SucceedsHigherScore() public {
+        // Alice triggers countdown with minimal blocks
+        _giveAllTiers(alice);
+        assertTrue(countdown.isActive());
+        uint256 aliceScore = countdown.calculateScore(alice);
+
+        // Bob gets more blocks — higher score
+        _giveBlocks(bob, 2, 2);
+        _giveBlocks(bob, 3, 2);
+        _giveBlocks(bob, 4, 2);
+        _giveBlocks(bob, 5, 2);
+        _giveBlocks(bob, 6, 2);
+        _giveBlocks(bob, 7, 100);
+        uint256 bobScore = countdown.calculateScore(bob);
+        assertTrue(bobScore > aliceScore, "Bob should have higher score");
+
+        // Wait 24 hours for cooldown
+        vm.warp(block.timestamp + 24 hours);
+
+        vm.prank(bob);
+        countdown.challengeCountdown();
+
+        // Verify Countdown contract state
+        assertEq(countdown.currentHolder(), bob, "Countdown holder should be bob");
+        assertEq(countdown.holderScore(), bobScore, "holderScore should be bob's score");
+        assertTrue(countdown.isActive(), "Countdown should still be active");
+
+        // Verify Token state synced
+        assertEq(token.countdownHolder(), bob, "Token holder should be bob");
+        assertTrue(token.countdownActive(), "Token countdown should be active");
+    }
+
+    function test_Challenge_FullReset() public {
+        _giveAllTiers(alice);
+        uint256 claimTime = block.timestamp;
+
+        // Give bob higher score
+        _giveBlocks(bob, 2, 5);
+        _giveBlocks(bob, 3, 5);
+        _giveBlocks(bob, 4, 5);
+        _giveBlocks(bob, 5, 5);
+        _giveBlocks(bob, 6, 5);
+        _giveBlocks(bob, 7, 100);
+
+        // Warp past cooldown (halfway through countdown)
+        vm.warp(claimTime + 3 days);
+
+        vm.prank(bob);
+        countdown.challengeCountdown();
+
+        // Token's countdownStartTime should be reset to NOW, not the original start
+        assertEq(token.countdownStartTime(), block.timestamp, "Should get full 7-day reset");
+
+        // Countdown won't expire until 7 full days from challenge
+        vm.warp(block.timestamp + 6 days);
+        assertFalse(countdown.hasExpired(), "Should not be expired after 6 days from challenge");
+
+        vm.warp(block.timestamp + 1 days);
+        assertTrue(countdown.hasExpired(), "Should expire after 7 days from challenge");
+    }
+
+    function test_Challenge_MultipleSequential() public {
+        // A claims
+        _giveAllTiers(alice);
+        assertEq(countdown.currentHolder(), alice);
+
+        // B gets higher score
+        _giveBlocks(bob, 2, 3);
+        _giveBlocks(bob, 3, 3);
+        _giveBlocks(bob, 4, 3);
+        _giveBlocks(bob, 5, 3);
+        _giveBlocks(bob, 6, 3);
+        _giveBlocks(bob, 7, 100);
+
+        // 24 hours, B challenges A
+        vm.warp(block.timestamp + 24 hours);
+        vm.prank(bob);
+        countdown.challengeCountdown();
+        assertEq(countdown.currentHolder(), bob);
+        assertEq(token.countdownHolder(), bob);
+
+        // C gets even higher score
+        _giveBlocks(carol, 2, 10);
+        _giveBlocks(carol, 3, 10);
+        _giveBlocks(carol, 4, 10);
+        _giveBlocks(carol, 5, 10);
+        _giveBlocks(carol, 6, 10);
+        _giveBlocks(carol, 7, 500);
+
+        // 24 hours, C challenges B
+        vm.warp(block.timestamp + 24 hours);
+        vm.prank(carol);
+        countdown.challengeCountdown();
+        assertEq(countdown.currentHolder(), carol);
+        assertEq(token.countdownHolder(), carol);
+        assertTrue(countdown.isActive());
+    }
+
+    function test_Challenge_OriginalClaimStillWorks() public {
+        // Normal claimHolderStatus flow via Token still works
+        _giveAllTiers(alice);
+
+        assertTrue(token.countdownActive());
+        assertEq(token.countdownHolder(), alice);
+        assertTrue(countdown.isActive());
+        assertEq(countdown.currentHolder(), alice);
+        assertGt(countdown.holderScore(), 0, "Score should be recorded");
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 7h. COUNTDOWN CHALLENGE — REVERT CASES
+    // ═════════════════════════════════════════════════════════════════════════
+
+    function test_Challenge_RevertsNoCountdown() public {
+        assertFalse(countdown.isActive());
+
+        vm.prank(bob);
+        vm.expectRevert("No active countdown");
+        countdown.challengeCountdown();
+    }
+
+    function test_Challenge_RevertsSelf() public {
+        _giveAllTiers(alice);
+
+        vm.warp(block.timestamp + 24 hours);
+        vm.prank(alice);
+        vm.expectRevert("Holder cannot self-challenge");
+        countdown.challengeCountdown();
+    }
+
+    function test_Challenge_RevertsMissingTier() public {
+        _giveAllTiers(alice);
+
+        // Bob has high score but missing T2
+        _giveBlocks(bob, 3, 100);
+        _giveBlocks(bob, 4, 100);
+        _giveBlocks(bob, 5, 100);
+        _giveBlocks(bob, 6, 100);
+        _giveBlocks(bob, 7, 10000);
+
+        vm.warp(block.timestamp + 24 hours);
+        vm.prank(bob);
+        vm.expectRevert("Must hold all 6 tiers");
+        countdown.challengeCountdown();
+    }
+
+    function test_Challenge_RevertsCooldown() public {
+        _giveAllTiers(alice);
+
+        // Bob has higher score and all tiers
+        _giveBlocks(bob, 2, 5);
+        _giveBlocks(bob, 3, 5);
+        _giveBlocks(bob, 4, 5);
+        _giveBlocks(bob, 5, 5);
+        _giveBlocks(bob, 6, 5);
+        _giveBlocks(bob, 7, 100);
+
+        // Try to challenge within 24 hours of claim
+        vm.warp(block.timestamp + 23 hours);
+        vm.prank(bob);
+        vm.expectRevert("Challenge cooldown active");
+        countdown.challengeCountdown();
+    }
+
+    function test_Challenge_RevertsLowerScore() public {
+        // Alice gets lots of blocks
+        _giveBlocks(alice, 2, 10);
+        _giveBlocks(alice, 3, 10);
+        _giveBlocks(alice, 4, 10);
+        _giveBlocks(alice, 5, 10);
+        _giveBlocks(alice, 6, 10);
+        _giveBlocks(alice, 7, 100);
+
+        // Bob gets minimal
+        _giveAllTiers(bob);
+        // Reset so alice can claim (bob triggered it, reset it)
+        // Actually — bob triggered countdown, not alice. Let me restructure.
+        // We need alice to be holder. Let's use a different approach.
+
+        // Start fresh — alice triggers countdown
+        // Since bob already triggered it, let's work with what we have
+        // Bob is holder with score 12621. Alice has much higher score.
+        // So alice challenges bob.
+        // But we want to test LOWER score failing. So let carol challenge with low score.
+
+        _giveAllTiers(carol);
+        // carol has score = 1*10000+1*2000+1*500+1*100+1*20+1 = 12621
+        // bob (holder) has same score 12621 — but bob was first holder
+        // Actually bob triggered countdown first. Let's just check the scores.
+
+        vm.warp(block.timestamp + 24 hours);
+        vm.prank(carol);
+        vm.expectRevert("Score not high enough");
+        countdown.challengeCountdown();
+    }
+
+    function test_Challenge_RevertsEqualScore() public {
+        _giveAllTiers(alice);
+        uint256 aliceScore = countdown.calculateScore(alice);
+
+        // Bob gets exact same blocks — equal score
+        _giveBlocks(bob, 2, 1);
+        _giveBlocks(bob, 3, 1);
+        _giveBlocks(bob, 4, 1);
+        _giveBlocks(bob, 5, 1);
+        _giveBlocks(bob, 6, 1);
+        _giveBlocks(bob, 7, 1);
+        uint256 bobScore = countdown.calculateScore(bob);
+        assertEq(bobScore, aliceScore, "Scores should be equal");
+
+        vm.warp(block.timestamp + 24 hours);
+        vm.prank(bob);
+        vm.expectRevert("Score not high enough");
+        countdown.challengeCountdown();
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 7i. COUNTDOWN CHALLENGE — EDGE CASES
+    // ═════════════════════════════════════════════════════════════════════════
+
+    function test_Challenge_HolderScoreLiveRecalculation() public {
+        // Alice claims with minimal blocks
+        _giveAllTiers(alice);
+        uint256 aliceClaimScore = countdown.holderScore();
+
+        // Alice then gets MORE blocks — her live score is now higher
+        _giveBlocks(alice, 2, 10);
+        uint256 aliceLiveScore = countdown.calculateScore(alice);
+        assertTrue(aliceLiveScore > aliceClaimScore, "Alice live score should be higher");
+
+        // Bob's score is higher than alice's CLAIM score but lower than her LIVE score
+        _giveBlocks(bob, 2, 5);
+        _giveBlocks(bob, 3, 5);
+        _giveBlocks(bob, 4, 5);
+        _giveBlocks(bob, 5, 5);
+        _giveBlocks(bob, 6, 5);
+        _giveBlocks(bob, 7, 100);
+        uint256 bobScore = countdown.calculateScore(bob);
+        assertTrue(bobScore > aliceClaimScore, "Bob > alice claim score");
+        assertTrue(bobScore < aliceLiveScore, "Bob < alice live score");
+
+        // Challenge should FAIL because live recalculation
+        vm.warp(block.timestamp + 24 hours);
+        vm.prank(bob);
+        vm.expectRevert("Score not high enough");
+        countdown.challengeCountdown();
+    }
+
+    function test_Challenge_HolderScoreDrops() public {
+        // Alice claims with lots of T7 blocks
+        _giveBlocks(alice, 2, 1);
+        _giveBlocks(alice, 3, 1);
+        _giveBlocks(alice, 4, 1);
+        _giveBlocks(alice, 5, 1);
+        _giveBlocks(alice, 6, 1);
+        _giveBlocks(alice, 7, 500);
+
+        // Alice score = 10000+2000+500+100+20+500 = 13120
+        // Alice then combines T7→T6 (burns 20 T7, gets 1 T6)
+        vm.prank(alice);
+        token.combine(7);
+        // New score: 10000+2000+500+100+40+480 = 13120... same because 20*1 = 20, but gains 20
+        // Let's instead have her transfer away some blocks
+        vm.prank(alice);
+        token.safeTransferFrom(alice, address(0xdead), 7, 400, "");
+        // New alice score: 10000+2000+500+100+40+(500-20-400)*1 = 10000+2000+500+100+40+80 = 12720
+
+        // Bob has score that beats the reduced score
+        _giveBlocks(bob, 2, 1);
+        _giveBlocks(bob, 3, 1);
+        _giveBlocks(bob, 4, 1);
+        _giveBlocks(bob, 5, 1);
+        _giveBlocks(bob, 6, 1);
+        _giveBlocks(bob, 7, 300);
+
+        vm.warp(block.timestamp + 24 hours);
+        vm.prank(bob);
+        countdown.challengeCountdown();
+
+        assertEq(countdown.currentHolder(), bob);
+    }
+
+    function test_Challenge_AtExactly24Hours() public {
+        _giveAllTiers(alice);
+        uint256 claimTime = countdown.lastChallengeTime();
+
+        _giveBlocks(bob, 2, 5);
+        _giveBlocks(bob, 3, 5);
+        _giveBlocks(bob, 4, 5);
+        _giveBlocks(bob, 5, 5);
+        _giveBlocks(bob, 6, 5);
+        _giveBlocks(bob, 7, 100);
+
+        // Warp to exactly 24 hours — should succeed (>=)
+        vm.warp(claimTime + 24 hours);
+        vm.prank(bob);
+        countdown.challengeCountdown();
+
+        assertEq(countdown.currentHolder(), bob);
+    }
+
+    function test_ClaimTreasury_AfterChallenge() public {
+        // Alice triggers, bob challenges, bob waits 7 days, bob claims treasury
+        _giveAllTiers(alice);
+        _giveBlocks(bob, 2, 5);
+        _giveBlocks(bob, 3, 5);
+        _giveBlocks(bob, 4, 5);
+        _giveBlocks(bob, 5, 5);
+        _giveBlocks(bob, 6, 5);
+        _giveBlocks(bob, 7, 100);
+
+        vm.warp(block.timestamp + 24 hours);
+        vm.prank(bob);
+        countdown.challengeCountdown();
+
+        // Fund treasury for claim
+        vm.deal(address(treasury), 10 ether);
+
+        // Wait 7 days
+        vm.warp(block.timestamp + 7 days);
+
+        vm.prank(bob);
+        token.claimTreasury();
+
+        assertFalse(token.countdownActive(), "Countdown should be reset after claim");
+    }
+
+    function test_Sacrifice_AfterChallenge() public {
+        _giveAllTiers(alice);
+        _giveBlocks(bob, 2, 5);
+        _giveBlocks(bob, 3, 5);
+        _giveBlocks(bob, 4, 5);
+        _giveBlocks(bob, 5, 5);
+        _giveBlocks(bob, 6, 5);
+        _giveBlocks(bob, 7, 100);
+
+        vm.warp(block.timestamp + 24 hours);
+        vm.prank(bob);
+        countdown.challengeCountdown();
+
+        // Fund treasury for sacrifice
+        vm.deal(address(treasury), 10 ether);
+
+        // Wait 7 days
+        vm.warp(block.timestamp + 7 days);
+
+        vm.prank(bob);
+        token.sacrifice();
+
+        assertFalse(token.countdownActive());
+        assertEq(token.balanceOf(bob, 1), 1, "Bob should have The Origin");
+    }
+
+    function test_OldHolder_CannotClaimAfterChallenge() public {
+        _giveAllTiers(alice);
+        _giveBlocks(bob, 2, 5);
+        _giveBlocks(bob, 3, 5);
+        _giveBlocks(bob, 4, 5);
+        _giveBlocks(bob, 5, 5);
+        _giveBlocks(bob, 6, 5);
+        _giveBlocks(bob, 7, 100);
+
+        vm.warp(block.timestamp + 24 hours);
+        vm.prank(bob);
+        countdown.challengeCountdown();
+
+        vm.deal(address(treasury), 10 ether);
+        vm.warp(block.timestamp + 7 days);
+
+        // Alice (old holder) tries to claim — should revert
+        vm.prank(alice);
+        vm.expectRevert("Not the countdown holder");
+        token.claimTreasury();
+    }
+
+    function test_SyncReset_ClearsChallengeState() public {
+        _giveAllTiers(alice);
+        assertGt(countdown.holderScore(), 0);
+        assertGt(countdown.lastChallengeTime(), 0);
+
+        // Holder loses a tier — checkHolderStatus resets everything
+        vm.prank(alice);
+        token.safeTransferFrom(alice, bob, 2, 1, "");
+        countdown.checkHolderStatus();
+
+        assertEq(countdown.holderScore(), 0, "holderScore should be cleared");
+        assertEq(countdown.lastChallengeTime(), 0, "lastChallengeTime should be cleared");
+    }
+
+    function test_CheckHolderStatus_StillWorksAfterChallenge() public {
+        _giveAllTiers(alice);
+
+        _giveBlocks(bob, 2, 5);
+        _giveBlocks(bob, 3, 5);
+        _giveBlocks(bob, 4, 5);
+        _giveBlocks(bob, 5, 5);
+        _giveBlocks(bob, 6, 5);
+        _giveBlocks(bob, 7, 100);
+
+        vm.warp(block.timestamp + 24 hours);
+        vm.prank(bob);
+        countdown.challengeCountdown();
+
+        // Bob loses ALL of one tier — transfers all 5 T2 away
+        vm.prank(bob);
+        token.safeTransferFrom(bob, carol, 2, 5, "");
+
+        countdown.checkHolderStatus();
+
+        assertFalse(countdown.isActive(), "Countdown should be reset");
+        assertFalse(token.countdownActive(), "Token countdown should be reset");
+    }
 
     // ═════════════════════════════════════════════════════════════════════════
     // 8. ESCROW TESTS (NEW - Phase 2)
@@ -2912,6 +3637,204 @@ contract BlockHuntTest is Test {
         registry.logSeedTransfer(1, 2, 5 ether);
     }
 
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // 14. TEST-MODE SETTER TESTS
+    // ═════════════════════════════════════════════════════════════════════════
+
+    // ── Escrow.setTokenContract ──────────────────────────────────────────────
+
+    function test_Escrow_SetTokenContract_ReCallableInTestMode() public {
+        // Escrow already has tokenContract set from setUp
+        assertEq(escrow.tokenContract(), address(token));
+
+        // Re-calling should work in test mode
+        vm.prank(owner);
+        escrow.setTokenContract(address(alice));
+        assertEq(escrow.tokenContract(), address(alice));
+    }
+
+    function test_Escrow_SetTokenContract_LocksAfterTestModeDisabled() public {
+        vm.startPrank(owner);
+        escrow.disableTestMode();
+        vm.expectRevert("Already set");
+        escrow.setTokenContract(address(alice));
+        vm.stopPrank();
+    }
+
+    // ── Token.setMigrationContract ───────────────────────────────────────────
+
+    function test_Token_SetMigrationContract_ReCallableInTestMode() public {
+        // Migration contract already set from setUp
+        assertTrue(token.migrationContract() != address(0));
+
+        // Re-calling should work while testMintEnabled is true
+        vm.prank(owner);
+        token.setMigrationContract(address(alice));
+        assertEq(token.migrationContract(), address(alice));
+    }
+
+    function test_Token_SetMigrationContract_LocksAfterTestMintDisabled() public {
+        vm.startPrank(owner);
+        token.disableTestMint();
+        vm.expectRevert("Already set");
+        token.setMigrationContract(address(alice));
+        vm.stopPrank();
+    }
+
+    // ── Treasury.setTokenContract (already tested above, added explicit test mode coverage) ─
+
+    function test_Treasury_SetTokenContract_ReCallableInTestMode() public {
+        assertEq(treasury.tokenContract(), address(token));
+
+        vm.prank(owner);
+        treasury.setTokenContract(address(alice));
+        assertEq(treasury.tokenContract(), address(alice));
+    }
+
+    function test_Treasury_SetTokenContract_LocksAfterTestModeDisabled() public {
+        vm.startPrank(owner);
+        treasury.disableTestMode();
+        vm.expectRevert("Already set");
+        treasury.setTokenContract(address(alice));
+        vm.stopPrank();
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // FIX H-4: Royalty 10% Cap
+    // ═════════════════════════════════════════════════════════════════════════
+
+    function test_SetRoyalty_At10Percent() public {
+        vm.prank(owner);
+        token.setRoyalty(alice, 1000); // 10% — should succeed
+        (address receiver, uint256 amount) = token.royaltyInfo(1, 1 ether);
+        assertEq(receiver, alice);
+        assertEq(amount, 0.1 ether);
+    }
+
+    function test_SetRoyalty_Above10Percent_Reverts() public {
+        vm.prank(owner);
+        vm.expectRevert("Exceeds 10% cap");
+        token.setRoyalty(alice, 1001);
+    }
+
+    function test_SetRoyalty_At100Percent_Reverts() public {
+        vm.prank(owner);
+        vm.expectRevert("Exceeds 10% cap");
+        token.setRoyalty(alice, 10000);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // FIX H-1: Token Admin Setter Guards
+    // ═════════════════════════════════════════════════════════════════════════
+
+    function test_Token_SetTreasuryContract_ReCallableInTestMode() public {
+        assertEq(token.treasuryContract(), address(treasury));
+        vm.prank(owner);
+        token.setTreasuryContract(address(alice));
+        assertEq(token.treasuryContract(), address(alice));
+    }
+
+    function test_Token_SetTreasuryContract_LocksAfterTestMintDisabled() public {
+        vm.startPrank(owner);
+        token.disableTestMint();
+        vm.expectRevert("Already set");
+        token.setTreasuryContract(address(alice));
+        vm.stopPrank();
+    }
+
+    function test_Token_SetMintWindowContract_LocksAfterTestMintDisabled() public {
+        vm.startPrank(owner);
+        token.disableTestMint();
+        vm.expectRevert("Already set");
+        token.setMintWindowContract(address(alice));
+        vm.stopPrank();
+    }
+
+    function test_Token_SetForgeContract_LocksAfterTestMintDisabled() public {
+        vm.startPrank(owner);
+        token.disableTestMint();
+        vm.expectRevert("Already set");
+        token.setForgeContract(address(alice));
+        vm.stopPrank();
+    }
+
+    function test_Token_SetCountdownContract_LocksAfterTestMintDisabled() public {
+        vm.startPrank(owner);
+        token.disableTestMint();
+        vm.expectRevert("Already set");
+        token.setCountdownContract(address(alice));
+        vm.stopPrank();
+    }
+
+    function test_Token_SetEscrowContract_LocksAfterTestMintDisabled() public {
+        vm.startPrank(owner);
+        token.disableTestMint();
+        vm.expectRevert("Already set");
+        token.setEscrowContract(address(alice));
+        vm.stopPrank();
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // FIX M-1: Pull-Payment for Sacrifice Winner
+    // ═════════════════════════════════════════════════════════════════════════
+
+    function test_Sacrifice_WinnerMustWithdraw() public {
+        vm.deal(address(treasury), 10 ether);
+        uint256 aliceBefore = alice.balance;
+
+        _giveAllTiers(alice);
+        vm.warp(block.timestamp + 7 days + 1);
+        vm.prank(alice);
+        token.sacrifice();
+
+        // Balance should NOT have changed — pull-payment
+        assertEq(alice.balance, aliceBefore, "Alice should not receive ETH until withdrawal");
+
+        // Withdraw
+        vm.prank(alice);
+        escrow.withdrawWinnerShare();
+        assertApproxEqAbs(alice.balance - aliceBefore, 5 ether, 0.001 ether, "Alice gets 50% after withdraw");
+    }
+
+    function test_Sacrifice_MaliciousContractDoesNotBlockSacrifice() public {
+        // Deploy a contract that reverts on ETH receive
+        RevertOnReceive malicious = new RevertOnReceive();
+        address malAddr = address(malicious);
+
+        vm.deal(address(treasury), 10 ether);
+        _giveAllTiers(malAddr);
+
+        vm.warp(block.timestamp + 7 days + 1);
+
+        // Sacrifice should succeed (stores pendingWithdrawal instead of sending)
+        vm.prank(malAddr);
+        token.sacrifice();
+
+        // Verify pools are correctly set
+        assertApproxEqAbs(escrow.communityPool(), 4 ether, 0.001 ether, "40% community pool set");
+        assertApproxEqAbs(escrow.season2Seed(), 1 ether, 0.001 ether, "10% season2 seed set");
+        assertApproxEqAbs(escrow.pendingWithdrawal(malAddr), 5 ether, 0.001 ether, "50% stored for withdrawal");
+    }
+
+    function test_WithdrawWinnerShare_DoubleWithdraw_Reverts() public {
+        _doSacrifice(10 ether);
+
+        vm.prank(alice);
+        escrow.withdrawWinnerShare();
+
+        vm.prank(alice);
+        vm.expectRevert("Nothing to withdraw");
+        escrow.withdrawWinnerShare();
+    }
+
+    function test_WithdrawWinnerShare_NonWinner_Reverts() public {
+        _doSacrifice(10 ether);
+
+        vm.prank(bob);
+        vm.expectRevert("Nothing to withdraw");
+        escrow.withdrawWinnerShare();
+    }
 
     // ═════════════════════════════════════════════════════════════════════════
     // HELPERS

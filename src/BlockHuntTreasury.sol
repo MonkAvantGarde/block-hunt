@@ -10,6 +10,8 @@ contract BlockHuntTreasury is Ownable, ReentrancyGuard {
     address public creatorWallet;
     address public escrowContract;   // [CHANGED] was countdownContract — receives 100% on sacrifice
 
+    bool public testModeEnabled = true;
+
     uint256 public creatorFeeBps = 1000;
     uint256 public constant MAX_CREATOR_FEE = 1000;
 
@@ -35,8 +37,12 @@ contract BlockHuntTreasury is Ownable, ReentrancyGuard {
     }
 
     function setTokenContract(address addr) external onlyOwner {
-        require(tokenContract == address(0), "Already set");
+        require(tokenContract == address(0) || testModeEnabled, "Already set");
         tokenContract = addr;
+    }
+
+    function disableTestMode() external onlyOwner {
+        testModeEnabled = false;
     }
 
     // [CHANGED] was setCountdownContract — now points to Escrow

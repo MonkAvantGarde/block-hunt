@@ -9,13 +9,13 @@ interface IBlockHuntTokenMint {
 
 contract BlockHuntMintWindow is Ownable {
 
-    uint256 public constant WINDOW_DURATION = 6 hours;
+    uint256 public constant WINDOW_DURATION = 3 hours;
     uint256 public constant TOTAL_BATCHES   = 6;
 
-    // [NEW] Minimum time between window opens. Two windows/day at 08:00 and
-    // 20:00 UTC = 12 hours apart. The keeper calls openWindow() on schedule,
-    // but the on-chain guard means anyone can call it and the timing is safe.
-    uint256 public constant MIN_WINDOW_GAP = 12 hours;
+    // Minimum time between window opens. Three windows/day at 10:00, 18:00,
+    // and 02:00 UTC = 8/8/8 hours apart. 4-hour guard gives 1-hour buffer
+    // against the shortest real gap (5 hours after a 3-hour window).
+    uint256 public constant MIN_WINDOW_GAP = 4 hours;
 
     function batchSupply(uint256 batch) public pure returns (uint256) {
         if (batch == 1) return 500_000;
@@ -28,11 +28,11 @@ contract BlockHuntMintWindow is Ownable {
     }
 
     function windowCapForBatch(uint256 batch) public pure returns (uint256) {
-        if (batch <= 2) return 25_000;
-        if (batch == 3) return 50_000;
-        if (batch == 4) return 100_000;
-        if (batch == 5) return 200_000;
-        return 100_000;
+        if (batch <= 2) return 16_666;
+        if (batch == 3) return 33_333;
+        if (batch == 4) return 66_666;
+        if (batch == 5) return 133_333;
+        return 66_666;
     }
 
     address public tokenContract;
@@ -61,6 +61,8 @@ contract BlockHuntMintWindow is Ownable {
     uint256 public currentBatch;
     uint256 public perUserDayCap = 500;
 
+    bool public testModeEnabled = true;
+
     event WindowOpened(uint256 indexed day, uint256 openAt, uint256 closeAt, uint256 allocated);
     event WindowClosed(uint256 indexed day, uint256 minted, uint256 rollover);
     event BatchAdvanced(uint256 indexed newBatch, uint256 day);
@@ -72,6 +74,7 @@ contract BlockHuntMintWindow is Ownable {
 
     function setTokenContract(address addr) external onlyOwner { tokenContract = addr; }
     function setPerUserDayCap(uint256 cap) external onlyOwner { perUserDayCap = cap; }
+    function disableTestMode() external onlyOwner { testModeEnabled = false; }
 
     /**
      * @notice Opens a new mint window. Settles the previous window if needed.
@@ -91,6 +94,41 @@ contract BlockHuntMintWindow is Ownable {
                 "Too early for next window"
             );
         }
+
+        // Settle previous window if still open
+        Window storage prev = windows[currentDay];
+        if (prev.openAt > 0 && !prev.settled) {
+            _closeWindow(currentDay);
+        }
+
+        currentDay++;
+        uint256 allocated = windowCapForBatch(currentBatch) + rolloverSupply;
+        rolloverSupply = 0;
+
+        windows[currentDay] = Window({
+            day: currentDay,
+            openAt: block.timestamp,
+            closeAt: block.timestamp + WINDOW_DURATION,
+            allocated: allocated,
+            minted: 0,
+            settled: false
+        });
+
+        if (tokenContract != address(0)) {
+            IBlockHuntTokenMint(tokenContract).resetDailyWindow(currentDay);
+        }
+
+        _checkBatchAdvancement();
+        emit WindowOpened(currentDay, block.timestamp, block.timestamp + WINDOW_DURATION, allocated);
+    }
+
+    /**
+     * @notice Owner-only: force open a mint window, bypassing time guard.
+     * @dev Only works when testModeEnabled is true. Will be disabled before mainnet
+     *      along with mintForTest. Respects all other window logic (duration, caps, etc).
+     */
+    function forceOpenWindow() external onlyOwner {
+        require(testModeEnabled, "Test mode disabled");
 
         // Settle previous window if still open
         Window storage prev = windows[currentDay];

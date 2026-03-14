@@ -12,7 +12,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
  * ║                                                              ║
  * ║  Split: 50% winner | 40% community pool | 10% Season 2 seed ║
  * ║                                                              ║
- * ║  Winner's 50% is sent immediately at sacrifice time.         ║
+ * ║  Winner's 50% is stored for pull-payment withdrawal.         ║
  * ║  40% is held for top-100 leaderboard claims (30-day window). ║
  * ║  10% is held until Season 2 treasury address is confirmed.   ║
  * ║                                                              ║
@@ -29,6 +29,8 @@ contract BlockHuntEscrow is Ownable, ReentrancyGuard {
     address public keeperAddress;
     address public season2TreasuryAddress;
 
+    bool public testModeEnabled = true;
+
     // ── Constants ───────────────────────────────────────────────────────────
     uint256 public constant CLAIM_WINDOW = 30 days;
 
@@ -44,6 +46,7 @@ contract BlockHuntEscrow is Ownable, ReentrancyGuard {
     mapping(address => uint256) public leaderboardEntitlement;  // player → claimable ETH
     address[] private _entitlementList;                         // tracks who has an entitlement
     mapping(address => bool) public hasClaimed;                 // prevents double-claims
+    mapping(address => uint256) public pendingWithdrawal;       // winner's 50% (pull-payment)
 
     // ── Events ──────────────────────────────────────────────────────────────
     event SacrificeReceived(address indexed winner, uint256 winnerShare, uint256 communityPool, uint256 season2Seed);
@@ -51,6 +54,7 @@ contract BlockHuntEscrow is Ownable, ReentrancyGuard {
     event LeaderboardRewardClaimed(address indexed player, uint256 amount);
     event Season2SeedReleased(address indexed to, uint256 amount);
     event UnclaimedRewardsSwept(address indexed to, uint256 amount);
+    event WinnerShareWithdrawn(address indexed winner, uint256 amount);
 
     // ── Constructor ─────────────────────────────────────────────────────────
     constructor(address keeperAddress_) Ownable(msg.sender) {
@@ -72,9 +76,13 @@ contract BlockHuntEscrow is Ownable, ReentrancyGuard {
     // ── Owner setup (call during deployment, before renouncing ownership) ──
 
     function setTokenContract(address addr) external onlyOwner {
-        require(tokenContract == address(0), "Already set");
+        require(tokenContract == address(0) || testModeEnabled, "Already set");
         require(addr != address(0), "Invalid address");
         tokenContract = addr;
+    }
+
+    function disableTestMode() external onlyOwner {
+        testModeEnabled = false;
     }
 
     // Keeper-callable: set once Season 2 treasury is deployed and registered.
@@ -104,9 +112,8 @@ contract BlockHuntEscrow is Ownable, ReentrancyGuard {
         season2Seed         = seedShare;
         claimWindowExpiry   = block.timestamp + CLAIM_WINDOW;
 
-        // 50% to winner immediately
-        (bool sent, ) = payable(winner).call{value: winnerShare}("");
-        require(sent, "Winner payout failed");
+        // 50% stored for winner to withdraw (pull-payment prevents griefing)
+        pendingWithdrawal[winner] = winnerShare;
 
         emit SacrificeReceived(winner, winnerShare, community, seedShare);
     }
@@ -164,6 +171,24 @@ contract BlockHuntEscrow is Ownable, ReentrancyGuard {
         require(sent, "Claim transfer failed");
 
         emit LeaderboardRewardClaimed(msg.sender, amount);
+    }
+
+    // ── Winner withdraws their 50% share ─────────────────────────────────────
+
+    /**
+     * @notice Winner withdraws their 50% share after sacrifice.
+     * @dev Pull-payment pattern prevents griefing by contract holders.
+     */
+    function withdrawWinnerShare() external nonReentrant {
+        uint256 amount = pendingWithdrawal[msg.sender];
+        require(amount > 0, "Nothing to withdraw");
+
+        pendingWithdrawal[msg.sender] = 0;
+
+        (bool sent, ) = payable(msg.sender).call{value: amount}("");
+        require(sent, "Transfer failed");
+
+        emit WinnerShareWithdrawn(msg.sender, amount);
     }
 
     // ── Release 10% seed to Season 2 treasury ───────────────────────────────

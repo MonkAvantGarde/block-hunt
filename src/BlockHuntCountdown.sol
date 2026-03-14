@@ -17,7 +17,9 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 
 interface IBlockHuntTokenCountdown {
     function hasAllTiers(address player) external view returns (bool);
+    function balancesOf(address player) external view returns (uint256[8] memory);
     function resetExpiredHolder() external;
+    function updateCountdownHolder(address newHolder) external;
 }
 
 contract BlockHuntCountdown is Ownable {
@@ -32,22 +34,65 @@ contract BlockHuntCountdown is Ownable {
 
     uint256 public votesBurn;
     uint256 public votesClaim;
-    mapping(address => bool) public hasVoted;
-    address[] private _voterList;
+    uint256 public countdownRound;
+    mapping(uint256 => mapping(address => bool)) public hasVoted;
 
     uint256 public season;
+
+    // ── Challenge mechanic ───────────────────────────────────────────────────
+    uint256 public holderScore;
+    uint256 public lastChallengeTime;
+    uint256 public constant CHALLENGE_COOLDOWN = 24 hours;
+
+    // Scoring weights — compressed exponential based on tier economic cost
+    uint256 public constant WEIGHT_T2 = 10000;
+    uint256 public constant WEIGHT_T3 = 2000;
+    uint256 public constant WEIGHT_T4 = 500;
+    uint256 public constant WEIGHT_T5 = 100;
+    uint256 public constant WEIGHT_T6 = 20;
+    uint256 public constant WEIGHT_T7 = 1;
 
     // ── Events ──────────────────────────────────────────────────────────────
     event CountdownStarted(address indexed holder, uint256 startTime, uint256 endTime);
     event CountdownEnded(address indexed formerHolder);
     event VoteCast(address indexed voter, bool burnVote);
     event CountdownReset(address indexed formerHolder);
+    event CountdownChallenged(
+        address indexed challenger,
+        uint256 challengerScore,
+        address indexed previousHolder,
+        uint256 previousHolderScore,
+        bool success
+    );
+    event CountdownShifted(
+        address indexed newHolder,
+        address indexed previousHolder,
+        uint256 newScore,
+        uint256 timestamp
+    );
 
     constructor() Ownable(msg.sender) {
         season = 1;
     }
 
     function setTokenContract(address addr) external onlyOwner { tokenContract = addr; }
+
+    // ── SCORING ──────────────────────────────────────────────────────────────
+
+    /**
+     * @notice Calculate a player's weighted score based on tier balances.
+     * @dev Reads balances from Token contract. T1 (Origin) excluded.
+     *      Score = (T2 × 10,000) + (T3 × 2,000) + (T4 × 500) + (T5 × 100) + (T6 × 20) + (T7 × 1)
+     */
+    function calculateScore(address player) public view returns (uint256) {
+        uint256[8] memory bals = IBlockHuntTokenCountdown(tokenContract).balancesOf(player);
+        return bals[2] * WEIGHT_T2
+             + bals[3] * WEIGHT_T3
+             + bals[4] * WEIGHT_T4
+             + bals[5] * WEIGHT_T5
+             + bals[6] * WEIGHT_T6
+             + bals[7] * WEIGHT_T7;
+    }
 
     // ── Called by BlockHuntToken when a player triggers the countdown ─────────
 
@@ -60,8 +105,49 @@ contract BlockHuntCountdown is Ownable {
         countdownStartTime = block.timestamp;
         votesBurn          = 0;
         votesClaim         = 0;
+        holderScore        = calculateScore(holder);
+        lastChallengeTime  = block.timestamp;
 
         emit CountdownStarted(holder, block.timestamp, block.timestamp + COUNTDOWN_DURATION);
+    }
+
+    // ── CHALLENGE ─────────────────────────────────────────────────────────────
+
+    /**
+     * @notice Challenge the current countdown holder. If the challenger holds
+     *         all 6 tiers AND has a strictly higher live score, the countdown
+     *         resets to 7 days under the challenger.
+     */
+    function challengeCountdown() external {
+        require(isActive, "No active countdown");
+        require(msg.sender != currentHolder, "Holder cannot self-challenge");
+
+        IBlockHuntTokenCountdown token = IBlockHuntTokenCountdown(tokenContract);
+        require(token.hasAllTiers(msg.sender), "Must hold all 6 tiers");
+
+        require(
+            block.timestamp >= lastChallengeTime + CHALLENGE_COOLDOWN,
+            "Challenge cooldown active"
+        );
+
+        uint256 challengerScore = calculateScore(msg.sender);
+        uint256 currentHolderScore = calculateScore(currentHolder);
+        require(challengerScore > currentHolderScore, "Score not high enough");
+
+        address oldHolder = currentHolder;
+        uint256 oldScore = currentHolderScore;
+
+        // Update Countdown state
+        currentHolder     = msg.sender;
+        holderScore       = challengerScore;
+        lastChallengeTime = block.timestamp;
+        countdownStartTime = block.timestamp;
+
+        // Sync Token state — updates countdownHolder + countdownStartTime on Token
+        token.updateCountdownHolder(msg.sender);
+
+        emit CountdownChallenged(msg.sender, challengerScore, oldHolder, oldScore, true);
+        emit CountdownShifted(msg.sender, oldHolder, challengerScore, block.timestamp);
     }
 
     /**
@@ -99,9 +185,8 @@ contract BlockHuntCountdown is Ownable {
      */
     function castVote(bool burnVote) external {
         require(isActive, "No active countdown");
-        require(!hasVoted[msg.sender], "Already voted");
-        hasVoted[msg.sender] = true;
-        _voterList.push(msg.sender);
+        require(!hasVoted[countdownRound][msg.sender], "Already voted");
+        hasVoted[countdownRound][msg.sender] = true;
         if (burnVote) {
             votesBurn++;
         } else {
@@ -150,9 +235,8 @@ contract BlockHuntCountdown is Ownable {
         countdownStartTime = 0;
         votesBurn          = 0;
         votesClaim         = 0;
-        for (uint256 i = 0; i < _voterList.length; i++) {
-            hasVoted[_voterList[i]] = false;
-        }
-        delete _voterList;
+        holderScore        = 0;
+        lastChallengeTime  = 0;
+        countdownRound++;
     }
 }

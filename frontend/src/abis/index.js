@@ -1,15 +1,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // abis/index.js — Contract ABIs for The Block Hunt
 //
-// Updated: March 12, 2026 — Session 15
-// Changes:
-//   - Removed old MINT_PRICE (replaced by currentMintPrice + batch pricing)
-//   - Added currentMintPrice() on Token
-//   - Updated sacrifice() and executeDefaultOnExpiry() — NO params (Phase 2)
-//   - Added forgeBatch() on Forge
-//   - Added currentBatch(), windowCapForBatch() on MintWindow
-//   - Added castVote(), burnVotes/claimVotes to Countdown
-//   - Added full BlockHuntEscrow ABI (new contract)
+// Updated: March 14, 2026 — Phase 5 (Audit Fixes)
+// Regenerated from compiled artifacts after:
+//   - H-1: Token setter guards (test-mode-gated)
+//   - H-3: Countdown round-based voting (countdownRound, challengeCountdown)
+//   - H-4: Royalty 10% cap
+//   - M-1: Escrow pull-payment (withdrawWinnerShare)
 // ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -36,7 +33,7 @@ export const TOKEN_ABI = [
     inputs: [{ name: 'player', type: 'address' }],
     outputs: [{ name: '', type: 'uint256[]' }] },
   { name: 'vrfMintRequests', type: 'function', stateMutability: 'view',
-    inputs: [{ name: 'requestId', type: 'uint256' }],
+    inputs: [{ name: '', type: 'uint256' }],
     outputs: [
       { name: 'player', type: 'address' }, { name: 'quantity', type: 'uint256' },
       { name: 'amountPaid', type: 'uint256' }, { name: 'requestedAt', type: 'uint256' },
@@ -54,10 +51,8 @@ export const TOKEN_ABI = [
     inputs: [{ name: 'fromTiers', type: 'uint256[]' }], outputs: [] },
   { name: 'claimTreasury', type: 'function', stateMutability: 'nonpayable',
     inputs: [], outputs: [] },
-  // Phase 2: sacrifice takes NO params
   { name: 'sacrifice', type: 'function', stateMutability: 'nonpayable',
     inputs: [], outputs: [] },
-  // Phase 2: permissionless default action after countdown expires
   { name: 'executeDefaultOnExpiry', type: 'function', stateMutability: 'nonpayable',
     inputs: [], outputs: [] },
   { name: 'claimHolderStatus', type: 'function', stateMutability: 'nonpayable',
@@ -65,16 +60,17 @@ export const TOKEN_ABI = [
 
   // ── Events ──
   { name: 'MintRequested', type: 'event', inputs: [
-    { name: 'requestId', type: 'uint256', indexed: true },
     { name: 'player', type: 'address', indexed: true },
+    { name: 'requestId', type: 'uint256', indexed: true },
     { name: 'quantity', type: 'uint256', indexed: false }] },
   { name: 'MintFulfilled', type: 'event', inputs: [
-    { name: 'requestId', type: 'uint256', indexed: true },
     { name: 'player', type: 'address', indexed: true },
+    { name: 'requestId', type: 'uint256', indexed: true },
     { name: 'quantity', type: 'uint256', indexed: false }] },
   { name: 'MintCancelled', type: 'event', inputs: [
+    { name: 'player', type: 'address', indexed: true },
     { name: 'requestId', type: 'uint256', indexed: true },
-    { name: 'player', type: 'address', indexed: true }] },
+    { name: 'refundAmount', type: 'uint256', indexed: false }] },
   { name: 'BlockMinted', type: 'event', inputs: [
     { name: 'to', type: 'address', indexed: true },
     { name: 'quantity', type: 'uint256', indexed: false }] },
@@ -85,7 +81,7 @@ export const TOKEN_ABI = [
   { name: 'CountdownTriggered', type: 'event', inputs: [
     { name: 'holder', type: 'address', indexed: true }] },
   { name: 'CountdownHolderReset', type: 'event', inputs: [
-    { name: 'previousHolder', type: 'address', indexed: true }] },
+    { name: 'formerHolder', type: 'address', indexed: true }] },
 ];
 
 
@@ -102,12 +98,15 @@ export const WINDOW_ABI = [
     ] },
   { name: 'isWindowOpen', type: 'function', stateMutability: 'view',
     inputs: [], outputs: [{ name: '', type: 'bool' }] },
-  // Phase 2: batch number (1-6), advances when supply exhausted
   { name: 'currentBatch', type: 'function', stateMutability: 'view',
+    inputs: [], outputs: [{ name: '', type: 'uint256' }] },
+  { name: 'currentDay', type: 'function', stateMutability: 'view',
     inputs: [], outputs: [{ name: '', type: 'uint256' }] },
   { name: 'windowCapForBatch', type: 'function', stateMutability: 'pure',
     inputs: [{ name: 'batch', type: 'uint256' }],
     outputs: [{ name: '', type: 'uint256' }] },
+  { name: 'perUserDayCap', type: 'function', stateMutability: 'view',
+    inputs: [], outputs: [{ name: '', type: 'uint256' }] },
 ];
 
 
@@ -138,6 +137,45 @@ export const COUNTDOWN_ABI = [
     inputs: [], outputs: [{ name: '', type: 'uint256' }] },
   { name: 'hasExpired', type: 'function', stateMutability: 'view',
     inputs: [], outputs: [{ name: '', type: 'bool' }] },
+  // Phase 5: challenge mechanic — any player with higher score can take holder slot
+  { name: 'challengeCountdown', type: 'function', stateMutability: 'nonpayable',
+    inputs: [], outputs: [] },
+  // Phase 5: on-chain score calculation (weighted tier balances)
+  { name: 'calculateScore', type: 'function', stateMutability: 'view',
+    inputs: [{ name: 'player', type: 'address' }],
+    outputs: [{ name: '', type: 'uint256' }] },
+  // Phase 5: round-based voting (H-3 fix — replaces voter list)
+  { name: 'countdownRound', type: 'function', stateMutability: 'view',
+    inputs: [], outputs: [{ name: '', type: 'uint256' }] },
+  { name: 'hasVoted', type: 'function', stateMutability: 'view',
+    inputs: [{ name: '', type: 'uint256' }, { name: '', type: 'address' }],
+    outputs: [{ name: '', type: 'bool' }] },
+  { name: 'holderScore', type: 'function', stateMutability: 'view',
+    inputs: [], outputs: [{ name: '', type: 'uint256' }] },
+  { name: 'lastChallengeTime', type: 'function', stateMutability: 'view',
+    inputs: [], outputs: [{ name: '', type: 'uint256' }] },
+
+  // ── Events ──
+  { name: 'CountdownStarted', type: 'event', inputs: [
+    { name: 'holder', type: 'address', indexed: true },
+    { name: 'startTime', type: 'uint256', indexed: false },
+    { name: 'endTime', type: 'uint256', indexed: false }] },
+  { name: 'CountdownChallenged', type: 'event', inputs: [
+    { name: 'challenger', type: 'address', indexed: true },
+    { name: 'challengerScore', type: 'uint256', indexed: false },
+    { name: 'previousHolder', type: 'address', indexed: true },
+    { name: 'previousHolderScore', type: 'uint256', indexed: false },
+    { name: 'success', type: 'bool', indexed: false }] },
+  { name: 'CountdownShifted', type: 'event', inputs: [
+    { name: 'newHolder', type: 'address', indexed: true },
+    { name: 'previousHolder', type: 'address', indexed: true },
+    { name: 'newScore', type: 'uint256', indexed: false },
+    { name: 'timestamp', type: 'uint256', indexed: false }] },
+  { name: 'CountdownReset', type: 'event', inputs: [
+    { name: 'formerHolder', type: 'address', indexed: true }] },
+  { name: 'VoteCast', type: 'event', inputs: [
+    { name: 'voter', type: 'address', indexed: true },
+    { name: 'burnVote', type: 'bool', indexed: false }] },
 ];
 
 
@@ -149,7 +187,6 @@ export const FORGE_ABI = [
       { name: 'fromTier', type: 'uint256' },
       { name: 'burnCount', type: 'uint256' },
     ], outputs: [] },
-  // Phase 2: batch forge — N attempts, 1 VRF word
   { name: 'forgeBatch', type: 'function', stateMutability: 'payable',
     inputs: [
       { name: 'fromTiers', type: 'uint256[]' },
@@ -169,14 +206,14 @@ export const FORGE_ABI = [
 ];
 
 
-// ── ESCROW CONTRACT (BlockHuntEscrow) — NEW ──────────────────────────────────
+// ── ESCROW CONTRACT (BlockHuntEscrow) ─────────────────────────────────────────
 
 export const ESCROW_ABI = [
   { name: 'getEscrowInfo', type: 'function', stateMutability: 'view',
     inputs: [],
     outputs: [
-      { name: 'sacrificeExecuted', type: 'bool' },
-      { name: 'entitlementsSet', type: 'bool' },
+      { name: 'isSacrificeExecuted', type: 'bool' },
+      { name: 'areEntitlementsSet', type: 'bool' },
       { name: 'pool', type: 'uint256' },
       { name: 'seed', type: 'uint256' },
       { name: 'claimExpiry', type: 'uint256' },
@@ -185,11 +222,36 @@ export const ESCROW_ABI = [
   { name: 'claimLeaderboardReward', type: 'function', stateMutability: 'nonpayable',
     inputs: [], outputs: [] },
   { name: 'leaderboardEntitlement', type: 'function', stateMutability: 'view',
-    inputs: [{ name: 'player', type: 'address' }],
+    inputs: [{ name: '', type: 'address' }],
     outputs: [{ name: '', type: 'uint256' }] },
   { name: 'hasClaimed', type: 'function', stateMutability: 'view',
-    inputs: [{ name: 'player', type: 'address' }],
+    inputs: [{ name: '', type: 'address' }],
     outputs: [{ name: '', type: 'bool' }] },
   { name: 'communityPool', type: 'function', stateMutability: 'view',
     inputs: [], outputs: [{ name: '', type: 'uint256' }] },
+  // Phase 5: pull-payment for winner's 50% (M-1 fix)
+  { name: 'withdrawWinnerShare', type: 'function', stateMutability: 'nonpayable',
+    inputs: [], outputs: [] },
+  { name: 'pendingWithdrawal', type: 'function', stateMutability: 'view',
+    inputs: [{ name: '', type: 'address' }],
+    outputs: [{ name: '', type: 'uint256' }] },
+
+  // ── Events ──
+  { name: 'SacrificeReceived', type: 'event', inputs: [
+    { name: 'winner', type: 'address', indexed: true },
+    { name: 'winnerShare', type: 'uint256', indexed: false },
+    { name: 'communityPool', type: 'uint256', indexed: false },
+    { name: 'season2Seed', type: 'uint256', indexed: false }] },
+  { name: 'LeaderboardRewardClaimed', type: 'event', inputs: [
+    { name: 'player', type: 'address', indexed: true },
+    { name: 'amount', type: 'uint256', indexed: false }] },
+  { name: 'WinnerShareWithdrawn', type: 'event', inputs: [
+    { name: 'winner', type: 'address', indexed: true },
+    { name: 'amount', type: 'uint256', indexed: false }] },
+  { name: 'Season2SeedReleased', type: 'event', inputs: [
+    { name: 'to', type: 'address', indexed: true },
+    { name: 'amount', type: 'uint256', indexed: false }] },
+  { name: 'UnclaimedRewardsSwept', type: 'event', inputs: [
+    { name: 'to', type: 'address', indexed: true },
+    { name: 'amount', type: 'uint256', indexed: false }] },
 ];
