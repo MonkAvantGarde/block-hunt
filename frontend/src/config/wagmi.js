@@ -60,12 +60,12 @@ export const CONTRACTS = {
 // Mint price is batch-dependent — read current batch from contract, then look up here.
 // Keys are batch numbers (1–6) matching the on-chain batch index.
 export const BATCH_PRICES_ETH = {
-  1: 0.00008,
-  2: 0.00016,
-  3: 0.00032,
-  4: 0.00080,
-  5: 0.00160,
-  6: 0.00200,
+  1: 0.000004,
+  2: 0.000008,
+  3: 0.000016,
+  4: 0.000040,
+  5: 0.000080,
+  6: 0.000100,
 }
 
 // Helper — pass the current batch number returned by the contract

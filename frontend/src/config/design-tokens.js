@@ -59,8 +59,8 @@ export const COMBINE_RATIOS = { 7:20, 6:20, 5:30, 4:30, 3:50 };
 export const FORGE_RATIOS = { 7:20, 6:20, 5:30, 4:30, 3:50 };
 
 export const BATCH_PRICES_ETH = {
-  1: 0.00008, 2: 0.00016, 3: 0.00032,
-  4: 0.00080, 5: 0.00160, 6: 0.00200,
+  1: 0.000004, 2: 0.000008, 3: 0.000016,
+  4: 0.000040, 5: 0.000080, 6: 0.000100,
 };
 
 export const BATCH_SUPPLY = {
