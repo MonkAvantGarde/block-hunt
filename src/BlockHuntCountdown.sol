@@ -7,24 +7,24 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  * ╔══════════════════════════════════════════════════════════════╗
  * ║          THE BLOCK HUNT — COUNTDOWN CONTRACT                 ║
  * ║                                                              ║
- * ║  Pure game logic: 7-day timer, community vote, holder check. ║
+ * ║  Pure game logic: countdown timer, takeover, community vote. ║
  * ║  No ETH flows through this contract.                         ║
- * ║                                                              ║
- * ║  Financial logic (50/40/10 split, claims, sweep) lives in    ║
- * ║  BlockHuntEscrow — a separate, dedicated custodial contract. ║
  * ╚══════════════════════════════════════════════════════════════╝
  */
 
 interface IBlockHuntTokenCountdown {
     function hasAllTiers(address player) external view returns (bool);
     function balancesOf(address player) external view returns (uint256[8] memory);
+    function balanceOf(address account, uint256 id) external view returns (uint256);
     function resetExpiredHolder() external;
     function updateCountdownHolder(address newHolder) external;
 }
 
 contract BlockHuntCountdown is Ownable {
 
-    uint256 public constant COUNTDOWN_DURATION = 7 days;
+    // ── Configurable durations (test-mode setters below) ──────────────────
+    uint256 public countdownDuration = 7 days;
+    uint256 public safePeriod = 1 days;
 
     address public tokenContract;
 
@@ -39,12 +39,12 @@ contract BlockHuntCountdown is Ownable {
 
     uint256 public season;
 
-    // ── Challenge mechanic ───────────────────────────────────────────────────
-    uint256 public holderScore;
-    uint256 public lastChallengeTime;
-    uint256 public constant CHALLENGE_COOLDOWN = 24 hours;
+    // ── Takeover mechanic ─────────────────────────────────────────────────
+    uint256 public takeoverCount;
 
-    // Scoring weights — compressed exponential based on tier economic cost
+    bool public testModeEnabled = true;
+
+    // ── Scoring weights — compressed exponential based on tier economic cost
     uint256 public constant WEIGHT_T2 = 10000;
     uint256 public constant WEIGHT_T3 = 2000;
     uint256 public constant WEIGHT_T4 = 500;
@@ -52,11 +52,16 @@ contract BlockHuntCountdown is Ownable {
     uint256 public constant WEIGHT_T6 = 20;
     uint256 public constant WEIGHT_T7 = 1;
 
-    // ── Events ──────────────────────────────────────────────────────────────
+    // ── For backward compat with frontend — keep holderScore/lastChallengeTime
+    uint256 public holderScore;
+    uint256 public lastChallengeTime;
+
+    // ── Events ────────────────────────────────────────────────────────────
     event CountdownStarted(address indexed holder, uint256 startTime, uint256 endTime);
     event CountdownEnded(address indexed formerHolder);
     event VoteCast(address indexed voter, bool burnVote);
     event CountdownReset(address indexed formerHolder);
+    event CountdownTakeover(address indexed newHolder, address indexed prevHolder, uint256 takeoverCount);
     event CountdownChallenged(
         address indexed challenger,
         uint256 challengerScore,
@@ -77,13 +82,24 @@ contract BlockHuntCountdown is Ownable {
 
     function setTokenContract(address addr) external onlyOwner { tokenContract = addr; }
 
-    // ── SCORING ──────────────────────────────────────────────────────────────
+    // ── Test-mode setters ─────────────────────────────────────────────────
 
-    /**
-     * @notice Calculate a player's weighted score based on tier balances.
-     * @dev Reads balances from Token contract. T1 (Origin) excluded.
-     *      Score = (T2 × 10,000) + (T3 × 2,000) + (T4 × 500) + (T5 × 100) + (T6 × 20) + (T7 × 1)
-     */
+    function setSafePeriod(uint256 _safePeriod) external onlyOwner {
+        require(testModeEnabled, "Test mode disabled");
+        safePeriod = _safePeriod;
+    }
+
+    function setCountdownDuration(uint256 _duration) external onlyOwner {
+        require(testModeEnabled, "Test mode disabled");
+        countdownDuration = _duration;
+    }
+
+    function disableTestMode() external onlyOwner {
+        testModeEnabled = false;
+    }
+
+    // ── SCORING ───────────────────────────────────────────────────────────
+
     function calculateScore(address player) public view returns (uint256) {
         uint256[8] memory bals = IBlockHuntTokenCountdown(tokenContract).balancesOf(player);
         return bals[2] * WEIGHT_T2
@@ -94,7 +110,35 @@ contract BlockHuntCountdown is Ownable {
              + bals[7] * WEIGHT_T7;
     }
 
-    // ── Called by BlockHuntToken when a player triggers the countdown ─────────
+    // ── Ranking: primary = distinct tiers, tiebreaker = total blocks ──────
+
+    function _countDistinctTiers(address player) internal view returns (uint256) {
+        IBlockHuntTokenCountdown token = IBlockHuntTokenCountdown(tokenContract);
+        uint256 count;
+        for (uint256 t = 2; t <= 7; t++) {
+            if (token.balanceOf(player, t) > 0) count++;
+        }
+        return count;
+    }
+
+    function _totalBlocks(address player) internal view returns (uint256) {
+        uint256[8] memory bals = IBlockHuntTokenCountdown(tokenContract).balancesOf(player);
+        uint256 total;
+        for (uint256 t = 2; t <= 7; t++) {
+            total += bals[t];
+        }
+        return total;
+    }
+
+    function _ranksAbove(address challenger, address holder) internal view returns (bool) {
+        uint256 cTiers = _countDistinctTiers(challenger);
+        uint256 hTiers = _countDistinctTiers(holder);
+        if (cTiers > hTiers) return true;
+        if (cTiers < hTiers) return false;
+        return _totalBlocks(challenger) > _totalBlocks(holder);
+    }
+
+    // ── Called by BlockHuntToken when a player triggers the countdown ──────
 
     function startCountdown(address holder) external {
         require(msg.sender == tokenContract, "Only token contract");
@@ -108,15 +152,16 @@ contract BlockHuntCountdown is Ownable {
         holderScore        = calculateScore(holder);
         lastChallengeTime  = block.timestamp;
 
-        emit CountdownStarted(holder, block.timestamp, block.timestamp + COUNTDOWN_DURATION);
+        emit CountdownStarted(holder, block.timestamp, block.timestamp + countdownDuration);
     }
 
-    // ── CHALLENGE ─────────────────────────────────────────────────────────────
+    // ── TAKEOVER (v2.1: rank-based) ───────────────────────────────────────
 
     /**
-     * @notice Challenge the current countdown holder. If the challenger holds
-     *         all 6 tiers AND has a strictly higher live score, the countdown
-     *         resets to 7 days under the challenger.
+     * @notice Challenge the current countdown holder. Challenger must hold
+     *         all 6 tiers AND rank above the holder (primary: distinct tiers,
+     *         tiebreaker: total blocks held). 24-hour safe period after each
+     *         trigger/takeover.
      */
     function challengeCountdown() external {
         require(isActive, "No active countdown");
@@ -126,35 +171,30 @@ contract BlockHuntCountdown is Ownable {
         require(token.hasAllTiers(msg.sender), "Must hold all 6 tiers");
 
         require(
-            block.timestamp >= lastChallengeTime + CHALLENGE_COOLDOWN,
+            block.timestamp >= lastChallengeTime + safePeriod,
             "Challenge cooldown active"
         );
 
-        uint256 challengerScore = calculateScore(msg.sender);
-        uint256 currentHolderScore = calculateScore(currentHolder);
-        require(challengerScore > currentHolderScore, "Score not high enough");
+        require(_ranksAbove(msg.sender, currentHolder), "Must rank above holder");
 
         address oldHolder = currentHolder;
-        uint256 oldScore = currentHolderScore;
+        uint256 challengerScore = calculateScore(msg.sender);
+        uint256 oldScore = calculateScore(oldHolder);
 
-        // Update Countdown state
-        currentHolder     = msg.sender;
-        holderScore       = challengerScore;
-        lastChallengeTime = block.timestamp;
+        currentHolder      = msg.sender;
+        holderScore        = challengerScore;
+        lastChallengeTime  = block.timestamp;
         countdownStartTime = block.timestamp;
+        takeoverCount++;
 
-        // Sync Token state — updates countdownHolder + countdownStartTime on Token
+        // Sync Token state
         token.updateCountdownHolder(msg.sender);
 
+        emit CountdownTakeover(msg.sender, oldHolder, takeoverCount);
         emit CountdownChallenged(msg.sender, challengerScore, oldHolder, oldScore, true);
         emit CountdownShifted(msg.sender, oldHolder, challengerScore, block.timestamp);
     }
 
-    /**
-     * @notice Called by BlockHuntToken after any endgame execution
-     *         (claim, sacrifice, or default sacrifice).
-     *         Resets this contract's state so it accurately reflects reality.
-     */
     function syncReset() external {
         require(msg.sender == tokenContract, "Only token contract");
         address former = currentHolder;
@@ -162,11 +202,6 @@ contract BlockHuntCountdown is Ownable {
         emit CountdownEnded(former);
     }
 
-    /**
-     * @notice Called by anyone (typically Gelato keeper) to check whether the
-     *         countdown holder still qualifies. If they transferred away a
-     *         required tier, resets the countdown so a new holder can start.
-     */
     function checkHolderStatus() external {
         if (!isActive) return;
         bool stillHolds = IBlockHuntTokenCountdown(tokenContract).hasAllTiers(currentHolder);
@@ -178,11 +213,6 @@ contract BlockHuntCountdown is Ownable {
         }
     }
 
-    /**
-     * @notice Community vote — any wallet can vote once per countdown.
-     *         Social signal only. Does not restrict the holder's choice.
-     * @param burnVote true = vote for Sacrifice, false = vote for Claim
-     */
     function castVote(bool burnVote) external {
         require(isActive, "No active countdown");
         require(!hasVoted[countdownRound][msg.sender], "Already voted");
@@ -195,18 +225,18 @@ contract BlockHuntCountdown is Ownable {
         emit VoteCast(msg.sender, burnVote);
     }
 
-    // ── VIEW HELPERS ────────────────────────────────────────────────────────
+    // ── VIEW HELPERS ──────────────────────────────────────────────────────
 
     function timeRemaining() external view returns (uint256) {
         if (!isActive) return 0;
-        uint256 endTime = countdownStartTime + COUNTDOWN_DURATION;
+        uint256 endTime = countdownStartTime + countdownDuration;
         if (block.timestamp >= endTime) return 0;
         return endTime - block.timestamp;
     }
 
     function hasExpired() external view returns (bool) {
         if (!isActive) return false;
-        return block.timestamp >= countdownStartTime + COUNTDOWN_DURATION;
+        return block.timestamp >= countdownStartTime + countdownDuration;
     }
 
     function getCountdownInfo() external view returns (
@@ -221,13 +251,13 @@ contract BlockHuntCountdown is Ownable {
         active     = isActive;
         holder     = currentHolder;
         startTime  = countdownStartTime;
-        endTime    = isActive ? countdownStartTime + COUNTDOWN_DURATION : 0;
+        endTime    = isActive ? countdownStartTime + countdownDuration : 0;
         remaining  = this.timeRemaining();
         burnVotes  = votesBurn;
         claimVotes = votesClaim;
     }
 
-    // ── INTERNAL ────────────────────────────────────────────────────────────
+    // ── INTERNAL ──────────────────────────────────────────────────────────
 
     function _resetCountdown() internal {
         isActive           = false;
@@ -237,6 +267,7 @@ contract BlockHuntCountdown is Ownable {
         votesClaim         = 0;
         holderScore        = 0;
         lastChallengeTime  = 0;
+        takeoverCount      = 0;
         countdownRound++;
     }
 }

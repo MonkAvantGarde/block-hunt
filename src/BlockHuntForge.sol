@@ -411,11 +411,11 @@ contract BlockHuntForge is VRFConsumerBaseV2Plus, ReentrancyGuard {
     // ── Probability helpers ───────────────────────────────────────────────────
 
     function _combineRatioForTier(uint256 fromTier) internal pure returns (uint256) {
-        if (fromTier == 7) return 20;
-        if (fromTier == 6) return 20;
-        if (fromTier == 5) return 30;
-        if (fromTier == 4) return 30;
-        if (fromTier == 3) return 50;
+        if (fromTier == 7) return 21;
+        if (fromTier == 6) return 19;
+        if (fromTier == 5) return 17;
+        if (fromTier == 4) return 15;
+        if (fromTier == 3) return 13;
         revert InvalidTierForForge();
     }
 

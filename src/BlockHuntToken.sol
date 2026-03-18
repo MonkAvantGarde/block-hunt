@@ -27,7 +27,8 @@ interface IBlockHuntMint {
     function isWindowOpen() external view returns (bool);
     function recordMint(address minter, uint256 quantity) external;
     function currentBatch() external view returns (uint256);
-    function windowCapForBatch(uint256 batch) external pure returns (uint256);
+    function windowCapForBatch(uint256 batch) external view returns (uint256);
+    function batchPrice(uint256 batch) external view returns (uint256);
 }
 
 interface IBlockHuntCountdown {
@@ -59,14 +60,16 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
 
     function setMintPrice(uint256 batch, uint256 price) external onlyOwner {
         require(testMintEnabled, "Test mode disabled");
-        require(batch >= 1 && batch <= 6, "Invalid batch");
+        require(batch >= 1 && batch <= 10, "Invalid batch");
         mintPriceForBatch[batch] = price;
     }
 
     function currentMintPrice() public view returns (uint256) {
         if (mintWindowContract == address(0)) return mintPriceForBatch[1];
         uint256 batch = IBlockHuntMint(mintWindowContract).currentBatch();
-        return mintPriceForBatch[batch];
+        // Prefer MintWindow price; fall back to local mapping for backward compat
+        uint256 price = IBlockHuntMint(mintWindowContract).batchPrice(batch);
+        return price > 0 ? price : mintPriceForBatch[batch];
     }
 
     uint256 public constant COUNTDOWN_DURATION = 7 days;
@@ -111,7 +114,21 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     // ── Pseudo-random nonce (vrfEnabled = false path only) ────────────────────
     uint256 private _nonce;
 
+    // ── Continuous rarity formula ──────────────────────────────────────────────
+    uint256 public constant DENOM = 10_000_000_000; // 10 billion = 100%
+    uint256 public constant SCALE = 100_000;        // supply divisor (100K)
+
+    uint256 public constant T6_THRESHOLD = 2_000_000_000; // 20% fixed
+    uint256 public constant T5_THRESHOLD = 200_000_000;   // 2% fixed
+
+    uint256 public t4Coeff = 960_000;   // linear
+    uint256 public t3Coeff = 128_000;   // linear
+    uint256 public t2Coeff = 6_997;     // quadratic (MEDIUM difficulty)
+
+    uint256 public totalMinted; // cumulative — NEVER decremented
+
     // ── Events ────────────────────────────────────────────────────────────────
+    event RarityCoefficientsUpdated(uint256 t4Coeff, uint256 t3Coeff, uint256 t2Coeff);
     event BlockMinted(address indexed to, uint256 quantity);
     event BlocksCombined(address indexed by, uint256 indexed fromTier, uint256 indexed toTier);
     event BlocksForged(address indexed by, uint256 indexed fromTier, bool success);
@@ -140,21 +157,26 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         _setDefaultRoyalty(royaltyReceiver_, royaltyFee_);
 
         // Mint prices per batch (adjustable via setMintPrice while testMintEnabled)
+        // Prices now sourced from MintWindow.batchPrice(); these are fallback defaults
         mintPriceForBatch[1] = 0.00008 ether;
-        mintPriceForBatch[2] = 0.00016 ether;
-        mintPriceForBatch[3] = 0.00032 ether;
-        mintPriceForBatch[4] = 0.00080 ether;
-        mintPriceForBatch[5] = 0.00160 ether;
-        mintPriceForBatch[6] = 0.00200 ether;
+        mintPriceForBatch[2] = 0.00012 ether;
+        mintPriceForBatch[3] = 0.00020 ether;
+        mintPriceForBatch[4] = 0.00032 ether;
+        mintPriceForBatch[5] = 0.00056 ether;
+        mintPriceForBatch[6] = 0.00100 ether;
+        mintPriceForBatch[7] = 0.00180 ether;
+        mintPriceForBatch[8] = 0.00320 ether;
+        mintPriceForBatch[9] = 0.00520 ether;
+        mintPriceForBatch[10] = 0.00800 ether;
 
         // [FIX M7] combineRatio[2] REMOVED — T2→T1 combine is not possible.
         // The Origin is sacrifice-only. combineRatio[2] was set to 100 previously
         // but had no valid use case and could mislead the frontend.
-        combineRatio[7] = 20;
-        combineRatio[6] = 20;
-        combineRatio[5] = 30;
-        combineRatio[4] = 30;
-        combineRatio[3] = 50;
+        combineRatio[7] = 21;
+        combineRatio[6] = 19;
+        combineRatio[5] = 17;
+        combineRatio[4] = 15;
+        combineRatio[3] = 13;
     }
 
     // ── Modifiers ─────────────────────────────────────────────────────────────
@@ -228,7 +250,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
 
     // ── CORE GAME ACTIONS ─────────────────────────────────────────────────────
 
-    function mint(uint256 quantity) external payable nonReentrant whenNotPaused notCountdown {
+    function mint(uint256 quantity) external payable nonReentrant whenNotPaused {
         require(mintWindowContract != address(0), "Mint not configured");
         require(IBlockHuntMint(mintWindowContract).isWindowOpen(), "Window closed");
         require(quantity > 0 && quantity <= 500, "Invalid quantity");
@@ -302,12 +324,13 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
 
         uint256 allocated = req.quantity;
         uint256 seed      = randomWords[0];
-        uint256 batch     = IBlockHuntMint(mintWindowContract).currentBatch();
+
+        totalMinted += allocated;
 
         uint256[8] memory tierCounts;
         for (uint256 i = 0; i < allocated; i++) {
             uint256 derived = uint256(keccak256(abi.encodePacked(seed, i)));
-            uint256 tier    = _tierFromRandom(derived, batch);
+            uint256 tier    = _assignTier(derived);
             tierCounts[tier]++;
         }
 
@@ -374,6 +397,8 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     // mintBatch with at most 6 entries. Cuts gas by ~70% on large mints.
     function _mintPseudoRandom(uint256 allocated, uint256 totalCost) internal {
         IBlockHuntTreasury(treasuryContract).receiveMintFunds{value: totalCost}();
+
+        totalMinted += allocated;
 
         // Step 1: roll tiers and tally into buckets
         uint256[8] memory tierCounts;
@@ -664,36 +689,56 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         _nonce++;
         uint256 rand = uint256(keccak256(abi.encodePacked(
             block.prevrandao, block.timestamp, msg.sender, _nonce, salt
-        ))) % 100000;
-        uint256 batch = IBlockHuntMint(mintWindowContract).currentBatch();
-        return _tierFromRandom(rand, batch);
+        )));
+        return _assignTier(rand);
     }
 
-    function _tierFromRandom(uint256 rand, uint256 batch) internal pure returns (uint256) {
-        rand = rand % 100000;
+    // ── Continuous rarity: T6/T5 fixed, T4/T3 linear, T2 quadratic ────────
+    function _getTierThresholds() internal view returns (
+        uint256 t2T, uint256 t3T, uint256 t4T
+    ) {
+        uint256 s = totalMinted / SCALE; // totalMinted / 100K
 
-        if (batch <= 2) {
-            if (rand < 5)     return TIER_WILLFUL;
-            if (rand < 55)    return TIER_CHAOTIC;
-            if (rand < 355)   return TIER_ORDERED;
-            if (rand < 2355)  return TIER_REMEMBER;
-            if (rand < 12355) return TIER_RESTLESS;
-            return TIER_INERT;
-        } else if (batch <= 4) {
-            if (rand < 30)    return TIER_WILLFUL;
-            if (rand < 230)   return TIER_CHAOTIC;
-            if (rand < 1230)  return TIER_ORDERED;
-            if (rand < 5230)  return TIER_REMEMBER;
-            if (rand < 19230) return TIER_RESTLESS;
-            return TIER_INERT;
-        } else {
-            if (rand < 150)   return TIER_WILLFUL;
-            if (rand < 950)   return TIER_CHAOTIC;
-            if (rand < 3950)  return TIER_ORDERED;
-            if (rand < 11950) return TIER_REMEMBER;
-            if (rand < 29950) return TIER_RESTLESS;
-            return TIER_INERT;
+        t4T = t4Coeff * s;         // linear
+        t3T = t3Coeff * s;         // linear
+        t2T = t2Coeff * s * s;     // QUADRATIC (s²)
+
+        // Safety cap: rare tiers cannot exceed 50% total
+        uint256 totalRare = t2T + t3T + t4T + T5_THRESHOLD + T6_THRESHOLD;
+        if (totalRare > DENOM / 2) {
+            uint256 dynTotal = t2T + t3T + t4T;
+            uint256 maxDyn = DENOM / 2 - T5_THRESHOLD - T6_THRESHOLD;
+            t4T = t4T * maxDyn / dynTotal;
+            t3T = t3T * maxDyn / dynTotal;
+            t2T = t2T * maxDyn / dynTotal;
         }
+    }
+
+    function _assignTier(uint256 randomWord) internal view returns (uint256) {
+        (uint256 t2T, uint256 t3T, uint256 t4T) = _getTierThresholds();
+
+        uint256 roll = randomWord % DENOM;
+
+        if (roll < t2T) return TIER_WILLFUL;
+        roll -= t2T;
+        if (roll < t3T) return TIER_CHAOTIC;
+        roll -= t3T;
+        if (roll < t4T) return TIER_ORDERED;
+        roll -= t4T;
+        if (roll < T5_THRESHOLD) return TIER_REMEMBER;
+        roll -= T5_THRESHOLD;
+        if (roll < T6_THRESHOLD) return TIER_RESTLESS;
+        return TIER_INERT;
+    }
+
+    function setRarityCoefficients(
+        uint256 _t4Coeff, uint256 _t3Coeff, uint256 _t2Coeff
+    ) external onlyOwner {
+        require(testMintEnabled, "Test mode disabled");
+        t4Coeff = _t4Coeff;
+        t3Coeff = _t3Coeff;
+        t2Coeff = _t2Coeff;
+        emit RarityCoefficientsUpdated(_t4Coeff, _t3Coeff, _t2Coeff);
     }
 
     function _removePendingRequest(address player, uint256 requestId) internal {

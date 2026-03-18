@@ -10,30 +10,22 @@ interface IBlockHuntTokenMint {
 contract BlockHuntMintWindow is Ownable {
 
     uint256 public constant WINDOW_DURATION = 3 hours;
-    uint256 public constant TOTAL_BATCHES   = 6;
-
-    // Minimum time between window opens. Three windows/day at 10:00, 18:00,
-    // and 02:00 UTC = 8/8/8 hours apart. 4-hour guard gives 1-hour buffer
-    // against the shortest real gap (5 hours after a 3-hour window).
     uint256 public constant MIN_WINDOW_GAP = 4 hours;
 
-    function batchSupply(uint256 batch) public pure returns (uint256) {
-        if (batch == 1) return 500_000;
-        if (batch == 2) return 500_000;
-        if (batch == 3) return 1_000_000;
-        if (batch == 4) return 2_000_000;
-        if (batch == 5) return 4_000_000;
-        if (batch == 6) return 2_000_000;
-        return 2_000_000;
+    // ── Configurable batch structure ──────────────────────────────────────
+    struct BatchConfig {
+        uint256 supply;
+        uint256 price;      // in wei
+        uint256 windowCap;
     }
 
-    function windowCapForBatch(uint256 batch) public pure returns (uint256) {
-        if (batch <= 2) return 16_666;
-        if (batch == 3) return 33_333;
-        if (batch == 4) return 66_666;
-        if (batch == 5) return 133_333;
-        return 66_666;
-    }
+    uint256 public batchCount = 10;
+    BatchConfig[] public batchConfigs;
+
+    event BatchConfigUpdated(uint256 indexed batchIndex, uint256 supply, uint256 price, uint256 windowCap);
+    event AllBatchConfigsUpdated(uint256 batchCount);
+
+    // ── Existing state ────────────────────────────────────────────────────
 
     address public tokenContract;
 
@@ -70,24 +62,75 @@ contract BlockHuntMintWindow is Ownable {
     constructor() Ownable(msg.sender) {
         currentBatch = 1;
         batches[1] = Batch({ id: 1, startDay: 1, totalMinted: 0 });
+
+        // Initialize 10 batches
+        batchConfigs.push(BatchConfig(100_000,  0.00008 ether, 25_000));   // B1
+        batchConfigs.push(BatchConfig(100_000,  0.00012 ether, 25_000));   // B2
+        batchConfigs.push(BatchConfig(150_000,  0.00020 ether, 25_000));   // B3
+        batchConfigs.push(BatchConfig(200_000,  0.00032 ether, 50_000));   // B4
+        batchConfigs.push(BatchConfig(250_000,  0.00056 ether, 50_000));   // B5
+        batchConfigs.push(BatchConfig(300_000,  0.00100 ether, 50_000));   // B6
+        batchConfigs.push(BatchConfig(400_000,  0.00180 ether, 100_000));  // B7
+        batchConfigs.push(BatchConfig(500_000,  0.00320 ether, 100_000));  // B8
+        batchConfigs.push(BatchConfig(500_000,  0.00520 ether, 200_000));  // B9
+        batchConfigs.push(BatchConfig(400_000,  0.00800 ether, 200_000));  // B10
     }
+
+    // ── Config read functions (replace old hardcoded functions) ────────────
+
+    function batchSupply(uint256 batch) public view returns (uint256) {
+        require(batch >= 1 && batch <= batchCount, "Invalid batch");
+        return batchConfigs[batch - 1].supply;
+    }
+
+    function windowCapForBatch(uint256 batch) public view returns (uint256) {
+        require(batch >= 1 && batch <= batchCount, "Invalid batch");
+        return batchConfigs[batch - 1].windowCap;
+    }
+
+    function batchPrice(uint256 batch) public view returns (uint256) {
+        require(batch >= 1 && batch <= batchCount, "Invalid batch");
+        return batchConfigs[batch - 1].price;
+    }
+
+    // ── Config setters (test mode only) ───────────────────────────────────
+
+    function setBatchConfig(
+        uint256 batchIndex, uint256 supply, uint256 price, uint256 windowCap
+    ) external onlyOwner {
+        require(testModeEnabled, "Test mode disabled");
+        require(batchIndex < batchCount, "Invalid batch");
+        batchConfigs[batchIndex] = BatchConfig(supply, price, windowCap);
+        emit BatchConfigUpdated(batchIndex, supply, price, windowCap);
+    }
+
+    function setAllBatchConfigs(
+        uint256[] calldata supplies,
+        uint256[] calldata prices,
+        uint256[] calldata windowCaps
+    ) external onlyOwner {
+        require(testModeEnabled, "Test mode disabled");
+        require(
+            supplies.length == prices.length && prices.length == windowCaps.length,
+            "Length mismatch"
+        );
+        delete batchConfigs;
+        batchCount = supplies.length;
+        for (uint256 i = 0; i < supplies.length; i++) {
+            batchConfigs.push(BatchConfig(supplies[i], prices[i], windowCaps[i]));
+        }
+        emit AllBatchConfigsUpdated(batchCount);
+    }
+
+    // ── Admin ─────────────────────────────────────────────────────────────
 
     function setTokenContract(address addr) external onlyOwner { tokenContract = addr; }
     function setPerUserDayCap(uint256 cap) external onlyOwner { perUserDayCap = cap; }
     function disableTestMode() external onlyOwner { testModeEnabled = false; }
 
-    /**
-     * @notice Opens a new mint window. Settles the previous window if needed.
-     *
-     * [CHANGED] Removed onlyOwner — now permissionless with a time guard.
-     * A Gelato keeper calls this every 12 hours on schedule. If the keeper
-     * is down, any community member can call it instead.
-     *
-     * Guard: at least MIN_WINDOW_GAP (12 hours) since the last window opened.
-     * First window (currentDay == 0) has no time guard so deployment works.
-     */
+    // ── Window management ─────────────────────────────────────────────────
+
     function openWindow() external {
-        // Time guard: prevent windows from being opened too frequently
         if (currentDay > 0) {
             require(
                 block.timestamp >= windows[currentDay].openAt + MIN_WINDOW_GAP,
@@ -95,7 +138,6 @@ contract BlockHuntMintWindow is Ownable {
             );
         }
 
-        // Settle previous window if still open
         Window storage prev = windows[currentDay];
         if (prev.openAt > 0 && !prev.settled) {
             _closeWindow(currentDay);
@@ -122,15 +164,9 @@ contract BlockHuntMintWindow is Ownable {
         emit WindowOpened(currentDay, block.timestamp, block.timestamp + WINDOW_DURATION, allocated);
     }
 
-    /**
-     * @notice Owner-only: force open a mint window, bypassing time guard.
-     * @dev Only works when testModeEnabled is true. Will be disabled before mainnet
-     *      along with mintForTest. Respects all other window logic (duration, caps, etc).
-     */
     function forceOpenWindow() external onlyOwner {
         require(testModeEnabled, "Test mode disabled");
 
-        // Settle previous window if still open
         Window storage prev = windows[currentDay];
         if (prev.openAt > 0 && !prev.settled) {
             _closeWindow(currentDay);
@@ -157,15 +193,6 @@ contract BlockHuntMintWindow is Ownable {
         emit WindowOpened(currentDay, block.timestamp, block.timestamp + WINDOW_DURATION, allocated);
     }
 
-    /**
-     * @notice Explicitly settle a window after it has expired.
-     *
-     * [CHANGED] Removed onlyOwner — permissionless but only works after the
-     * window's closeAt time has passed. Useful for triggering rollover
-     * accounting without waiting for the next openWindow() call.
-     *
-     * Not strictly necessary (openWindow auto-settles), but keeps state clean.
-     */
     function closeWindow() external {
         Window storage w = windows[currentDay];
         require(w.openAt > 0, "No window exists");
@@ -183,7 +210,7 @@ contract BlockHuntMintWindow is Ownable {
     }
 
     function _checkBatchAdvancement() internal {
-        if (currentBatch >= TOTAL_BATCHES) return;
+        if (currentBatch >= batchCount) return;
         Batch storage batch = batches[currentBatch];
         if (batch.totalMinted >= batchSupply(currentBatch)) {
             currentBatch++;
@@ -207,15 +234,8 @@ contract BlockHuntMintWindow is Ownable {
         );
     }
 
-    /**
-     * [FIX H2] Added per-user cap enforcement. Previously perUserDayCap was
-     * tracked in userDayMints but never checked — a single wallet could mint
-     * the entire window allocation via repeated 500-block transactions.
-     */
     function recordMint(address player, uint256 quantity) external {
         require(msg.sender == tokenContract, "Only token contract");
-
-        // [FIX H2] Enforce per-user window cap
         require(
             userDayMints[currentDay][player] + quantity <= perUserDayCap,
             "Per-user window cap reached"

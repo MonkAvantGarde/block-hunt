@@ -262,15 +262,15 @@ contract BlockHuntTest is Test {
         token.mint{value: MINT_PRICE * 501}(501);
     }
 
-    function test_MintFailsWhenCountdownActive() public {
+    function test_MintSucceedsDuringCountdown() public {
         // Trigger countdown by giving alice all tiers
         for (uint256 tier = 2; tier <= 7; tier++) {
             _giveBlocks(alice, tier, 1);
         }
         assertEq(token.countdownActive(), true);
 
+        // Minting should still work during countdown
         vm.prank(bob);
-        vm.expectRevert("Countdown is active");
         token.mint{value: MINT_PRICE * 5}(5);
     }
 
@@ -315,7 +315,7 @@ contract BlockHuntTest is Test {
     // ═════════════════════════════════════════════════════════════════════════
 
     function test_CombineSucceeds() public {
-        _giveBlocks(alice, 7, 20);  // combine ratio is 20:1 for Tier 7→6
+        _giveBlocks(alice, 7, 21);  // combine ratio is 21:1 for Tier 7→6
 
         uint256 tier6Before = token.balanceOf(alice, 6);
 
@@ -327,7 +327,7 @@ contract BlockHuntTest is Test {
     }
 
     function test_CombineFailsInsufficientBlocks() public {
-        _giveBlocks(alice, 7, 10);  // needs 20
+        _giveBlocks(alice, 7, 10);  // needs 21
 
         vm.prank(alice);
         vm.expectRevert("Insufficient blocks");
@@ -362,18 +362,18 @@ contract BlockHuntTest is Test {
     }
 
     function test_CombineRatiosAreCorrect() public view {
-        assertEq(token.combineRatio(7), 20,  "Tier 7-6: 20:1");
-        assertEq(token.combineRatio(6), 20,  "Tier 6-5: 20:1");
-        assertEq(token.combineRatio(5), 30,  "Tier 5-4: 30:1");
-        assertEq(token.combineRatio(4), 30,  "Tier 4-3: 30:1");
-        assertEq(token.combineRatio(3), 50,  "Tier 3-2: 50:1");
+        assertEq(token.combineRatio(7), 21,  "Tier 7-6: 21:1");
+        assertEq(token.combineRatio(6), 19,  "Tier 6-5: 19:1");
+        assertEq(token.combineRatio(5), 17,  "Tier 5-4: 17:1");
+        assertEq(token.combineRatio(4), 15,  "Tier 4-3: 15:1");
+        assertEq(token.combineRatio(3), 13,  "Tier 3-2: 13:1");
         // [PHASE 2] T2→T1 combine ratio removed — should be 0
         assertEq(token.combineRatio(2), 0,   "Tier 2-1: removed (sacrifice-only)");
     }
 
     function test_CombineManySucceeds() public {
-        _giveBlocks(alice, 7, 20);  // will produce 1 Tier-6
-        _giveBlocks(alice, 6, 39);  // 39 + 1 = 40, then consume 20 → 1 Tier-5
+        _giveBlocks(alice, 7, 21);  // will produce 1 Tier-6
+        _giveBlocks(alice, 6, 37);  // 37 + 1 = 38, then consume 19 → 1 Tier-5
 
         uint256[] memory tiers = new uint256[](2);
         tiers[0] = 7;
@@ -383,18 +383,18 @@ contract BlockHuntTest is Test {
         token.combineMany(tiers);
 
         assertEq(token.balanceOf(alice, 7), 0,  "Tier-7 fully burned");
-        assertEq(token.balanceOf(alice, 6), 20, "Tier-6 net: 39 + 1 - 20 = 20");
+        assertEq(token.balanceOf(alice, 6), 19, "Tier-6 net: 37 + 1 - 19 = 19");
         assertEq(token.balanceOf(alice, 5), 1,  "Should have 1 Tier-5");
     }
 
     function test_CombineDecreasesTierSupply() public {
-        _giveBlocks(alice, 7, 20);
+        _giveBlocks(alice, 7, 21);
         uint256 supplyBefore = token.tierTotalSupply(7);
 
         vm.prank(alice);
         token.combine(7);
 
-        assertEq(token.tierTotalSupply(7), supplyBefore - 20, "Supply should decrease by burn amount");
+        assertEq(token.tierTotalSupply(7), supplyBefore - 21, "Supply should decrease by burn amount");
     }
 
     function test_CombineTriggersCountdown() public {
@@ -403,7 +403,7 @@ contract BlockHuntTest is Test {
             _giveBlocks(alice, tier, 1);
         }
         _giveBlocks(alice, 2, 1);
-        _giveBlocks(alice, 7, 20);
+        _giveBlocks(alice, 7, 21);
 
         vm.prank(alice);
         token.combine(7);  // should give 1 Tier-6, completing Tiers 2-7
@@ -422,23 +422,23 @@ contract BlockHuntTest is Test {
     // ═════════════════════════════════════════════════════════════════════════
 
     function test_ForgeRequestSucceeds() public {
-        _giveBlocks(alice, 7, 20); // T7 combine ratio is 20 - burn 20 = 100% chance
+        _giveBlocks(alice, 7, 21); // T7 combine ratio is 21 - burn 21 = 100% chance
 
         vm.prevrandao(bytes32(uint256(1)));
         vm.prank(alice);
-        forge.forge(7, 20);  // max burn for T7 = 100% success
+        forge.forge(7, 21);  // max burn for T7 = 100% success
 
         // All Tier-7 must be burned regardless of outcome
         assertEq(token.balanceOf(alice, 7), 0, "Tier-7 blocks should always be burned");
     }
 
     function test_ForgeGuaranteedSuccessAtFullRatio() public {
-        // T7 combine ratio is 20. Burning the full ratio = (20*100)/20 = 100% success.
-        _giveBlocks(alice, 7, 20);
+        // T7 combine ratio is 21. Burning the full ratio = (21*100)/21 = 100% success.
+        _giveBlocks(alice, 7, 21);
 
         vm.prevrandao(bytes32(uint256(0)));
         vm.prank(alice);
-        forge.forge(7, 20);
+        forge.forge(7, 21);
 
         assertEq(token.balanceOf(alice, 6), 1, "Should receive Tier-6 on success");
     }
@@ -472,11 +472,11 @@ contract BlockHuntTest is Test {
     }
 
     function test_ForgeFailsBurnCountTooHigh() public {
-        _giveBlocks(alice, 7, 22);
+        _giveBlocks(alice, 7, 23);
 
         vm.prank(alice);
         vm.expectRevert("Burn count out of range");
-        forge.forge(7, 21);  // T7 combine ratio is 20; 21 exceeds it
+        forge.forge(7, 22);  // T7 combine ratio is 21; 22 exceeds it
     }
 
     function test_ForgeFailsInsufficientBlocks() public {
@@ -514,8 +514,8 @@ contract BlockHuntTest is Test {
     }
 
     function test_ForgeNonceIncrements() public {
-        _giveBlocks(alice, 7, 20);
-        _giveBlocks(bob,   7, 20);
+        _giveBlocks(alice, 7, 21);
+        _giveBlocks(bob,   7, 21);
 
         vm.prevrandao(bytes32(uint256(1)));
         vm.prank(alice);
@@ -537,7 +537,7 @@ contract BlockHuntTest is Test {
         vm.prank(owner);
         forge.setForgeFee(0.001 ether);
 
-        _giveBlocks(alice, 7, 20);
+        _giveBlocks(alice, 7, 21);
 
         vm.prank(alice);
         vm.expectRevert("Insufficient forge fee");
@@ -559,12 +559,12 @@ contract BlockHuntTest is Test {
 
     // [PHASE 2] resolveForge mints upgrade on success
     function test_ResolveForge_MintsOnSuccess() public {
-        _giveBlocks(alice, 7, 20);
+        _giveBlocks(alice, 7, 21);
 
         // Full ratio burn = 100% success guaranteed
         vm.prevrandao(bytes32(uint256(0)));
         vm.prank(alice);
-        forge.forge(7, 20);
+        forge.forge(7, 21);
 
         assertEq(token.balanceOf(alice, 7), 0, "All T7 burned");
         assertEq(token.balanceOf(alice, 6), 1, "Should receive T6 on success");
@@ -637,8 +637,8 @@ contract BlockHuntTest is Test {
         vm.prank(alice);
         forge.forge(7, 10);  // requestId = 1
 
-        // T7 ratio=20, burnCount=10 → successChance = (10*100)/20 = 50
-        // randomWord = 0 → 0 % 100 = 0 → 0 < 50 → success
+        // T7 ratio=21, burnCount=10 → successChance = (10*100)/21 = 47
+        // randomWord = 0 → 0 % 100 = 0 → 0 < 47 → success
         mockVRFCoordinator.fulfillRequest(1, 0);
 
         assertEq(token.balanceOf(alice, 7), 0, "All Tier-7 should be burned");
@@ -651,8 +651,8 @@ contract BlockHuntTest is Test {
         vm.prank(alice);
         forge.forge(7, 10);  // requestId = 1
 
-        // T7 ratio=20, burnCount=10 → successChance = 50
-        // randomWord = 99 → 99 % 100 = 99 → 99 >= 50 → fail
+        // T7 ratio=21, burnCount=10 → successChance = 47
+        // randomWord = 99 → 99 % 100 = 99 → 99 >= 47 → fail
         mockVRFCoordinator.fulfillRequest(1, 99);
 
         assertEq(token.balanceOf(alice, 7), 0, "All Tier-7 should still be burned on fail");
@@ -699,8 +699,8 @@ contract BlockHuntTest is Test {
     }
 
     function test_VRF_MultipleForgesGetDistinctRequestIds() public withVRFEnabled {
-        _giveBlocks(alice, 7, 20);
-        _giveBlocks(bob,   7, 20);
+        _giveBlocks(alice, 7, 21);
+        _giveBlocks(bob,   7, 21);
 
         vm.prank(alice);
         forge.forge(7, 10);  // requestId = 1
@@ -716,14 +716,14 @@ contract BlockHuntTest is Test {
     }
 
     function test_VRF_MultipleForgesResolveIndependently() public withVRFEnabled {
-        _giveBlocks(alice, 7, 20);
-        _giveBlocks(bob,   7, 20);
+        _giveBlocks(alice, 7, 21);
+        _giveBlocks(bob,   7, 21);
 
         vm.prank(alice);
-        forge.forge(7, 20);  // requestId = 1 - full ratio = 100% success
+        forge.forge(7, 21);  // requestId = 1 - full ratio = 100% success
 
         vm.prank(bob);
-        forge.forge(7, 20);  // requestId = 2 - full ratio = 100% success
+        forge.forge(7, 21);  // requestId = 2 - full ratio = 100% success
 
         mockVRFCoordinator.fulfillRequest(1, 0);   // success for alice (100% chance)
         mockVRFCoordinator.fulfillRequest(2, 0);   // success for bob (100% chance)
@@ -733,26 +733,26 @@ contract BlockHuntTest is Test {
     }
 
     function test_VRF_BoundarySuccessAtExactBurnCount() public withVRFEnabled {
-        // T7 ratio=20. burnCount=10 → successChance = 50.
-        // Random value 49 → 49 < 50 → success
+        // T7 ratio=21. burnCount=10 → successChance = (10*100)/21 = 47.
+        // Random value 46 → 46 < 47 → success
         _giveBlocks(alice, 7, 10);
 
         vm.prank(alice);
         forge.forge(7, 10);
 
-        mockVRFCoordinator.fulfillRequest(1, 49);
+        mockVRFCoordinator.fulfillRequest(1, 46);
         assertEq(token.balanceOf(alice, 6), 1, "Should succeed when random = successChance - 1");
     }
 
     function test_VRF_BoundaryFailAtExactBurnCount() public withVRFEnabled {
-        // T7 ratio=20. burnCount=10 → successChance = 50.
-        // Random value 50 → 50 >= 50 → fail
+        // T7 ratio=21. burnCount=10 → successChance = (10*100)/21 = 47.
+        // Random value 47 → 47 >= 47 → fail
         _giveBlocks(alice, 7, 10);
 
         vm.prank(alice);
         forge.forge(7, 10);
 
-        mockVRFCoordinator.fulfillRequest(1, 50);
+        mockVRFCoordinator.fulfillRequest(1, 47);
         assertEq(token.balanceOf(alice, 6), 0, "Should fail when random = successChance");
     }
 
@@ -787,12 +787,12 @@ contract BlockHuntTest is Test {
     // ═════════════════════════════════════════════════════════════════════════
 
     function test_ForgeBatch_PseudoRandom_SingleAttempt() public {
-        _giveBlocks(alice, 7, 20);
+        _giveBlocks(alice, 7, 21);
 
         uint256[] memory tiers  = new uint256[](1);
         uint256[] memory burns  = new uint256[](1);
         tiers[0] = 7;
-        burns[0] = 20;  // full ratio = 100% success
+        burns[0] = 21;  // full ratio = 100% success
 
         vm.prevrandao(bytes32(uint256(0)));
         vm.prank(alice);
@@ -803,12 +803,12 @@ contract BlockHuntTest is Test {
     }
 
     function test_ForgeBatch_PseudoRandom_MultipleAttempts() public {
-        _giveBlocks(alice, 7, 40);  // enough for 2 attempts of 20 each
+        _giveBlocks(alice, 7, 42);  // enough for 2 attempts of 21 each
 
         uint256[] memory tiers  = new uint256[](2);
         uint256[] memory burns  = new uint256[](2);
-        tiers[0] = 7; burns[0] = 20;
-        tiers[1] = 7; burns[1] = 20;
+        tiers[0] = 7; burns[0] = 21;
+        tiers[1] = 7; burns[1] = 21;
 
         vm.prevrandao(bytes32(uint256(0)));
         vm.prank(alice);
@@ -881,7 +881,7 @@ contract BlockHuntTest is Test {
     }
 
     function test_ForgeBatch_VRF_RequestCreated() public withVRFEnabled {
-        _giveBlocks(alice, 7, 20);
+        _giveBlocks(alice, 7, 21);
 
         uint256[] memory tiers  = new uint256[](2);
         uint256[] memory burns  = new uint256[](2);
@@ -898,12 +898,12 @@ contract BlockHuntTest is Test {
     }
 
     function test_ForgeBatch_VRF_CallbackResolvesAll() public withVRFEnabled {
-        _giveBlocks(alice, 7, 40);
+        _giveBlocks(alice, 7, 42);
 
         uint256[] memory tiers  = new uint256[](2);
         uint256[] memory burns  = new uint256[](2);
-        tiers[0] = 7; burns[0] = 20;  // 100% success
-        tiers[1] = 7; burns[1] = 20;  // 100% success
+        tiers[0] = 7; burns[0] = 21;  // 100% success
+        tiers[1] = 7; burns[1] = 21;  // 100% success
 
         vm.prank(alice);
         forge.forgeBatch(tiers, burns);
@@ -924,44 +924,47 @@ contract BlockHuntTest is Test {
     // 3d. FORGE - PROBABILITY ANCHORING TESTS
     // ═════════════════════════════════════════════════════════════════════════
 
-    function test_ForgeT7_HalfRatioIs50Percent() public withVRFEnabled {
+    function test_ForgeT7_HalfRatioIs47Percent() public withVRFEnabled {
+        // T7 ratio=21. burnCount=10 → successChance = (10*100)/21 = 47.
         _giveBlocks(alice, 7, 10);
         vm.prank(alice);
         forge.forge(7, 10);
-        mockVRFCoordinator.fulfillRequest(1, 49);
-        assertEq(token.balanceOf(alice, 6), 1, "Burn 10 of 20 = 50% - should succeed at 49");
+        mockVRFCoordinator.fulfillRequest(1, 46);
+        assertEq(token.balanceOf(alice, 6), 1, "Burn 10 of 21 = 47% - should succeed at 46");
     }
 
-    function test_ForgeT5_HalfRatioIs50Percent() public withVRFEnabled {
-        _giveBlocks(alice, 5, 15);
+    function test_ForgeT5_HalfRatioIs47Percent() public withVRFEnabled {
+        // T5 ratio=17. burnCount=8 → successChance = (8*100)/17 = 47.
+        _giveBlocks(alice, 5, 8);
         vm.prank(alice);
-        forge.forge(5, 15);
-        mockVRFCoordinator.fulfillRequest(1, 49);
-        assertEq(token.balanceOf(alice, 4), 1, "Burn 15 of 30 = 50% - should succeed at 49");
+        forge.forge(5, 8);
+        mockVRFCoordinator.fulfillRequest(1, 46);
+        assertEq(token.balanceOf(alice, 4), 1, "Burn 8 of 17 = 47% - should succeed at 46");
     }
 
-    function test_ForgeT3_HalfRatioIs50Percent() public withVRFEnabled {
-        _giveBlocks(alice, 3, 25);
+    function test_ForgeT3_HalfRatioIs46Percent() public withVRFEnabled {
+        // T3 ratio=13. burnCount=6 → successChance = (6*100)/13 = 46.
+        _giveBlocks(alice, 3, 6);
         vm.prank(alice);
-        forge.forge(3, 25);
-        mockVRFCoordinator.fulfillRequest(1, 49);
-        assertEq(token.balanceOf(alice, 2), 1, "Burn 25 of 50 = 50% - should succeed at 49");
+        forge.forge(3, 6);
+        mockVRFCoordinator.fulfillRequest(1, 45);
+        assertEq(token.balanceOf(alice, 2), 1, "Burn 6 of 13 = 46% - should succeed at 45");
     }
 
     function test_ForgeFullRatioIs100Percent() public withVRFEnabled {
-        _giveBlocks(alice, 7, 20);
+        _giveBlocks(alice, 7, 21);
         vm.prank(alice);
-        forge.forge(7, 20);
+        forge.forge(7, 21);
         mockVRFCoordinator.fulfillRequest(1, 99);  // worst random still succeeds
         assertEq(token.balanceOf(alice, 6), 1, "Burning full ratio should always succeed");
     }
 
-    function test_ForgeT4_QuarterRatioIs25Percent() public withVRFEnabled {
-        // T4 ratio=30. Burn 8 → (8*100)/30 = 26%.
+    function test_ForgeT4_QuarterRatioIs26Percent() public withVRFEnabled {
+        // T4 ratio=15. Burn 4 → (4*100)/15 = 26%.
         // randomWord=26 → 26 >= 26 → fail.
-        _giveBlocks(alice, 4, 8);
+        _giveBlocks(alice, 4, 4);
         vm.prank(alice);
-        forge.forge(4, 8);
+        forge.forge(4, 4);
         mockVRFCoordinator.fulfillRequest(1, 26);
         assertEq(token.balanceOf(alice, 3), 0, "Should fail when random = successChance");
     }
@@ -1291,7 +1294,7 @@ contract BlockHuntTest is Test {
         mintWindow.openWindow();
 
         (, , , , uint256 allocated, , , ) = mintWindow.getWindowInfo();
-        assertEq(allocated, 33_332, "2x windowCapForBatch(1) (16,666 each) should accumulate");
+        assertEq(allocated, 50_000, "2x windowCapForBatch(1) (25,000 each) should accumulate");
     }
 
     function test_WindowInfoReturnsCorrectData() public {
@@ -1309,7 +1312,7 @@ contract BlockHuntTest is Test {
         assertEq(day,       1,      "Should be day 1");
         assertGt(openAt,    0,      "Open timestamp should be set");
         assertGt(closeAt,   openAt, "Close should be after open");
-        assertEq(allocated, 16_666, "Batch 1 window cap should be 16,666");
+        assertEq(allocated, 25_000, "Batch 1 window cap should be 25,000");
     }
 
     function test_WindowExpiresByTime() public {
@@ -2386,7 +2389,7 @@ contract BlockHuntTest is Test {
 
         vm.warp(block.timestamp + 24 hours);
         vm.prank(carol);
-        vm.expectRevert("Score not high enough");
+        vm.expectRevert("Must rank above holder");
         countdown.challengeCountdown();
     }
 
@@ -2406,7 +2409,7 @@ contract BlockHuntTest is Test {
 
         vm.warp(block.timestamp + 24 hours);
         vm.prank(bob);
-        vm.expectRevert("Score not high enough");
+        vm.expectRevert("Must rank above holder");
         countdown.challengeCountdown();
     }
 
@@ -2415,30 +2418,28 @@ contract BlockHuntTest is Test {
     // ═════════════════════════════════════════════════════════════════════════
 
     function test_Challenge_HolderScoreLiveRecalculation() public {
-        // Alice claims with minimal blocks
+        // Alice claims with minimal blocks then accumulates more
         _giveAllTiers(alice);
-        uint256 aliceClaimScore = countdown.holderScore();
 
-        // Alice then gets MORE blocks — her live score is now higher
-        _giveBlocks(alice, 2, 10);
-        uint256 aliceLiveScore = countdown.calculateScore(alice);
-        assertTrue(aliceLiveScore > aliceClaimScore, "Alice live score should be higher");
+        // Alice gets many more blocks — her total blocks count is high
+        _giveBlocks(alice, 7, 200);
+        uint256 aliceTotalBlocks = 6 + 200; // 1 each T2-T7 + 200 T7
 
-        // Bob's score is higher than alice's CLAIM score but lower than her LIVE score
-        _giveBlocks(bob, 2, 5);
-        _giveBlocks(bob, 3, 5);
-        _giveBlocks(bob, 4, 5);
-        _giveBlocks(bob, 5, 5);
-        _giveBlocks(bob, 6, 5);
-        _giveBlocks(bob, 7, 100);
-        uint256 bobScore = countdown.calculateScore(bob);
-        assertTrue(bobScore > aliceClaimScore, "Bob > alice claim score");
-        assertTrue(bobScore < aliceLiveScore, "Bob < alice live score");
+        // Bob has all 6 tiers but fewer total blocks than Alice
+        _giveBlocks(bob, 2, 1);
+        _giveBlocks(bob, 3, 1);
+        _giveBlocks(bob, 4, 1);
+        _giveBlocks(bob, 5, 1);
+        _giveBlocks(bob, 6, 1);
+        _giveBlocks(bob, 7, 1);
+        uint256 bobTotalBlocks = 6;
+        assertTrue(bobTotalBlocks < aliceTotalBlocks, "Bob has fewer total blocks");
 
-        // Challenge should FAIL because live recalculation
+        // Both have 6 distinct tiers — tiebreaker is total blocks
+        // Challenge should FAIL because Bob has fewer total blocks
         vm.warp(block.timestamp + 24 hours);
         vm.prank(bob);
-        vm.expectRevert("Score not high enough");
+        vm.expectRevert("Must rank above holder");
         countdown.challengeCountdown();
     }
 
@@ -3161,10 +3162,10 @@ contract BlockHuntTest is Test {
     }
 
     function test_FullGameFlow_VRFForge_ThenWin() public withVRFEnabled {
-        _giveBlocks(alice, 7, 20);
+        _giveBlocks(alice, 7, 21);
 
         vm.prank(alice);
-        forge.forge(7, 20);
+        forge.forge(7, 21);
 
         mockVRFCoordinator.fulfillRequest(1, 0);
         assertEq(token.balanceOf(alice, 6), 1, "Alice forged a Tier-6 via VRF");
@@ -3863,5 +3864,206 @@ contract BlockHuntTest is Test {
         vm.warp(block.timestamp + 7 days + 1);
         vm.prank(alice);
         token.sacrifice();
+    }
+
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // v2.1 SPEC TESTS
+    // ═════════════════════════════════════════════════════════════════════════
+
+    // ── 1. totalMinted counter never decrements ───────────────────────────
+
+    function test_TotalMintedNeverDecrements() public {
+        // Mint 100 blocks
+        vm.prank(alice);
+        token.mint{value: MINT_PRICE * 100}(100);
+        assertEq(token.totalMinted(), 100, "totalMinted should be 100 after mint");
+
+        // Combine 21 T7s into 1 T6 — totalMinted must NOT change
+        _giveBlocks(alice, 7, 21);
+        uint256 mintedBefore = token.totalMinted();
+        vm.prank(alice);
+        token.combine(7);
+        assertEq(token.totalMinted(), mintedBefore, "totalMinted must not decrease on combine");
+    }
+
+    // ── 2. Combine ratio verification (all 5) ────────────────────────────
+
+    function test_NewCombineRatios_21_Succeeds() public {
+        _giveBlocks(alice, 7, 21);
+        vm.prank(alice);
+        token.combine(7);
+        assertEq(token.balanceOf(alice, 6), 1, "21 T7 -> 1 T6");
+    }
+
+    function test_NewCombineRatios_20_Fails() public {
+        _giveBlocks(alice, 7, 20);
+        vm.prank(alice);
+        vm.expectRevert("Insufficient blocks");
+        token.combine(7);
+    }
+
+    function test_NewCombineRatios_19_Succeeds() public {
+        _giveBlocks(alice, 6, 19);
+        vm.prank(alice);
+        token.combine(6);
+        assertEq(token.balanceOf(alice, 5), 1, "19 T6 -> 1 T5");
+    }
+
+    function test_NewCombineRatios_18_Fails() public {
+        _giveBlocks(alice, 6, 18);
+        vm.prank(alice);
+        vm.expectRevert("Insufficient blocks");
+        token.combine(6);
+    }
+
+    function test_NewCombineRatios_T5_17() public {
+        _giveBlocks(alice, 5, 17);
+        vm.prank(alice);
+        token.combine(5);
+        assertEq(token.balanceOf(alice, 4), 1, "17 T5 -> 1 T4");
+    }
+
+    function test_NewCombineRatios_T4_15() public {
+        _giveBlocks(alice, 4, 15);
+        vm.prank(alice);
+        token.combine(4);
+        assertEq(token.balanceOf(alice, 3), 1, "15 T4 -> 1 T3");
+    }
+
+    function test_NewCombineRatios_T3_13() public {
+        _giveBlocks(alice, 3, 13);
+        vm.prank(alice);
+        token.combine(3);
+        assertEq(token.balanceOf(alice, 2), 1, "13 T3 -> 1 T2");
+    }
+
+    function test_NewCombineRatios_T3_12_Fails() public {
+        _giveBlocks(alice, 3, 12);
+        vm.prank(alice);
+        vm.expectRevert("Insufficient blocks");
+        token.combine(3);
+    }
+
+    // ── 3. Forge reads new ratios ─────────────────────────────────────────
+
+    function test_ForgeReadsNewRatios_T3() public {
+        // Forge 13 T3s: probability = 13/13 = 100%
+        _giveBlocks(alice, 3, 13);
+        vm.prank(alice);
+        forge.forge(3, 13);
+        // With ratio 13, burning 13 = 100% success
+        assertEq(token.balanceOf(alice, 2), 1, "Full ratio forge should succeed");
+    }
+
+    // ── 4. Minting during countdown ───────────────────────────────────────
+
+    function test_MintingAllowedDuringCountdown() public {
+        // Give alice all tiers to trigger countdown
+        for (uint256 tier = 2; tier <= 7; tier++) {
+            _giveBlocks(alice, tier, 1);
+        }
+        assertTrue(token.countdownActive(), "Countdown should be active");
+
+        // Bob should be able to mint during countdown
+        vm.prank(bob);
+        token.mint{value: MINT_PRICE * 10}(10);
+        // If we get here without revert, minting during countdown works
+    }
+
+    // ── 5. Takeover mechanic ──────────────────────────────────────────────
+
+    function test_Takeover_HigherTotalBlocks() public {
+        // Alice: all 6 tiers, minimal blocks (6 total)
+        _giveAllTiers(alice);
+        assertTrue(token.countdownActive(), "Countdown active");
+
+        // Bob: all 6 tiers + extra blocks (more total)
+        _giveBlocks(bob, 2, 1);
+        _giveBlocks(bob, 3, 1);
+        _giveBlocks(bob, 4, 1);
+        _giveBlocks(bob, 5, 1);
+        _giveBlocks(bob, 6, 1);
+        _giveBlocks(bob, 7, 100); // 105 total vs Alice's 6
+
+        // Wait for safe period
+        vm.warp(block.timestamp + 1 days);
+
+        // Bob takes over
+        vm.prank(bob);
+        countdown.challengeCountdown();
+
+        assertEq(countdown.currentHolder(), bob, "Bob should be holder");
+        assertEq(countdown.takeoverCount(), 1, "takeoverCount should be 1");
+    }
+
+    function test_Takeover_InsufficientRank() public {
+        // Alice: all 6 tiers + extra blocks — countdown triggers automatically
+        _giveBlocks(alice, 2, 1);
+        _giveBlocks(alice, 3, 1);
+        _giveBlocks(alice, 4, 1);
+        _giveBlocks(alice, 5, 1);
+        _giveBlocks(alice, 6, 1);
+        _giveBlocks(alice, 7, 100);
+        // Countdown is already active (mintForTest calls _checkCountdownTrigger)
+
+        // Carol: all 6 tiers but fewer total blocks
+        _giveBlocks(carol, 2, 1);
+        _giveBlocks(carol, 3, 1);
+        _giveBlocks(carol, 4, 1);
+        _giveBlocks(carol, 5, 1);
+        _giveBlocks(carol, 6, 1);
+        _giveBlocks(carol, 7, 1); // 6 total vs Alice's 106
+
+        vm.warp(block.timestamp + 1 days);
+        vm.prank(carol);
+        vm.expectRevert("Must rank above holder");
+        countdown.challengeCountdown();
+    }
+
+    // ── 6. Batch config (10 batches) ──────────────────────────────────────
+
+    function test_10BatchesInitialized() public view {
+        assertEq(mintWindow.batchCount(), 10, "Should have 10 batches");
+        assertEq(mintWindow.batchSupply(1), 100_000);
+        assertEq(mintWindow.batchSupply(10), 400_000);
+        assertEq(mintWindow.batchPrice(1), 0.00008 ether);
+        assertEq(mintWindow.batchPrice(10), 0.00800 ether);
+        assertEq(mintWindow.windowCapForBatch(1), 25_000);
+        assertEq(mintWindow.windowCapForBatch(10), 200_000);
+    }
+
+    function test_SetBatchConfig() public {
+        vm.prank(owner);
+        mintWindow.setBatchConfig(0, 50_000, 0.00004 ether, 10_000);
+        assertEq(mintWindow.batchSupply(1), 50_000);
+        assertEq(mintWindow.batchPrice(1), 0.00004 ether);
+        assertEq(mintWindow.windowCapForBatch(1), 10_000);
+    }
+
+    // ── 7. Test mode gate ─────────────────────────────────────────────────
+
+    function test_TestModeGate_RarityCoefficients() public {
+        vm.prank(owner);
+        token.disableTestMint();
+        vm.prank(owner);
+        vm.expectRevert("Test mode disabled");
+        token.setRarityCoefficients(1, 1, 1);
+    }
+
+    function test_TestModeGate_BatchConfig() public {
+        vm.prank(owner);
+        mintWindow.disableTestMode();
+        vm.prank(owner);
+        vm.expectRevert("Test mode disabled");
+        mintWindow.setBatchConfig(0, 1, 1, 1);
+    }
+
+    function test_TestModeGate_SafePeriod() public {
+        vm.prank(owner);
+        countdown.disableTestMode();
+        vm.prank(owner);
+        vm.expectRevert("Test mode disabled");
+        countdown.setSafePeriod(1);
     }
 }
