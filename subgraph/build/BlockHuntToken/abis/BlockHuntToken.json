@@ -84,5 +84,49 @@
     ],
     "name": "MintFulfilled",
     "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "name": "by",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "name": "fromTier",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "name": "toTier",
+        "type": "uint256"
+      }
+    ],
+    "name": "BlocksCombined",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "name": "by",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "name": "fromTier",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "name": "success",
+        "type": "bool"
+      }
+    ],
+    "name": "BlocksForged",
+    "type": "event"
   }
 ]

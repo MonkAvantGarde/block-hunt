@@ -26,6 +26,8 @@ export const EMBER_LT   = "#ff4433";
 export const GREEN      = "#6eff8a";
 export const PURPLE     = "#b86bff";
 export const ORANGE     = "#ffa84b";
+export const REWARDS_ACCENT = "#4ecdc4";
+export const REWARDS_BG = "#0a1520";
 
 // ── TIER METADATA ────────────────────────────────────────────────────────────
 export const TIERS = [

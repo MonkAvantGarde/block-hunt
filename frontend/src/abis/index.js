@@ -258,3 +258,112 @@ export const ESCROW_ABI = [
     { name: 'to', type: 'address', indexed: true },
     { name: 'amount', type: 'uint256', indexed: false }] },
 ];
+
+
+// ── REWARDS CONTRACT (BlockHuntRewards) ──────────────────────────────────────
+
+export const REWARDS_ABI = [
+  // ── Read ──
+  { name: 'batchConfigs', type: 'function', stateMutability: 'view',
+    inputs: [{ name: '', type: 'uint256' }],
+    outputs: [
+      { name: 'totalDeposit', type: 'uint256' }, { name: 'lotteryBps', type: 'uint16' },
+      { name: 'firstsBps', type: 'uint16' }, { name: 'bountyBps', type: 'uint16' },
+      { name: 'active', type: 'bool' }, { name: 'settled', type: 'bool' },
+    ] },
+  { name: 'lotteryPool', type: 'function', stateMutability: 'view',
+    inputs: [{ name: 'batch', type: 'uint256' }],
+    outputs: [{ name: '', type: 'uint256' }] },
+  { name: 'firstsPool', type: 'function', stateMutability: 'view',
+    inputs: [{ name: 'batch', type: 'uint256' }],
+    outputs: [{ name: '', type: 'uint256' }] },
+  { name: 'bountyPool', type: 'function', stateMutability: 'view',
+    inputs: [{ name: 'batch', type: 'uint256' }],
+    outputs: [{ name: '', type: 'uint256' }] },
+  { name: 'lotteryRemaining', type: 'function', stateMutability: 'view',
+    inputs: [{ name: 'batch', type: 'uint256' }],
+    outputs: [{ name: '', type: 'uint256' }] },
+  { name: 'firstsRemaining', type: 'function', stateMutability: 'view',
+    inputs: [{ name: 'batch', type: 'uint256' }],
+    outputs: [{ name: '', type: 'uint256' }] },
+  { name: 'bountyRemaining', type: 'function', stateMutability: 'view',
+    inputs: [{ name: 'batch', type: 'uint256' }],
+    outputs: [{ name: '', type: 'uint256' }] },
+  { name: 'dailyPrize', type: 'function', stateMutability: 'view',
+    inputs: [{ name: 'batch', type: 'uint256' }],
+    outputs: [{ name: '', type: 'uint256' }] },
+  { name: 'dailyDraws', type: 'function', stateMutability: 'view',
+    inputs: [{ name: 'day', type: 'uint256' }],
+    outputs: [
+      { name: 'batch', type: 'uint256' }, { name: 'prize', type: 'uint256' },
+      { name: 'winner', type: 'address' }, { name: 'resolvedAt', type: 'uint256' },
+      { name: 'claimed', type: 'bool' },
+    ] },
+  { name: 'batchFirsts', type: 'function', stateMutability: 'view',
+    inputs: [{ name: 'batch', type: 'uint256' }, { name: 'achievementId', type: 'uint256' }],
+    outputs: [
+      { name: 'winner', type: 'address' }, { name: 'prize', type: 'uint256' },
+      { name: 'awardedAt', type: 'uint256' }, { name: 'claimed', type: 'bool' },
+    ] },
+  { name: 'batchBounties', type: 'function', stateMutability: 'view',
+    inputs: [{ name: 'batch', type: 'uint256' }],
+    outputs: [
+      { name: 'totalRecipients', type: 'uint256' }, { name: 'perWalletShare', type: 'uint256' },
+      { name: 'setAt', type: 'uint256' }, { name: 'distributed', type: 'bool' },
+    ] },
+  { name: 'effectiveFirstPrize', type: 'function', stateMutability: 'view',
+    inputs: [{ name: 'batch', type: 'uint256' }, { name: 'achievementId', type: 'uint256' }],
+    outputs: [{ name: '', type: 'uint256' }] },
+  { name: 'getClaimable', type: 'function', stateMutability: 'view',
+    inputs: [{ name: 'wallet', type: 'address' }],
+    outputs: [{ name: 'result', type: 'tuple', components: [
+      { name: 'wonDays', type: 'uint256[]' }, { name: 'wonAmounts', type: 'uint256[]' },
+      { name: 'firstBatches', type: 'uint256[]' }, { name: 'firstIds', type: 'uint256[]' },
+      { name: 'firstAmounts', type: 'uint256[]' },
+      { name: 'bountyBatches', type: 'uint256[]' }, { name: 'bountyAmounts', type: 'uint256[]' },
+    ] }] },
+
+  // ── Write ──
+  { name: 'claimDailyPrize', type: 'function', stateMutability: 'nonpayable',
+    inputs: [{ name: 'day', type: 'uint256' }], outputs: [] },
+  { name: 'claimBatchFirst', type: 'function', stateMutability: 'nonpayable',
+    inputs: [{ name: 'batch', type: 'uint256' }, { name: 'achievementId', type: 'uint256' }],
+    outputs: [] },
+  { name: 'claimBatchBounty', type: 'function', stateMutability: 'nonpayable',
+    inputs: [{ name: 'batch', type: 'uint256' }], outputs: [] },
+
+  // ── Events ──
+  { name: 'DailyDrawResolved', type: 'event', inputs: [
+    { name: 'day', type: 'uint256', indexed: true },
+    { name: 'winner', type: 'address', indexed: true },
+    { name: 'prize', type: 'uint256', indexed: false }] },
+  { name: 'DailyPrizeClaimed', type: 'event', inputs: [
+    { name: 'day', type: 'uint256', indexed: true },
+    { name: 'winner', type: 'address', indexed: true },
+    { name: 'amount', type: 'uint256', indexed: false }] },
+  { name: 'BatchFirstAwarded', type: 'event', inputs: [
+    { name: 'batch', type: 'uint256', indexed: true },
+    { name: 'achievementId', type: 'uint256', indexed: true },
+    { name: 'winner', type: 'address', indexed: true },
+    { name: 'prize', type: 'uint256', indexed: false }] },
+  { name: 'BatchFirstClaimed', type: 'event', inputs: [
+    { name: 'batch', type: 'uint256', indexed: true },
+    { name: 'achievementId', type: 'uint256', indexed: true },
+    { name: 'winner', type: 'address', indexed: true },
+    { name: 'amount', type: 'uint256', indexed: false }] },
+  { name: 'BatchBountySet', type: 'event', inputs: [
+    { name: 'batch', type: 'uint256', indexed: true },
+    { name: 'recipients', type: 'uint256', indexed: false },
+    { name: 'perWallet', type: 'uint256', indexed: false }] },
+  { name: 'BatchBountyClaimed', type: 'event', inputs: [
+    { name: 'batch', type: 'uint256', indexed: true },
+    { name: 'wallet', type: 'address', indexed: true },
+    { name: 'amount', type: 'uint256', indexed: false }] },
+  { name: 'BatchFunded', type: 'event', inputs: [
+    { name: 'batch', type: 'uint256', indexed: true },
+    { name: 'amount', type: 'uint256', indexed: false }] },
+  { name: 'BatchTopUp', type: 'event', inputs: [
+    { name: 'batch', type: 'uint256', indexed: true },
+    { name: 'addedAmount', type: 'uint256', indexed: false },
+    { name: 'newTotal', type: 'uint256', indexed: false }] },
+];
