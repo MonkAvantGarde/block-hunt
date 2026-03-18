@@ -17,6 +17,7 @@ dataSources:
       language: wasm/assemblyscript
       entities:
         - Player
+        - PlayerActivity
         - SeasonStat
       abis:
         - name: BlockHuntToken
@@ -28,4 +29,8 @@ dataSources:
           handler: handleTransferBatch
         - event: MintFulfilled(indexed address,indexed uint256,uint256)
           handler: handleMintFulfilled
+        - event: BlocksCombined(indexed address,indexed uint256,indexed uint256)
+          handler: handleBlocksCombined
+        - event: BlocksForged(indexed address,indexed uint256,bool)
+          handler: handleBlocksForged
       file: ./src/mapping.ts

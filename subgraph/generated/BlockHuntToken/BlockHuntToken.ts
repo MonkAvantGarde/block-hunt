@@ -104,6 +104,58 @@ export class MintFulfilled__Params {
   }
 }
 
+export class BlocksCombined extends ethereum.Event {
+  get params(): BlocksCombined__Params {
+    return new BlocksCombined__Params(this);
+  }
+}
+
+export class BlocksCombined__Params {
+  _event: BlocksCombined;
+
+  constructor(event: BlocksCombined) {
+    this._event = event;
+  }
+
+  get by(): Address {
+    return this._event.parameters[0].value.toAddress();
+  }
+
+  get fromTier(): BigInt {
+    return this._event.parameters[1].value.toBigInt();
+  }
+
+  get toTier(): BigInt {
+    return this._event.parameters[2].value.toBigInt();
+  }
+}
+
+export class BlocksForged extends ethereum.Event {
+  get params(): BlocksForged__Params {
+    return new BlocksForged__Params(this);
+  }
+}
+
+export class BlocksForged__Params {
+  _event: BlocksForged;
+
+  constructor(event: BlocksForged) {
+    this._event = event;
+  }
+
+  get by(): Address {
+    return this._event.parameters[0].value.toAddress();
+  }
+
+  get fromTier(): BigInt {
+    return this._event.parameters[1].value.toBigInt();
+  }
+
+  get success(): boolean {
+    return this._event.parameters[2].value.toBoolean();
+  }
+}
+
 export class BlockHuntToken extends ethereum.SmartContract {
   static bind(address: Address): BlockHuntToken {
     return new BlockHuntToken("BlockHuntToken", address);

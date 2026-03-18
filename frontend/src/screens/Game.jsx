@@ -15,6 +15,7 @@ import TierSlot from '../components/TierSlot'
 import VRFMintPanel from '../panels/MintPanel'
 import ForgePanel from '../panels/ForgePanel'
 import TradePanel from '../panels/TradePanel'
+import RewardsPanel from '../panels/RewardsPanel'
 
 // ═══════════════════════════════════════════════════════════════
 // GLOBAL STYLES
@@ -277,6 +278,7 @@ const { data: countdownHolder } = useReadContract({
     { id:"mint",  label:"⬡ MINT",  bg:"#0a1f15", titleColor:"#6eff8a" },
     { id:"forge", label:"⚡ FORGE", bg:"#14071f", titleColor:"#cc66ff" },
     { id:"trade", label:"⇄ TRADE", bg:"#1f1007", titleColor:"#ffa84b" },
+    { id:"rewards", label:"★ REWARDS", bg:"#0a1520", titleColor:"#4ecdc4" },
   ]
 
   return (
@@ -509,7 +511,7 @@ const { data: countdownHolder } = useReadContract({
           }}>
             {panels.map((p, idx) => {
               const active = activePanel === p.id
-              const hasBadge = (p.id === "mint" && windowOpen) || (p.id === "forge" && [7,6,5,4,3,2].some(t => (blocks[t] || 0) >= 10))
+              const hasBadge = (p.id === "mint" && windowOpen) || (p.id === "forge" && [7,6,5,4,3,2].some(t => (blocks[t] || 0) >= 10)) || (p.id === "rewards" && isConnected)
               return (
                 <button key={p.id} onClick={() => setPanel(p.id)} style={{
                   flex:1, height:48,
@@ -531,7 +533,7 @@ const { data: countdownHolder } = useReadContract({
                 onMouseLeave={e => { if (!active) { e.currentTarget.style.background = "rgba(0,0,0,0.15)"; e.currentTarget.style.opacity = "0.7"; }}}
                 >
                   {p.label}
-                  {hasBadge && <div style={{ width:6, height:6, borderRadius:"50%", background: p.id === "mint" ? "#6eff8a" : "#cc66ff" }} />}
+                  {hasBadge && <div style={{ width:6, height:6, borderRadius:"50%", background: p.id === "mint" ? "#6eff8a" : p.id === "rewards" ? "#4ecdc4" : "#cc66ff", animation: p.id === "rewards" ? "badgePulse 1.2s infinite" : undefined }} />}
                 </button>
               )
             })}
@@ -551,6 +553,7 @@ const { data: countdownHolder } = useReadContract({
                   {p.id==="mint"  && <VRFMintPanel onMint={handleMint} windowOpen={windowOpen} windowInfo={windowInfo} slots={slots} prizePool={prizePool} address={address} refetchAll={refetchAll} blocks={blocks} mintPrice={mintPrice} mintPriceWei={mintPriceWei} currentBatch={currentBatch} userCapReached={userCapReached} userMintsRemaining={userMintsRemaining} userMintedThisWindow={userMintedThisWindow} perUserCap={perUserCap} />}
                   {p.id==="forge" && <ForgePanel blocks={blocks} onForge={handleForge} address={address} />}
                   {p.id==="trade" && <TradePanel />}
+                  {p.id==="rewards" && <RewardsPanel address={address} blocks={blocks} />}
                 </div>
               </div>
             )

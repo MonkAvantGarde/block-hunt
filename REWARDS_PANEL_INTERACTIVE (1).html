@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Block Hunt — Rewards Panel Navigation Flow</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&family=Courier+Prime&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --felt: #1e4d32; --wood: #1c0e08; --gold: #c8a84b; --gold-dk: #8a6820;
+  --gold-lt: #e8c86b; --ink: #0a0705; --cream: #f0ead6; --ember: #cc3322;
+  --green: #6eff8a; --purple: #b86bff; --orange: #ffa84b;
+  --t7: #888888; --t6: #ff4444; --t5: #33aaff; --t4: #ffcc33;
+  --t3: #cc66ff; --t2: #ff6622; --t1: #4466ff;
+  --rewards-bg: #0a1520; --accent: #4ecdc4;
+}
+body {
+  background: var(--felt);
+  background-image:
+    repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,0,0,0.04) 3px, rgba(0,0,0,0.04) 4px),
+    repeating-linear-gradient(90deg, transparent, transparent 3px, rgba(0,0,0,0.04) 3px, rgba(0,0,0,0.04) 4px);
+  font-family: 'Courier Prime', monospace; color: var(--cream);
+}
+body::after {
+  content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 1;
+  background: repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.012) 2px,rgba(0,0,0,0.012) 4px);
+}
+::-webkit-scrollbar { width: 10px; }
+::-webkit-scrollbar-track { background: rgba(0,0,0,0.3); }
+::-webkit-scrollbar-thumb { background: var(--gold-dk); border: 1px solid #000; }
+.fp { font-family: 'Press Start 2P', monospace; }
+.fv { font-family: 'VT323', monospace; }
+
+@keyframes fadeInUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+@keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+@keyframes goldPulse { 0%,100% { color:var(--gold); text-shadow:0 0 6px rgba(200,168,75,0.3); } 50% { color:var(--gold-lt); text-shadow:0 0 12px rgba(200,168,75,0.5); } }
+@keyframes streakFire { 0%,100% { text-shadow:0 0 4px #ff6622, 0 0 8px #ff662244; } 50% { text-shadow:0 0 8px #ff6622, 0 0 16px #ff662266; } }
+@keyframes lotteryGlow { 0%,100% { box-shadow:0 0 8px rgba(78,205,196,0.15); } 50% { box-shadow:0 0 20px rgba(78,205,196,0.3); } }
+@keyframes progressPulse { 0%,100% { opacity:0.7; } 50% { opacity:1; } }
+@keyframes badgePulse { 0%,100%{opacity:1} 50%{opacity:0.45} }
+@keyframes slideDown { from { opacity:0; max-height:0; } to { opacity:1; max-height:2000px; } }
+
+/* Header */
+.header {
+  background: var(--wood); border-bottom: 3px solid var(--ink);
+  box-shadow: 0 3px 0 rgba(0,0,0,0.5); height: 54px;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 24px; position: sticky; top: 0; z-index: 100;
+}
+
+/* Status bar */
+.status-bar {
+  display: flex; gap: 0; background: rgba(0,0,0,0.3);
+  border: 1px solid rgba(200,168,75,0.1); margin-bottom: 20px;
+}
+.status-item {
+  flex: 1; padding: 10px 16px; text-align: center;
+}
+.status-item + .status-item { border-left: 1px solid rgba(200,168,75,0.08); }
+
+/* Tab bar */
+.tab-bar { display: flex; gap: 0; background: rgba(0,0,0,0.3); border-top: 1px solid rgba(138,104,32,0.15); }
+.tab-btn {
+  flex: 1; height: 48px; font-family: 'Press Start 2P', monospace;
+  font-size: 7px; letter-spacing: 2px; color: rgba(255,255,255,0.5);
+  background: rgba(0,0,0,0.15); border: none;
+  border-bottom: 2px solid rgba(255,255,255,0.08);
+  cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+  opacity: 0.7; transition: all 0.15s;
+}
+.tab-btn:hover { background: rgba(200,168,75,0.08); opacity: 0.8; }
+.tab-btn.active { font-size: 9px; opacity: 1; background: rgba(200,168,75,0.08); text-shadow: 0 0 8px rgba(200,168,75,0.3); }
+.tab-btn.active.rewards-tab { color: var(--accent); border-bottom: 3px solid var(--accent); }
+.tab-btn + .tab-btn { border-left: 1px solid rgba(255,255,255,0.06); }
+
+/* Panel */
+.panel {
+  border: 3px solid var(--ink); border-top: none;
+  box-shadow: 5px 5px 0 rgba(0,0,0,0.55);
+  padding: 20px; min-height: 520;
+  background: var(--rewards-bg);
+}
+
+/* Rewards header */
+.rewards-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 20px; padding-bottom: 14px;
+  border-bottom: 1px solid rgba(78,205,196,0.12);
+}
+
+/* Breadcrumb */
+.breadcrumb {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 16px; animation: fadeIn 0.2s;
+}
+.breadcrumb-back {
+  font-family: 'Press Start 2P', monospace; font-size: 6px;
+  color: rgba(255,255,255,0.35); letter-spacing: 1px; cursor: pointer;
+  transition: color 0.15s; background: none; border: none; padding: 0;
+}
+.breadcrumb-back:hover { color: var(--accent); }
+.breadcrumb-sep { font-family: 'Press Start 2P', monospace; font-size: 6px; color: rgba(255,255,255,0.15); }
+.breadcrumb-current { font-family: 'Press Start 2P', monospace; font-size: 6px; color: var(--accent); letter-spacing: 1px; }
+
+/* Overview cards */
+.overview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.overview-card {
+  background: rgba(0,0,0,0.25); border: 1px solid rgba(78,205,196,0.08);
+  padding: 16px; cursor: pointer; transition: all 0.2s; position: relative;
+  animation: fadeInUp 0.3s ease-out;
+}
+.overview-card:nth-child(2) { animation-delay: 0.05s; }
+.overview-card:nth-child(3) { animation-delay: 0.1s; }
+.overview-card:nth-child(4) { animation-delay: 0.15s; }
+.overview-card:nth-child(5) { animation-delay: 0.2s; }
+.overview-card:hover {
+  border-color: rgba(78,205,196,0.25);
+  background: rgba(78,205,196,0.03);
+  transform: translateY(-1px);
+}
+.card-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 10px;
+}
+.card-label { font-family: 'Press Start 2P', monospace; font-size: 6px; color: rgba(255,255,255,0.4); letter-spacing: 1px; }
+.card-arrow { font-family: 'Press Start 2P', monospace; font-size: 6px; color: var(--accent); opacity: 0; transition: opacity 0.2s; }
+.overview-card:hover .card-arrow { opacity: 1; }
+
+/* Detail view container */
+.detail-view { animation: fadeInUp 0.25s ease-out; }
+
+/* Streak detail */
+.streak-big { font-family: 'VT323', monospace; font-size: 52px; color: var(--gold-lt); line-height: 1; text-shadow: 0 0 20px rgba(200,168,75,0.4); }
+.streak-timeline { display: flex; gap: 0; margin-top: 20px; }
+.streak-day {
+  flex: 1; text-align: center; padding: 8px 4px;
+  border: 1px solid rgba(255,255,255,0.04);
+}
+.streak-day.done { background: rgba(78,205,196,0.08); border-color: rgba(78,205,196,0.15); }
+.streak-day.today { background: rgba(200,168,75,0.1); border-color: rgba(200,168,75,0.3); }
+.streak-tier-row {
+  display: flex; gap: 0; margin-top: 20px;
+}
+.streak-tier {
+  flex: 1; padding: 12px 8px; text-align: center;
+  border: 1px solid rgba(255,255,255,0.04);
+  background: rgba(0,0,0,0.2);
+}
+.streak-tier.earned { background: rgba(78,205,196,0.04); border-color: rgba(78,205,196,0.1); }
+.streak-tier.current { background: rgba(200,168,75,0.08); border: 2px solid rgba(200,168,75,0.4); box-shadow: 0 0 12px rgba(200,168,75,0.15); }
+.streak-tier.locked { opacity: 0.35; }
+
+/* Milestone detail */
+.milestone-cat {
+  margin-bottom: 2px; animation: fadeInUp 0.3s ease-out;
+}
+.milestone-cat-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; background: rgba(0,0,0,0.25);
+  border: 1px solid rgba(78,205,196,0.08);
+}
+.milestone-badges { display: flex; gap: 0; flex-wrap: wrap; }
+.m-badge {
+  flex: 1; min-width: 100px; padding: 12px 8px;
+  background: rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.03);
+  text-align: center; transition: all 0.2s;
+}
+.m-badge.earned { background: rgba(78,205,196,0.06); border-color: rgba(78,205,196,0.15); }
+.m-badge.next { background: rgba(200,168,75,0.04); border-color: rgba(200,168,75,0.15); }
+.m-badge.locked { opacity: 0.35; }
+
+/* Lottery detail */
+.lottery-card { animation: lotteryGlow 3s infinite; background: rgba(0,0,0,0.3); border: 1px solid rgba(78,205,196,0.12); padding: 20px; }
+.lottery-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0; border: 1px solid rgba(78,205,196,0.08); }
+.lottery-stat { padding: 14px; text-align: center; background: rgba(0,0,0,0.2); }
+.lottery-stat + .lottery-stat { border-left: 1px solid rgba(78,205,196,0.08); }
+
+/* HoF detail */
+.hof-row {
+  display: flex; align-items: center; gap: 14px;
+  padding: 12px 16px; background: rgba(0,0,0,0.2);
+  border: 1px solid rgba(255,255,255,0.04); margin-bottom: 2px;
+  transition: background 0.15s;
+}
+.hof-row:hover { background: rgba(78,205,196,0.04); }
+.hof-row.legend { background: linear-gradient(90deg, rgba(200,168,75,0.06), rgba(0,0,0,0.2)); border-color: rgba(200,168,75,0.15); }
+.hof-rank-box {
+  width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+  font-family: 'VT323', monospace; font-size: 20px;
+  border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3);
+}
+.hof-row.legend .hof-rank-box { background: linear-gradient(135deg, var(--gold-dk), var(--gold)); color: var(--ink); border-color: var(--gold); }
+
+/* Bounty progress */
+.bounty-track {
+  height: 14px; background: rgba(0,0,0,0.5);
+  border: 1px solid rgba(255,255,255,0.06); overflow: hidden; position: relative;
+}
+.bounty-fill {
+  height: 100%; background: linear-gradient(90deg, rgba(78,205,196,0.4), rgba(78,205,196,0.7));
+  transition: width 0.5s; position: relative;
+}
+.bounty-fill::after {
+  content: ''; position: absolute; right: 0; top: 0; bottom: 0; width: 3px;
+  background: var(--accent); animation: progressPulse 1.5s infinite;
+}
+
+/* Instruction banner */
+.instruction {
+  position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
+  background: rgba(10,5,3,0.92); border: 1px solid var(--gold-dk);
+  padding: 8px 20px; z-index: 200;
+  font-family: 'Press Start 2P', monospace; font-size: 6px;
+  color: var(--gold); letter-spacing: 1px;
+  animation: fadeIn 0.3s;
+}
+
+/* Hidden */
+.hidden { display: none; }
+</style>
+</head>
+<body>
+
+<!-- Instruction -->
+<div class="instruction" id="instruction">CLICK ANY CARD TO SEE THE DETAIL VIEW · CLICK BREADCRUMB TO GO BACK</div>
+
+<!-- Header -->
+<div class="header">
+  <div class="fp" style="font-size:15px; color:var(--gold); text-shadow:2px 2px 0 var(--gold-dk); letter-spacing:1px;">BLOK<span style="color:var(--cream)">HUNT</span></div>
+  <div style="display:flex; gap:28px; align-items:center;">
+    <span class="fp" style="font-size:7px; color:rgba(255,255,255,0.5); letter-spacing:1px;">LEADERBOARD</span>
+    <span class="fp" style="font-size:7px; color:rgba(255,255,255,0.5); letter-spacing:1px;">RULES</span>
+    <span class="fp" style="font-size:7px; color:rgba(255,255,255,0.5); letter-spacing:1px;">PROFILE</span>
+  </div>
+  <div class="fp" style="font-size:7px; color:var(--gold); background:rgba(200,168,75,0.08); border:1px solid var(--gold-dk); padding:8px 14px;">0x20b3...0c57</div>
+</div>
+
+<div style="max-width:1300px; margin:0 auto; padding:24px 20px 48px;">
+
+  <!-- Status bar -->
+  <div class="status-bar">
+    <div class="status-item">
+      <div class="fp" style="font-size:5px; color:rgba(255,255,255,0.35); letter-spacing:1px;">PRIZE POOL</div>
+      <div class="fv" style="font-size:22px; color:var(--gold); text-shadow:0 0 8px rgba(200,168,75,0.3);">2.4500 Ξ</div>
+    </div>
+    <div class="status-item">
+      <div class="fp" style="font-size:5px; color:rgba(255,255,255,0.35); letter-spacing:1px;">WINDOW</div>
+      <div class="fv" style="font-size:22px; color:var(--green);">OPEN · 2:14:33</div>
+    </div>
+    <div class="status-item">
+      <div class="fp" style="font-size:5px; color:rgba(255,255,255,0.35); letter-spacing:1px;">BATCH</div>
+      <div class="fv" style="font-size:22px; color:var(--cream);">2 · 0.00016 Ξ</div>
+    </div>
+  </div>
+
+  <!-- Tab bar -->
+  <div class="tab-bar">
+    <button class="tab-btn">⬡ MINT <div style="width:6px;height:6px;border-radius:50%;background:var(--green);animation:badgePulse 1.2s infinite;"></div></button>
+    <button class="tab-btn">⚡ FORGE</button>
+    <button class="tab-btn">⇄ TRADE</button>
+    <button class="tab-btn active rewards-tab">★ REWARDS <div style="width:6px;height:6px;border-radius:50%;background:var(--accent);animation:badgePulse 1.2s infinite;"></div></button>
+  </div>
+
+  <!-- REWARDS PANEL -->
+  <div class="panel" id="rewardsPanel">
+
+    <!-- Panel header (always visible) -->
+    <div class="rewards-header">
+      <div class="fp" style="font-size:11px; color:var(--accent); letter-spacing:2px; text-shadow:0 0 12px rgba(78,205,196,0.3);">REWARDS</div>
+      <div style="display:flex; align-items:center; gap:10px; background:rgba(78,205,196,0.06); border:1px solid rgba(78,205,196,0.15); padding:8px 16px;">
+        <div>
+          <div class="fp" style="font-size:6px; color:rgba(78,205,196,0.6); letter-spacing:1px;">REWARDS POOL</div>
+          <div class="fv" style="font-size:24px; color:var(--accent); text-shadow:0 0 8px rgba(78,205,196,0.4);">0.5000 Ξ</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ OVERVIEW (cards) ═══ -->
+    <div id="overviewView">
+      <div class="overview-grid">
+
+        <!-- STREAK CARD -->
+        <div class="overview-card" onclick="showDetail('streak')">
+          <div class="card-header">
+            <div class="card-label">DAILY STREAK</div>
+            <div class="card-arrow">→</div>
+          </div>
+          <div style="display:flex; align-items:baseline; gap:8px;">
+            <div class="fv" style="font-size:42px; color:var(--gold-lt); line-height:1; animation:streakFire 2s infinite;">14</div>
+            <div>
+              <div class="fp" style="font-size:6px; color:rgba(200,168,75,0.6);">DAYS</div>
+              <div class="fp" style="font-size:6px; color:var(--gold); margin-top:3px;">DEDICATED ✦</div>
+            </div>
+          </div>
+          <div style="margin-top:10px;">
+            <div class="fp" style="font-size:5px; color:rgba(255,255,255,0.3); margin-bottom:3px;">NEXT: RELENTLESS (30 days)</div>
+            <div style="height:4px; background:rgba(0,0,0,0.5); overflow:hidden;">
+              <div style="height:100%; width:46.6%; background:linear-gradient(90deg,var(--gold-dk),var(--gold));"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- LOTTERY CARD -->
+        <div class="overview-card" onclick="showDetail('lottery')" style="animation-delay:0.05s;">
+          <div class="card-header">
+            <div class="card-label">TODAY'S LOTTERY</div>
+            <div class="card-arrow">→</div>
+          </div>
+          <div style="display:flex; align-items:baseline; gap:8px;">
+            <div class="fv" style="font-size:42px; color:var(--accent); line-height:1; text-shadow:0 0 20px rgba(78,205,196,0.4);">0.02</div>
+            <div class="fv" style="font-size:22px; color:rgba(78,205,196,0.6);">Ξ</div>
+          </div>
+          <div style="margin-top:10px; display:flex; align-items:center; gap:6px;">
+            <div style="width:6px; height:6px; border-radius:50%; background:var(--green);"></div>
+            <div class="fp" style="font-size:5px; color:var(--green); letter-spacing:1px;">ELIGIBLE · 47 WALLETS · DRAW IN 4:22:18</div>
+          </div>
+        </div>
+
+        <!-- MILESTONES CARD -->
+        <div class="overview-card" onclick="showDetail('milestones')" style="animation-delay:0.1s;">
+          <div class="card-header">
+            <div class="card-label">MILESTONES</div>
+            <div class="card-arrow">→</div>
+          </div>
+          <div style="display:flex; gap:5px; flex-wrap:wrap; margin-bottom:8px;">
+            <div style="padding:3px 7px; background:rgba(78,205,196,0.1); border:1px solid rgba(78,205,196,0.2);">
+              <span class="fp" style="font-size:5px; color:var(--accent);">SILVER MINTER</span>
+            </div>
+            <div style="padding:3px 7px; background:rgba(78,205,196,0.1); border:1px solid rgba(78,205,196,0.2);">
+              <span class="fp" style="font-size:5px; color:var(--accent);">TINKERER</span>
+            </div>
+            <div style="padding:3px 7px; background:rgba(200,168,75,0.1); border:1px solid rgba(200,168,75,0.2);">
+              <span class="fp" style="font-size:5px; color:var(--gold);">GOLD MINTER ◇</span>
+            </div>
+          </div>
+          <div class="fp" style="font-size:5px; color:rgba(255,255,255,0.3);">7 EARNED · 4 IN PROGRESS</div>
+        </div>
+
+        <!-- BATCH BOUNTY CARD -->
+        <div class="overview-card" onclick="showDetail('bounty')" style="animation-delay:0.15s;">
+          <div class="card-header">
+            <div class="card-label">BATCH 2 BOUNTY</div>
+            <div class="card-arrow">→</div>
+          </div>
+          <div style="margin-bottom:8px;">
+            <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+              <div class="fp" style="font-size:5px; color:rgba(255,255,255,0.3);">347,200 / 500,000</div>
+              <div class="fv" style="font-size:16px; color:var(--cream);">69%</div>
+            </div>
+            <div style="height:6px; background:rgba(0,0,0,0.5); overflow:hidden;">
+              <div style="height:100%; width:69%; background:linear-gradient(90deg,rgba(78,205,196,0.4),rgba(78,205,196,0.7));"></div>
+            </div>
+          </div>
+          <div class="fp" style="font-size:5px; color:var(--accent);">0.20 Ξ BOUNTY · YOU'RE ELIGIBLE</div>
+        </div>
+
+        <!-- HALL OF FAME CARD -->
+        <div class="overview-card" onclick="showDetail('hof')" style="animation-delay:0.2s; grid-column: 1 / -1;">
+          <div class="card-header">
+            <div class="card-label">HALL OF FAME</div>
+            <div class="card-arrow">→</div>
+          </div>
+          <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <div style="width:24px; height:24px; background:linear-gradient(135deg,var(--gold-dk),var(--gold)); display:flex; align-items:center; justify-content:center;">
+                <span class="fv" style="font-size:16px; color:var(--ink);">★</span>
+              </div>
+              <div>
+                <div class="fp" style="font-size:5px; color:var(--gold-lt);">THE PIONEER</div>
+                <div class="fv" style="font-size:13px; color:rgba(255,255,255,0.4);">0x20b3...0c57 (YOU)</div>
+              </div>
+            </div>
+            <div style="width:1px; height:24px; background:rgba(255,255,255,0.08);"></div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <div style="width:24px; height:24px; background:linear-gradient(135deg,var(--gold-dk),var(--gold)); display:flex; align-items:center; justify-content:center;">
+                <span class="fv" style="font-size:16px; color:var(--ink);">★</span>
+              </div>
+              <div>
+                <div class="fp" style="font-size:5px; color:var(--gold-lt);">THE FIRST SPARK</div>
+                <div class="fv" style="font-size:13px; color:rgba(255,255,255,0.4);">0x7a3f...8b2c</div>
+              </div>
+            </div>
+            <div style="width:1px; height:24px; background:rgba(255,255,255,0.08);"></div>
+            <div class="fp" style="font-size:5px; color:rgba(200,168,75,0.4); letter-spacing:1px;">+ 7 UNCLAIMED LEGENDARY FIRSTS</div>
+            <div style="width:1px; height:24px; background:rgba(255,255,255,0.08);"></div>
+            <div class="fp" style="font-size:5px; color:rgba(78,205,196,0.5); letter-spacing:1px;">8 BATCH FIRSTS AVAILABLE (0.02 Ξ each)</div>
+          </div>
+        </div>
+
+      </div>
+      <div style="text-align:center; margin-top:16px; animation:fadeIn 0.5s ease-out; animation-delay:0.4s; animation-fill-mode:backwards;">
+        <div class="fp" style="font-size:6px; color:rgba(78,205,196,0.35); letter-spacing:2px;">TAP ANY CARD TO LEARN MORE →</div>
+      </div>
+    </div>
+
+    <!-- ═══ STREAK DETAIL ═══ -->
+    <div id="streakDetail" class="detail-view hidden">
+      <div class="breadcrumb">
+        <button class="breadcrumb-back" onclick="showOverview()">★ REWARDS</button>
+        <span class="breadcrumb-sep">›</span>
+        <span class="breadcrumb-current">DAILY STREAK</span>
+      </div>
+
+      <div style="background:rgba(0,0,0,0.3); border:1px solid rgba(78,205,196,0.1); padding:20px; margin-bottom:16px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+          <div>
+            <div class="streak-big">14</div>
+            <div class="fp" style="font-size:7px; color:rgba(200,168,75,0.6); letter-spacing:1px; margin-top:4px;">DAY STREAK</div>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px; padding:8px 16px; border:1px solid var(--gold); background:rgba(0,0,0,0.2);">
+            <div style="width:32px; height:32px; border:2px solid var(--gold); display:flex; align-items:center; justify-content:center; box-shadow:0 0 12px rgba(200,168,75,0.3);">
+              <span class="fv" style="font-size:20px; color:var(--gold);">✦</span>
+            </div>
+            <div>
+              <div class="fp" style="font-size:8px; color:var(--gold); letter-spacing:1px;">DEDICATED</div>
+              <div class="fp" style="font-size:5px; color:rgba(200,168,75,0.5); margin-top:2px;">GOLD FRAME</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-bottom:16px;">
+          <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+            <div class="fp" style="font-size:6px; color:rgba(255,255,255,0.4); letter-spacing:1px;">NEXT: RELENTLESS (30 DAYS)</div>
+            <div class="fp" style="font-size:6px; color:var(--gold); letter-spacing:1px;">14 / 30</div>
+          </div>
+          <div style="height:8px; background:rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.06); overflow:hidden;">
+            <div style="height:100%; width:46.6%; background:linear-gradient(90deg,var(--gold-dk),var(--gold));"></div>
+          </div>
+        </div>
+
+        <div class="streak-timeline">
+          <div class="streak-day done"><div class="fp" style="font-size:5px; color:rgba(255,255,255,0.3); margin-bottom:4px;">MON</div><div class="fv" style="font-size:18px; color:var(--accent);">✓</div></div>
+          <div class="streak-day done"><div class="fp" style="font-size:5px; color:rgba(255,255,255,0.3); margin-bottom:4px;">TUE</div><div class="fv" style="font-size:18px; color:var(--accent);">✓</div></div>
+          <div class="streak-day done"><div class="fp" style="font-size:5px; color:rgba(255,255,255,0.3); margin-bottom:4px;">WED</div><div class="fv" style="font-size:18px; color:var(--accent);">✓</div></div>
+          <div class="streak-day done"><div class="fp" style="font-size:5px; color:rgba(255,255,255,0.3); margin-bottom:4px;">THU</div><div class="fv" style="font-size:18px; color:var(--accent);">✓</div></div>
+          <div class="streak-day done"><div class="fp" style="font-size:5px; color:rgba(255,255,255,0.3); margin-bottom:4px;">FRI</div><div class="fv" style="font-size:18px; color:var(--accent);">✓</div></div>
+          <div class="streak-day done"><div class="fp" style="font-size:5px; color:rgba(255,255,255,0.3); margin-bottom:4px;">SAT</div><div class="fv" style="font-size:18px; color:var(--accent);">✓</div></div>
+          <div class="streak-day today"><div class="fp" style="font-size:5px; color:rgba(200,168,75,0.6); margin-bottom:4px;">TODAY</div><div class="fv" style="font-size:18px; color:var(--gold); animation:goldPulse 2s infinite;">⬡</div></div>
+        </div>
+      </div>
+
+      <div class="fp" style="font-size:7px; color:rgba(255,255,255,0.5); letter-spacing:1px; margin-bottom:12px;">STREAK TIERS</div>
+      <div class="streak-tier-row">
+        <div class="streak-tier earned"><div style="font-size:18px; margin-bottom:2px;">🥉</div><div class="fp" style="font-size:5px; color:#cd7f32;">ACTIVE</div><div class="fv" style="font-size:13px; color:rgba(255,255,255,0.3);">3 days</div><div class="fp" style="font-size:5px; color:rgba(78,205,196,0.6); margin-top:3px;">✓</div></div>
+        <div class="streak-tier earned"><div style="font-size:18px; margin-bottom:2px;">🥈</div><div class="fp" style="font-size:5px; color:#c0c0c0;">COMMITTED</div><div class="fv" style="font-size:13px; color:rgba(255,255,255,0.3);">7 days</div><div class="fp" style="font-size:5px; color:rgba(78,205,196,0.6); margin-top:3px;">✓</div></div>
+        <div class="streak-tier current"><div style="font-size:18px; margin-bottom:2px;">🏆</div><div class="fp" style="font-size:5px; color:var(--gold);">DEDICATED</div><div class="fv" style="font-size:13px; color:var(--gold);">14 days</div><div class="fp" style="font-size:5px; color:var(--gold); margin-top:3px;">◆ NOW</div></div>
+        <div class="streak-tier locked"><div style="font-size:18px; margin-bottom:2px;">🔥</div><div class="fp" style="font-size:5px; color:rgba(255,255,255,0.4);">RELENTLESS</div><div class="fv" style="font-size:13px; color:rgba(255,255,255,0.2);">30 days</div></div>
+        <div class="streak-tier locked"><div style="font-size:18px; margin-bottom:2px;">⭐</div><div class="fp" style="font-size:5px; color:rgba(255,255,255,0.3);">LEGENDARY</div><div class="fv" style="font-size:13px; color:rgba(255,255,255,0.15);">60 days</div><div class="fp" style="font-size:5px; color:rgba(200,168,75,0.3); margin-top:3px;">PERMANENT</div></div>
+      </div>
+    </div>
+
+    <!-- ═══ LOTTERY DETAIL ═══ -->
+    <div id="lotteryDetail" class="detail-view hidden">
+      <div class="breadcrumb">
+        <button class="breadcrumb-back" onclick="showOverview()">★ REWARDS</button>
+        <span class="breadcrumb-sep">›</span>
+        <span class="breadcrumb-current">DAILY LOTTERY</span>
+      </div>
+
+      <div class="lottery-card" style="margin-bottom:16px;">
+        <div style="text-align:center; margin-bottom:20px; padding:16px 0;">
+          <div class="fp" style="font-size:7px; color:rgba(78,205,196,0.5); letter-spacing:2px; margin-bottom:8px;">TODAY'S PRIZE</div>
+          <div class="fv" style="font-size:64px; color:var(--accent); text-shadow:0 0 30px rgba(78,205,196,0.5); line-height:1;">0.02 Ξ</div>
+          <div class="fp" style="font-size:7px; color:rgba(78,205,196,0.4); letter-spacing:2px; margin-top:6px;">~$50 AT CURRENT RATE</div>
+        </div>
+
+        <div class="lottery-grid">
+          <div class="lottery-stat"><div class="fv" style="font-size:28px; color:var(--cream);">47</div><div class="fp" style="font-size:5px; color:rgba(255,255,255,0.35); letter-spacing:1px; margin-top:2px;">WALLETS TODAY</div></div>
+          <div class="lottery-stat"><div class="fv" style="font-size:28px; color:var(--cream);">2.1%</div><div class="fp" style="font-size:5px; color:rgba(255,255,255,0.35); letter-spacing:1px; margin-top:2px;">YOUR ODDS</div></div>
+          <div class="lottery-stat"><div class="fv" style="font-size:28px; color:var(--cream);">04:22:18</div><div class="fp" style="font-size:5px; color:rgba(255,255,255,0.35); letter-spacing:1px; margin-top:2px;">DRAW IN</div></div>
+        </div>
+
+        <div style="margin-top:16px; padding:12px 16px; background:rgba(78,205,196,0.06); border:1px solid rgba(78,205,196,0.15); display:flex; align-items:center; justify-content:center; gap:8px;">
+          <div class="fv" style="font-size:22px; color:var(--green);">✓</div>
+          <div class="fp" style="font-size:7px; color:var(--green); letter-spacing:1px;">YOU MINTED TODAY — YOU'RE IN THE DRAW</div>
+        </div>
+      </div>
+
+      <div class="fp" style="font-size:7px; color:rgba(255,255,255,0.5); letter-spacing:1px; margin-bottom:12px;">YESTERDAY'S WINNER</div>
+      <div style="padding:14px 16px; background:linear-gradient(135deg,rgba(200,168,75,0.08),rgba(78,205,196,0.05)); border:1px solid rgba(200,168,75,0.2); display:flex; align-items:center; gap:14px; margin-bottom:16px;">
+        <div style="width:36px; height:36px; background:linear-gradient(135deg,var(--gold-dk),var(--gold)); display:flex; align-items:center; justify-content:center;"><span class="fv" style="font-size:20px; color:var(--ink);">★</span></div>
+        <div style="flex:1;"><div class="fp" style="font-size:5px; color:rgba(200,168,75,0.6); letter-spacing:1px; margin-bottom:3px;">WINNER — MAR 15, 2026</div><div class="fv" style="font-size:18px; color:var(--cream);">0x7a3f...8b2c</div></div>
+        <div class="fv" style="font-size:22px; color:var(--gold-lt); text-shadow:0 0 8px rgba(200,168,75,0.3);">+0.02 Ξ</div>
+      </div>
+
+      <div class="fp" style="font-size:7px; color:rgba(255,255,255,0.5); letter-spacing:1px; margin-bottom:12px;">RECENT DRAWS</div>
+      <div style="display:flex; flex-direction:column; gap:2px;">
+        <div style="display:flex; align-items:center; padding:10px 14px; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.04);">
+          <div class="fv" style="font-size:16px; color:rgba(255,255,255,0.4); width:90px;">Mar 15</div>
+          <div class="fv" style="font-size:16px; color:rgba(255,255,255,0.5); flex:1;">0x7a3f...8b2c</div>
+          <div class="fv" style="font-size:16px; color:rgba(255,255,255,0.3); width:80px;">52 wallets</div>
+          <div class="fv" style="font-size:18px; color:var(--accent); width:80px; text-align:right;">0.02 Ξ</div>
+        </div>
+        <div style="display:flex; align-items:center; padding:10px 14px; background:rgba(0,0,0,0.15); border:1px solid rgba(255,255,255,0.03);">
+          <div class="fv" style="font-size:16px; color:rgba(255,255,255,0.4); width:90px;">Mar 14</div>
+          <div class="fv" style="font-size:16px; color:rgba(255,255,255,0.5); flex:1;">0x20b3...0c57 <span class="fp" style="font-size:5px; color:var(--gold);">YOU!</span></div>
+          <div class="fv" style="font-size:16px; color:rgba(255,255,255,0.3); width:80px;">38 wallets</div>
+          <div class="fv" style="font-size:18px; color:var(--gold-lt); width:80px; text-align:right;">0.02 Ξ ✓</div>
+        </div>
+        <div style="display:flex; align-items:center; padding:10px 14px; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.04);">
+          <div class="fv" style="font-size:16px; color:rgba(255,255,255,0.4); width:90px;">Mar 13</div>
+          <div class="fv" style="font-size:16px; color:rgba(255,255,255,0.5); flex:1;">0x9c21...4f7a</div>
+          <div class="fv" style="font-size:16px; color:rgba(255,255,255,0.3); width:80px;">29 wallets</div>
+          <div class="fv" style="font-size:18px; color:var(--accent); width:80px; text-align:right;">0.02 Ξ</div>
+        </div>
+      </div>
+      <div class="fp" style="font-size:5px; color:rgba(255,255,255,0.2); text-align:center; margin-top:14px; letter-spacing:1px;">WINNER SELECTED VIA CHAINLINK VRF · PROVABLY FAIR · 1 WALLET = 1 TICKET</div>
+    </div>
+
+    <!-- ═══ MILESTONES DETAIL ═══ -->
+    <div id="milestonesDetail" class="detail-view hidden">
+      <div class="breadcrumb">
+        <button class="breadcrumb-back" onclick="showOverview()">★ REWARDS</button>
+        <span class="breadcrumb-sep">›</span>
+        <span class="breadcrumb-current">MILESTONES</span>
+      </div>
+
+      <div style="display:flex; gap:0; margin-bottom:20px;">
+        <button class="fp" style="flex:1; padding:10px; font-size:7px; letter-spacing:1px; color:var(--accent); background:rgba(78,205,196,0.08); border:1px solid rgba(78,205,196,0.2); border-bottom:2px solid var(--accent); cursor:pointer;">OVERALL</button>
+        <button class="fp" style="flex:1; padding:10px; font-size:7px; letter-spacing:1px; color:rgba(255,255,255,0.4); background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.06); border-bottom:2px solid transparent; cursor:pointer;">BATCH 2</button>
+      </div>
+
+      <!-- Minting -->
+      <div class="milestone-cat" style="margin-bottom:12px;">
+        <div class="milestone-cat-head">
+          <div class="fv" style="font-size:22px; color:var(--green); width:28px; text-align:center;">⬡</div>
+          <div class="fp" style="font-size:7px; color:rgba(255,255,255,0.7); letter-spacing:1px; flex:1;">MINTING</div>
+          <div class="fv" style="font-size:18px; color:var(--accent);">3 / 6</div>
+        </div>
+        <div class="milestone-badges">
+          <div class="m-badge earned"><div style="font-size:20px; margin-bottom:3px;">⬡</div><div class="fp" style="font-size:5px; color:var(--accent); margin-bottom:2px;">NOVICE</div><div class="fv" style="font-size:14px; color:rgba(78,205,196,0.6);">10 ✓</div></div>
+          <div class="m-badge earned"><div style="font-size:20px; margin-bottom:3px;">⬡⬡</div><div class="fp" style="font-size:5px; color:var(--accent); margin-bottom:2px;">BRONZE</div><div class="fv" style="font-size:14px; color:rgba(78,205,196,0.6);">100 ✓</div></div>
+          <div class="m-badge earned"><div style="font-size:20px; margin-bottom:3px;">⬡⬡⬡</div><div class="fp" style="font-size:5px; color:var(--accent); margin-bottom:2px;">SILVER</div><div class="fv" style="font-size:14px; color:rgba(78,205,196,0.6);">500 ✓</div></div>
+          <div class="m-badge next">
+            <div style="font-size:20px; margin-bottom:3px;">🏅</div>
+            <div class="fp" style="font-size:5px; color:var(--gold); margin-bottom:2px;">GOLD</div>
+            <div class="fv" style="font-size:14px; color:var(--gold);">1,000</div>
+            <div style="margin-top:5px; padding-top:5px; border-top:1px solid rgba(200,168,75,0.15);">
+              <div class="fp" style="font-size:5px; color:rgba(200,168,75,0.6);">742 / 1,000</div>
+              <div style="height:4px; background:rgba(0,0,0,0.5); overflow:hidden; margin-top:3px;"><div style="height:100%; width:74.2%; background:var(--gold);"></div></div>
+            </div>
+          </div>
+          <div class="m-badge locked"><div style="font-size:20px; margin-bottom:3px; filter:grayscale(1) brightness(0.5);">💎</div><div class="fp" style="font-size:5px; color:rgba(255,255,255,0.4); margin-bottom:2px;">DIAMOND</div><div class="fv" style="font-size:14px; color:rgba(255,255,255,0.2);">5,000</div></div>
+          <div class="m-badge locked"><div style="font-size:20px; margin-bottom:3px; filter:grayscale(1) brightness(0.5);">🖤</div><div class="fp" style="font-size:5px; color:rgba(255,255,255,0.4); margin-bottom:2px;">OBSIDIAN</div><div class="fv" style="font-size:14px; color:rgba(255,255,255,0.2);">10,000</div></div>
+        </div>
+      </div>
+
+      <!-- Forging -->
+      <div class="milestone-cat" style="margin-bottom:12px;">
+        <div class="milestone-cat-head">
+          <div class="fv" style="font-size:22px; color:var(--purple); width:28px; text-align:center;">⚡</div>
+          <div class="fp" style="font-size:7px; color:rgba(255,255,255,0.7); letter-spacing:1px; flex:1;">FORGING</div>
+          <div class="fv" style="font-size:18px; color:var(--accent);">2 / 5</div>
+        </div>
+        <div class="milestone-badges">
+          <div class="m-badge earned"><div style="font-size:20px; margin-bottom:3px;">🔥</div><div class="fp" style="font-size:5px; color:var(--accent); margin-bottom:2px;">FIRST SPARK</div><div class="fv" style="font-size:14px; color:rgba(78,205,196,0.6);">1 ✓</div></div>
+          <div class="m-badge earned"><div style="font-size:20px; margin-bottom:3px;">🔧</div><div class="fp" style="font-size:5px; color:var(--accent); margin-bottom:2px;">TINKERER</div><div class="fv" style="font-size:14px; color:rgba(78,205,196,0.6);">5 ✓</div></div>
+          <div class="m-badge next">
+            <div style="font-size:20px; margin-bottom:3px;">⚒️</div>
+            <div class="fp" style="font-size:5px; color:var(--gold); margin-bottom:2px;">SMITH</div>
+            <div class="fv" style="font-size:14px; color:var(--gold);">20</div>
+            <div style="margin-top:5px; padding-top:5px; border-top:1px solid rgba(200,168,75,0.15);">
+              <div class="fp" style="font-size:5px; color:rgba(200,168,75,0.6);">12 / 20</div>
+              <div style="height:4px; background:rgba(0,0,0,0.5); overflow:hidden; margin-top:3px;"><div style="height:100%; width:60%; background:var(--gold);"></div></div>
+            </div>
+          </div>
+          <div class="m-badge locked"><div style="font-size:20px; margin-bottom:3px; filter:grayscale(1) brightness(0.5);">🏗️</div><div class="fp" style="font-size:5px; color:rgba(255,255,255,0.4); margin-bottom:2px;">FORGEMASTER</div><div class="fv" style="font-size:14px; color:rgba(255,255,255,0.2);">50</div></div>
+          <div class="m-badge locked"><div style="font-size:20px; margin-bottom:3px; filter:grayscale(1) brightness(0.5);">👑</div><div class="fp" style="font-size:5px; color:rgba(255,255,255,0.4); margin-bottom:2px;">LEGENDARY</div><div class="fv" style="font-size:14px; color:rgba(255,255,255,0.2);">100</div></div>
+        </div>
+      </div>
+
+      <!-- Collection -->
+      <div class="milestone-cat">
+        <div class="milestone-cat-head">
+          <div class="fv" style="font-size:22px; color:var(--gold); width:28px; text-align:center;">◆</div>
+          <div class="fp" style="font-size:7px; color:rgba(255,255,255,0.7); letter-spacing:1px; flex:1;">COLLECTION</div>
+          <div class="fv" style="font-size:18px; color:var(--accent);">3 / 5</div>
+        </div>
+        <div class="milestone-badges">
+          <div class="m-badge earned"><div style="font-size:16px; margin-bottom:3px;">◇◇</div><div class="fp" style="font-size:5px; color:var(--accent);">COLLECTOR</div><div class="fv" style="font-size:14px; color:rgba(78,205,196,0.6);">2 tiers ✓</div></div>
+          <div class="m-badge earned"><div style="font-size:16px; margin-bottom:3px;">◇◇◇</div><div class="fp" style="font-size:5px; color:var(--accent);">HUNTER</div><div class="fv" style="font-size:14px; color:rgba(78,205,196,0.6);">3 tiers ✓</div></div>
+          <div class="m-badge earned"><div style="font-size:16px; margin-bottom:3px;">◆◆◆◆</div><div class="fp" style="font-size:5px; color:var(--accent);">SEEKER</div><div class="fv" style="font-size:14px; color:rgba(78,205,196,0.6);">4 tiers ✓</div></div>
+          <div class="m-badge next"><div style="font-size:16px; margin-bottom:3px;">◆◆◆◆◆</div><div class="fp" style="font-size:5px; color:var(--gold);">CONTENDER</div><div class="fv" style="font-size:14px; color:var(--gold);">5 tiers</div></div>
+          <div class="m-badge locked"><div style="font-size:16px; margin-bottom:3px; animation:goldPulse 2s infinite;">★</div><div class="fp" style="font-size:5px; color:rgba(255,255,255,0.3);">COUNTDOWN THREAT</div><div class="fv" style="font-size:14px; color:rgba(255,255,255,0.15);">6 tiers</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ HALL OF FAME DETAIL ═══ -->
+    <div id="hofDetail" class="detail-view hidden">
+      <div class="breadcrumb">
+        <button class="breadcrumb-back" onclick="showOverview()">★ REWARDS</button>
+        <span class="breadcrumb-sep">›</span>
+        <span class="breadcrumb-current">HALL OF FAME</span>
+      </div>
+
+      <div class="fp" style="font-size:8px; color:var(--gold-lt); letter-spacing:2px; margin-bottom:4px; text-shadow:0 0 12px rgba(200,168,75,0.3);">LEGENDS — ALL TIME</div>
+      <div class="fp" style="font-size:5px; color:rgba(255,255,255,0.25); letter-spacing:1px; margin-bottom:14px;">ONCE CLAIMED, FOREVER YOURS</div>
+
+      <div class="hof-row legend"><div class="hof-rank-box">★</div><div class="fp" style="font-size:7px; color:var(--gold-lt); letter-spacing:1px; flex:1;">THE PIONEER — First Mint</div><div class="fv" style="font-size:16px; color:rgba(255,255,255,0.4);">0x20b3...0c57 <span class="fp" style="font-size:5px; color:var(--gold);">YOU</span></div><div class="fv" style="font-size:18px; color:var(--gold-lt); min-width:60px; text-align:right;">TITLE</div></div>
+      <div class="hof-row legend"><div class="hof-rank-box">★</div><div class="fp" style="font-size:7px; color:var(--gold-lt); letter-spacing:1px; flex:1;">THE FIRST SPARK — First Forge</div><div class="fv" style="font-size:16px; color:rgba(255,255,255,0.4);">0x7a3f...8b2c</div><div class="fv" style="font-size:18px; color:var(--gold-lt); min-width:60px; text-align:right;">TITLE</div></div>
+      <div class="hof-row legend"><div class="hof-rank-box" style="background:rgba(0,0,0,0.3); color:rgba(200,168,75,0.3); border-color:rgba(200,168,75,0.15);">★</div><div class="fp" style="font-size:7px; color:rgba(200,168,75,0.35); letter-spacing:1px; flex:1;">THE THOUSAND — First 1,000 Mints</div><div class="fv" style="font-size:16px; color:rgba(255,255,255,0.12);">UNCLAIMED</div><div class="fp" style="font-size:5px; color:rgba(255,255,255,0.25); min-width:60px; text-align:right;">AVAILABLE</div></div>
+      <div class="hof-row legend"><div class="hof-rank-box" style="background:rgba(0,0,0,0.3); color:rgba(200,168,75,0.3); border-color:rgba(200,168,75,0.15);">★</div><div class="fp" style="font-size:7px; color:rgba(200,168,75,0.35); letter-spacing:1px; flex:1;">THE FIRST THREAT — First 6 Tiers</div><div class="fv" style="font-size:16px; color:rgba(255,255,255,0.12);">UNCLAIMED</div><div class="fp" style="font-size:5px; color:rgba(255,255,255,0.25); min-width:60px; text-align:right;">AVAILABLE</div></div>
+
+      <div class="fp" style="font-size:7px; color:rgba(200,168,75,0.5); letter-spacing:1px; margin-top:20px; margin-bottom:4px;">TIER DISCOVERY — ALL TIME</div>
+      <div class="fp" style="font-size:5px; color:rgba(255,255,255,0.2); letter-spacing:1px; margin-bottom:12px;">FIRST WALLET TO REVEAL EACH TIER</div>
+
+      <div class="hof-row legend"><div class="hof-rank-box" style="background:linear-gradient(135deg,#3a0000,#660000); color:#ff4444; border-color:#660000;">6</div><div class="fp" style="font-size:7px; color:var(--gold-lt); letter-spacing:1px; flex:1;">FIRST <span style="color:#ff4444;">RESTLESS</span> REVEAL</div><div class="fv" style="font-size:16px; color:rgba(255,255,255,0.4);">0x20b3...0c57 <span class="fp" style="font-size:5px; color:var(--gold);">YOU</span></div><div class="fv" style="font-size:18px; color:var(--gold-lt); min-width:60px; text-align:right;">TITLE</div></div>
+      <div class="hof-row legend"><div class="hof-rank-box" style="background:linear-gradient(135deg,#002244,#003366); color:#33aaff; border-color:#003366;">5</div><div class="fp" style="font-size:7px; color:var(--gold-lt); letter-spacing:1px; flex:1;">FIRST <span style="color:#33aaff;">REMEMBERED</span> REVEAL</div><div class="fv" style="font-size:16px; color:rgba(255,255,255,0.4);">0x7a3f...8b2c</div><div class="fv" style="font-size:18px; color:var(--gold-lt); min-width:60px; text-align:right;">TITLE</div></div>
+      <div class="hof-row legend"><div class="hof-rank-box" style="background:rgba(0,0,0,0.3); color:rgba(255,204,51,0.3); border-color:rgba(90,58,0,0.4);">4</div><div class="fp" style="font-size:7px; color:rgba(200,168,75,0.35); letter-spacing:1px; flex:1;">FIRST <span style="color:rgba(255,204,51,0.4);">ORDERED</span> REVEAL</div><div class="fv" style="font-size:16px; color:rgba(255,255,255,0.12);">UNCLAIMED</div><div class="fp" style="font-size:5px; color:rgba(255,255,255,0.25); min-width:60px; text-align:right;">AVAILABLE</div></div>
+      <div class="hof-row legend"><div class="hof-rank-box" style="background:rgba(0,0,0,0.3); color:rgba(204,102,255,0.3); border-color:rgba(68,0,119,0.4);">3</div><div class="fp" style="font-size:7px; color:rgba(200,168,75,0.35); letter-spacing:1px; flex:1;">FIRST <span style="color:rgba(204,102,255,0.4);">CHAOTIC</span> REVEAL</div><div class="fv" style="font-size:16px; color:rgba(255,255,255,0.12);">UNCLAIMED</div><div class="fp" style="font-size:5px; color:rgba(255,255,255,0.25); min-width:60px; text-align:right;">AVAILABLE</div></div>
+      <div class="hof-row legend"><div class="hof-rank-box" style="background:rgba(0,0,0,0.3); color:rgba(255,102,34,0.3); border-color:rgba(85,21,0,0.4);">2</div><div class="fp" style="font-size:7px; color:rgba(200,168,75,0.35); letter-spacing:1px; flex:1;">FIRST <span style="color:rgba(255,102,34,0.4);">WILLFUL</span> REVEAL</div><div class="fv" style="font-size:16px; color:rgba(255,255,255,0.12);">UNCLAIMED</div><div class="fp" style="font-size:5px; color:rgba(255,255,255,0.25); min-width:60px; text-align:right;">AVAILABLE</div></div>
+
+      <div style="margin-top:24px;">
+        <div style="display:inline-block; padding:3px 8px; border:1px solid rgba(78,205,196,0.2); background:rgba(78,205,196,0.04); margin-bottom:12px;">
+          <span class="fp" style="font-size:5px; color:rgba(78,205,196,0.6); letter-spacing:1px;">BATCH 2 FIRSTS — ETH BONUS + TITLE (13 ACHIEVEMENTS)</span>
+        </div>
+
+        <div class="hof-row"><div class="hof-rank-box">1</div><div class="fp" style="font-size:7px; color:var(--accent); letter-spacing:1px; flex:1;">BATCH 2 PIONEER</div><div class="fv" style="font-size:16px; color:rgba(255,255,255,0.4);">0x20b3...0c57 <span class="fp" style="font-size:5px; color:var(--gold);">YOU</span></div><div class="fv" style="font-size:18px; color:var(--accent); min-width:70px; text-align:right;">+0.02 Ξ ✓</div></div>
+        <div class="hof-row"><div class="hof-rank-box">2</div><div class="fp" style="font-size:7px; color:var(--accent); letter-spacing:1px; flex:1;">BATCH 2 COMBINER</div><div class="fv" style="font-size:16px; color:rgba(255,255,255,0.4);">0x9c21...4f7a</div><div class="fv" style="font-size:18px; color:var(--accent); min-width:70px; text-align:right;">+0.02 Ξ</div></div>
+        <div class="hof-row"><div class="hof-rank-box" style="opacity:0.4;">3</div><div class="fp" style="font-size:7px; color:rgba(78,205,196,0.4); letter-spacing:1px; flex:1;">BATCH 2 SMITH</div><div class="fv" style="font-size:16px; color:rgba(255,255,255,0.1);">UNCLAIMED</div><div class="fp" style="font-size:5px; color:rgba(255,255,255,0.25); min-width:70px; text-align:right;">0.02 Ξ</div></div>
+        <div class="hof-row"><div class="hof-rank-box" style="opacity:0.4;">4</div><div class="fp" style="font-size:7px; color:rgba(78,205,196,0.4); letter-spacing:1px; flex:1;">BATCH 2 CENTURION</div><div class="fv" style="font-size:16px; color:rgba(255,255,255,0.1);">UNCLAIMED</div><div class="fp" style="font-size:5px; color:rgba(255,255,255,0.25); min-width:70px; text-align:right;">0.02 Ξ</div></div>
+
+        <div style="margin-top:14px; margin-bottom:10px; padding-top:12px; border-top:1px solid rgba(78,205,196,0.06);">
+          <div class="fp" style="font-size:6px; color:rgba(78,205,196,0.5); letter-spacing:1px;">BATCH 2 TIER DISCOVERY</div>
+        </div>
+
+        <div class="hof-row"><div class="hof-rank-box" style="background:linear-gradient(135deg,#3a0000,#660000); color:#ff4444; border-color:#660000; font-size:16px;">T6</div><div class="fp" style="font-size:7px; color:var(--accent); letter-spacing:1px; flex:1;">FIRST <span style="color:#ff4444;">RESTLESS</span> IN BATCH 2</div><div class="fv" style="font-size:16px; color:rgba(255,255,255,0.4);">0x20b3...0c57 <span class="fp" style="font-size:5px; color:var(--gold);">YOU</span></div><div class="fv" style="font-size:18px; color:var(--accent); min-width:70px; text-align:right;">+0.02 Ξ ✓</div></div>
+        <div class="hof-row"><div class="hof-rank-box" style="background:linear-gradient(135deg,#002244,#003366); color:#33aaff; border-color:#003366; font-size:16px;">T5</div><div class="fp" style="font-size:7px; color:var(--accent); letter-spacing:1px; flex:1;">FIRST <span style="color:#33aaff;">REMEMBERED</span> IN BATCH 2</div><div class="fv" style="font-size:16px; color:rgba(255,255,255,0.4);">0x9c21...4f7a</div><div class="fv" style="font-size:18px; color:var(--accent); min-width:70px; text-align:right;">+0.02 Ξ</div></div>
+        <div class="hof-row"><div class="hof-rank-box" style="background:rgba(0,0,0,0.3); color:rgba(255,204,51,0.4); border-color:rgba(90,58,0,0.3); font-size:16px;">T4</div><div class="fp" style="font-size:7px; color:rgba(78,205,196,0.4); letter-spacing:1px; flex:1;">FIRST <span style="color:rgba(255,204,51,0.4);">ORDERED</span> IN BATCH 2</div><div class="fv" style="font-size:16px; color:rgba(255,255,255,0.1);">UNCLAIMED</div><div class="fp" style="font-size:5px; color:rgba(255,255,255,0.25); min-width:70px; text-align:right;">0.02 Ξ</div></div>
+        <div class="hof-row"><div class="hof-rank-box" style="background:rgba(0,0,0,0.3); color:rgba(204,102,255,0.4); border-color:rgba(68,0,119,0.3); font-size:16px;">T3</div><div class="fp" style="font-size:7px; color:rgba(78,205,196,0.4); letter-spacing:1px; flex:1;">FIRST <span style="color:rgba(204,102,255,0.4);">CHAOTIC</span> IN BATCH 2</div><div class="fv" style="font-size:16px; color:rgba(255,255,255,0.1);">UNCLAIMED</div><div class="fp" style="font-size:5px; color:rgba(255,255,255,0.25); min-width:70px; text-align:right;">0.02 Ξ</div></div>
+        <div class="hof-row"><div class="hof-rank-box" style="background:rgba(0,0,0,0.3); color:rgba(255,102,34,0.4); border-color:rgba(85,21,0,0.3); font-size:16px;">T2</div><div class="fp" style="font-size:7px; color:rgba(78,205,196,0.4); letter-spacing:1px; flex:1;">FIRST <span style="color:rgba(255,102,34,0.4);">WILLFUL</span> IN BATCH 2</div><div class="fv" style="font-size:16px; color:rgba(255,255,255,0.1);">UNCLAIMED</div><div class="fp" style="font-size:5px; color:rgba(255,255,255,0.25); min-width:70px; text-align:right;">0.02 Ξ</div></div>
+      </div>
+    </div>
+
+    <!-- ═══ BOUNTY DETAIL ═══ -->
+    <div id="bountyDetail" class="detail-view hidden">
+      <div class="breadcrumb">
+        <button class="breadcrumb-back" onclick="showOverview()">★ REWARDS</button>
+        <span class="breadcrumb-sep">›</span>
+        <span class="breadcrumb-current">BATCH BOUNTY</span>
+      </div>
+
+      <div style="background:rgba(0,0,0,0.3); border:1px solid rgba(78,205,196,0.1); padding:20px; margin-bottom:16px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+          <div>
+            <div class="fp" style="font-size:9px; color:var(--accent); letter-spacing:2px; text-shadow:0 0 12px rgba(78,205,196,0.3);">BATCH 2 BOUNTY</div>
+            <div class="fp" style="font-size:5px; color:rgba(255,255,255,0.3); margin-top:4px; letter-spacing:1px;">EVERYONE WHO MINTED SHARES THE PRIZE</div>
+          </div>
+          <div style="text-align:right;">
+            <div class="fv" style="font-size:36px; color:var(--accent); text-shadow:0 0 20px rgba(78,205,196,0.4); line-height:1;">0.20 Ξ</div>
+            <div class="fp" style="font-size:5px; color:rgba(78,205,196,0.5); letter-spacing:1px;">TOTAL BOUNTY</div>
+          </div>
+        </div>
+
+        <div style="margin-bottom:16px;">
+          <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+            <div class="fp" style="font-size:7px; color:rgba(255,255,255,0.6); letter-spacing:1px;">BATCH 2 PROGRESS</div>
+            <div class="fv" style="font-size:20px; color:var(--cream);">347,200 / 500,000</div>
+          </div>
+          <div class="bounty-track"><div class="bounty-fill" style="width:69.4%;"></div></div>
+          <div style="display:flex; justify-content:space-between; margin-top:4px;">
+            <div class="fp" style="font-size:5px; color:rgba(255,255,255,0.25);">152,800 BLOCKS REMAINING</div>
+            <div class="fp" style="font-size:5px; color:var(--accent); animation:progressPulse 1.5s infinite;">69.4%</div>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:0; border:1px solid rgba(78,205,196,0.08);">
+          <div style="padding:12px; text-align:center; background:rgba(0,0,0,0.2);"><div class="fv" style="font-size:24px; color:var(--accent);">~312</div><div class="fp" style="font-size:5px; color:rgba(255,255,255,0.35); letter-spacing:1px; margin-top:2px;">ELIGIBLE WALLETS</div></div>
+          <div style="padding:12px; text-align:center; background:rgba(0,0,0,0.2); border-left:1px solid rgba(78,205,196,0.08);"><div class="fv" style="font-size:24px; color:var(--accent);">~0.00064 Ξ</div><div class="fp" style="font-size:5px; color:rgba(255,255,255,0.35); letter-spacing:1px; margin-top:2px;">EST. PER WALLET</div></div>
+        </div>
+
+        <div style="margin-top:16px; padding:12px 16px; background:rgba(78,205,196,0.06); border:1px solid rgba(78,205,196,0.15); display:flex; align-items:center; justify-content:center; gap:8px;">
+          <div class="fv" style="font-size:22px; color:var(--green);">✓</div>
+          <div class="fp" style="font-size:7px; color:var(--green); letter-spacing:1px;">YOU MINTED IN BATCH 2 — YOU'RE ELIGIBLE</div>
+        </div>
+      </div>
+
+      <!-- Completed batch -->
+      <div style="background:rgba(0,0,0,0.3); border:1px solid rgba(78,205,196,0.06); padding:16px; opacity:0.6;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+          <div>
+            <div class="fp" style="font-size:8px; color:rgba(78,205,196,0.6); letter-spacing:1px;">BATCH 1 BOUNTY</div>
+            <div class="fp" style="font-size:5px; color:rgba(255,255,255,0.2); margin-top:3px;">COMPLETE — 500,000 / 500,000</div>
+          </div>
+          <div class="fv" style="font-size:24px; color:rgba(78,205,196,0.6);">0.10 Ξ</div>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px; padding:10px 14px; background:rgba(200,168,75,0.06); border:1px solid rgba(200,168,75,0.15);">
+          <div class="fp" style="font-size:6px; color:var(--gold); letter-spacing:1px;">CLAIMED — +0.0005 Ξ</div>
+          <div class="fv" style="font-size:16px; color:var(--gold);">✓</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const views = ['overviewView','streakDetail','lotteryDetail','milestonesDetail','hofDetail','bountyDetail'];
+
+function hideAll() {
+  views.forEach(id => document.getElementById(id).classList.add('hidden'));
+}
+
+function showOverview() {
+  hideAll();
+  document.getElementById('overviewView').classList.remove('hidden');
+  document.getElementById('rewardsPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function showDetail(name) {
+  hideAll();
+  const map = { streak:'streakDetail', lottery:'lotteryDetail', milestones:'milestonesDetail', hof:'hofDetail', bounty:'bountyDetail' };
+  document.getElementById(map[name]).classList.remove('hidden');
+  document.getElementById('rewardsPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  // Hide instruction after first click
+  const inst = document.getElementById('instruction');
+  if (inst) inst.style.display = 'none';
+}
+</script>
+</body>
+</html>

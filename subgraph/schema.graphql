@@ -14,9 +14,26 @@ type Player @entity {
   # Derived — recalculated on every event
   tiersUnlocked: Int!        # count of tiers 2–7 where balance > 0
   totalMints: BigInt!        # blocks received from VRF (MintFulfilled)
+  totalCombines: BigInt!     # combine actions (BlocksCombined)
+  totalForges: BigInt!       # forge attempts (BlocksForged)
+  totalForgeSuccesses: BigInt!  # successful forges
   progressionScore: BigInt!  # weighted score used for leaderboard ranking
 
   lastUpdated: BigInt!
+
+  # Reverse lookups
+  activities: [PlayerActivity!]! @derivedFrom(field: "player")
+}
+
+# One entity per player per UTC day — used for streak calculation
+type PlayerActivity @entity {
+  id: ID!                  # "{playerAddress}-{YYYY-MM-DD}"
+  player: Player!
+  date: String!            # "YYYY-MM-DD" UTC
+  timestamp: BigInt!       # first activity timestamp that day
+  hasMint: Boolean!
+  hasCombine: Boolean!
+  hasForge: Boolean!
 }
 
 # Singleton — always id = "season-1"

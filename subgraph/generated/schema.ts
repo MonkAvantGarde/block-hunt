@@ -180,6 +180,45 @@ export class Player extends Entity {
     this.set("totalMints", Value.fromBigInt(value));
   }
 
+  get totalCombines(): BigInt {
+    let value = this.get("totalCombines");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toBigInt();
+    }
+  }
+
+  set totalCombines(value: BigInt) {
+    this.set("totalCombines", Value.fromBigInt(value));
+  }
+
+  get totalForges(): BigInt {
+    let value = this.get("totalForges");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toBigInt();
+    }
+  }
+
+  set totalForges(value: BigInt) {
+    this.set("totalForges", Value.fromBigInt(value));
+  }
+
+  get totalForgeSuccesses(): BigInt {
+    let value = this.get("totalForgeSuccesses");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toBigInt();
+    }
+  }
+
+  set totalForgeSuccesses(value: BigInt) {
+    this.set("totalForgeSuccesses", Value.fromBigInt(value));
+  }
+
   get progressionScore(): BigInt {
     let value = this.get("progressionScore");
     if (!value || value.kind == ValueKind.NULL) {
@@ -204,6 +243,134 @@ export class Player extends Entity {
 
   set lastUpdated(value: BigInt) {
     this.set("lastUpdated", Value.fromBigInt(value));
+  }
+
+  get activities(): PlayerActivityLoader {
+    return new PlayerActivityLoader(
+      "Player",
+      this.get("id")!.toString(),
+      "activities",
+    );
+  }
+}
+
+export class PlayerActivity extends Entity {
+  constructor(id: string) {
+    super();
+    this.set("id", Value.fromString(id));
+  }
+
+  save(): void {
+    let id = this.get("id");
+    assert(id != null, "Cannot save PlayerActivity entity without an ID");
+    if (id) {
+      assert(
+        id.kind == ValueKind.STRING,
+        `Entities of type PlayerActivity must have an ID of type String but the id '${id.displayData()}' is of type ${id.displayKind()}`,
+      );
+      store.set("PlayerActivity", id.toString(), this);
+    }
+  }
+
+  static loadInBlock(id: string): PlayerActivity | null {
+    return changetype<PlayerActivity | null>(
+      store.get_in_block("PlayerActivity", id),
+    );
+  }
+
+  static load(id: string): PlayerActivity | null {
+    return changetype<PlayerActivity | null>(store.get("PlayerActivity", id));
+  }
+
+  get id(): string {
+    let value = this.get("id");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toString();
+    }
+  }
+
+  set id(value: string) {
+    this.set("id", Value.fromString(value));
+  }
+
+  get player(): string {
+    let value = this.get("player");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toString();
+    }
+  }
+
+  set player(value: string) {
+    this.set("player", Value.fromString(value));
+  }
+
+  get date(): string {
+    let value = this.get("date");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toString();
+    }
+  }
+
+  set date(value: string) {
+    this.set("date", Value.fromString(value));
+  }
+
+  get timestamp(): BigInt {
+    let value = this.get("timestamp");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toBigInt();
+    }
+  }
+
+  set timestamp(value: BigInt) {
+    this.set("timestamp", Value.fromBigInt(value));
+  }
+
+  get hasMint(): boolean {
+    let value = this.get("hasMint");
+    if (!value || value.kind == ValueKind.NULL) {
+      return false;
+    } else {
+      return value.toBoolean();
+    }
+  }
+
+  set hasMint(value: boolean) {
+    this.set("hasMint", Value.fromBoolean(value));
+  }
+
+  get hasCombine(): boolean {
+    let value = this.get("hasCombine");
+    if (!value || value.kind == ValueKind.NULL) {
+      return false;
+    } else {
+      return value.toBoolean();
+    }
+  }
+
+  set hasCombine(value: boolean) {
+    this.set("hasCombine", Value.fromBoolean(value));
+  }
+
+  get hasForge(): boolean {
+    let value = this.get("hasForge");
+    if (!value || value.kind == ValueKind.NULL) {
+      return false;
+    } else {
+      return value.toBoolean();
+    }
+  }
+
+  set hasForge(value: boolean) {
+    this.set("hasForge", Value.fromBoolean(value));
   }
 }
 
@@ -283,5 +450,23 @@ export class SeasonStat extends Entity {
 
   set uniquePlayers(value: i32) {
     this.set("uniquePlayers", Value.fromI32(value));
+  }
+}
+
+export class PlayerActivityLoader extends Entity {
+  _entity: string;
+  _field: string;
+  _id: string;
+
+  constructor(entity: string, id: string, field: string) {
+    super();
+    this._entity = entity;
+    this._id = id;
+    this._field = field;
+  }
+
+  load(): PlayerActivity[] {
+    let value = store.loadRelated(this._entity, this._id, this._field);
+    return changetype<PlayerActivity[]>(value);
   }
 }

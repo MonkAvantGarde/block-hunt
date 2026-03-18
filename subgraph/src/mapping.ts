@@ -1,7 +1,12 @@
 import { BigInt, Bytes } from "@graphprotocol/graph-ts"
-import { TransferSingle, TransferBatch } from "../generated/BlockHuntToken/BlockHuntToken"
-import { MintFulfilled } from "../generated/BlockHuntToken/BlockHuntToken"
-import { Player, SeasonStat } from "../generated/schema"
+import {
+  TransferSingle,
+  TransferBatch,
+  MintFulfilled,
+  BlocksCombined,
+  BlocksForged,
+} from "../generated/BlockHuntToken/BlockHuntToken"
+import { Player, PlayerActivity, SeasonStat } from "../generated/schema"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tier weights — T7 blocks required to produce 1 of each tier
@@ -17,6 +22,7 @@ const WEIGHT_T7 = BigInt.fromString("1")
 
 const ZERO        = BigInt.fromI32(0)
 const ADDR_ZERO   = "0x0000000000000000000000000000000000000000"
+const SECS_PER_DAY = 86400
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -37,18 +43,21 @@ function getOrCreatePlayer(address: string): Player {
   let player = Player.load(address)
   if (!player) {
     player = new Player(address)
-    player.address          = Bytes.fromHexString(address)
-    player.tier1Balance     = ZERO
-    player.tier2Balance     = ZERO
-    player.tier3Balance     = ZERO
-    player.tier4Balance     = ZERO
-    player.tier5Balance     = ZERO
-    player.tier6Balance     = ZERO
-    player.tier7Balance     = ZERO
-    player.tiersUnlocked    = 0
-    player.totalMints       = ZERO
-    player.progressionScore = ZERO
-    player.lastUpdated      = ZERO
+    player.address             = Bytes.fromHexString(address)
+    player.tier1Balance        = ZERO
+    player.tier2Balance        = ZERO
+    player.tier3Balance        = ZERO
+    player.tier4Balance        = ZERO
+    player.tier5Balance        = ZERO
+    player.tier6Balance        = ZERO
+    player.tier7Balance        = ZERO
+    player.tiersUnlocked       = 0
+    player.totalMints          = ZERO
+    player.totalCombines       = ZERO
+    player.totalForges         = ZERO
+    player.totalForgeSuccesses = ZERO
+    player.progressionScore    = ZERO
+    player.lastUpdated         = ZERO
 
     // First time we see this address — increment unique player count
     let stats = getOrCreateStats()
@@ -104,6 +113,64 @@ function recalcPlayer(player: Player): void {
   if (t6.gt(ZERO)) count++
   if (t7.gt(ZERO)) count++
   player.tiersUnlocked = count
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Daily activity tracking — one entity per player per UTC day
+// ─────────────────────────────────────────────────────────────────────────────
+
+function utcDateString(timestamp: BigInt): string {
+  let ts = timestamp.toI32()
+  let day = ts / SECS_PER_DAY           // days since epoch
+  let y = 1970
+  let remaining = day
+
+  // Year calculation
+  while (true) {
+    let daysInYear = isLeapYear(y) ? 366 : 365
+    if (remaining < daysInYear) break
+    remaining -= daysInYear
+    y++
+  }
+
+  // Month calculation
+  let monthDays: i32[] = [31, isLeapYear(y) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+  let m = 0
+  while (m < 12 && remaining >= monthDays[m]) {
+    remaining -= monthDays[m]
+    m++
+  }
+
+  let yStr = y.toString()
+  let mStr = (m + 1).toString()
+  let dStr = (remaining + 1).toString()
+  if (mStr.length == 1) mStr = "0" + mStr
+  if (dStr.length == 1) dStr = "0" + dStr
+
+  return yStr + "-" + mStr + "-" + dStr
+}
+
+function isLeapYear(y: i32): bool {
+  return (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0)
+}
+
+function recordActivity(playerAddress: string, timestamp: BigInt, activityType: string): void {
+  let dateStr = utcDateString(timestamp)
+  let id = playerAddress + "-" + dateStr
+  let activity = PlayerActivity.load(id)
+  if (!activity) {
+    activity = new PlayerActivity(id)
+    activity.player = playerAddress
+    activity.date = dateStr
+    activity.timestamp = timestamp
+    activity.hasMint = false
+    activity.hasCombine = false
+    activity.hasForge = false
+  }
+  if (activityType == "mint") activity.hasMint = true
+  else if (activityType == "combine") activity.hasCombine = true
+  else if (activityType == "forge") activity.hasForge = true
+  activity.save()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -218,6 +285,7 @@ export function handleTransferBatch(event: TransferBatch): void {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Event: MintFulfilled — VRF mint completion
 // ─────────────────────────────────────────────────────────────────────────────
 export function handleMintFulfilled(event: MintFulfilled): void {
   let playerAddr = event.params.player.toHexString().toLowerCase()
@@ -225,4 +293,35 @@ export function handleMintFulfilled(event: MintFulfilled): void {
   player.totalMints  = player.totalMints.plus(event.params.quantity)
   player.lastUpdated = event.block.timestamp
   player.save()
+
+  recordActivity(playerAddr, event.block.timestamp, "mint")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Event: BlocksCombined — player combined tokens
+// ─────────────────────────────────────────────────────────────────────────────
+export function handleBlocksCombined(event: BlocksCombined): void {
+  let playerAddr = event.params.by.toHexString().toLowerCase()
+  let player = getOrCreatePlayer(playerAddr)
+  player.totalCombines = player.totalCombines.plus(BigInt.fromI32(1))
+  player.lastUpdated   = event.block.timestamp
+  player.save()
+
+  recordActivity(playerAddr, event.block.timestamp, "combine")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Event: BlocksForged — player attempted a forge
+// ─────────────────────────────────────────────────────────────────────────────
+export function handleBlocksForged(event: BlocksForged): void {
+  let playerAddr = event.params.by.toHexString().toLowerCase()
+  let player = getOrCreatePlayer(playerAddr)
+  player.totalForges = player.totalForges.plus(BigInt.fromI32(1))
+  if (event.params.success) {
+    player.totalForgeSuccesses = player.totalForgeSuccesses.plus(BigInt.fromI32(1))
+  }
+  player.lastUpdated = event.block.timestamp
+  player.save()
+
+  recordActivity(playerAddr, event.block.timestamp, "forge")
 }
