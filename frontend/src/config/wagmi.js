@@ -45,12 +45,12 @@ export const config = createConfig({
 // Never hardcode addresses anywhere else in the app.
 
 export const CONTRACTS = {
-  TOKEN:     '0x5A5335f138950C127Dc9baaA2618e89ADEce09aC',
-  TREASURY:  '0x6c264D2aBc88bB52D8D1B8769360cad71cB6730f',
-  WINDOW:    '0xd6041d73C9B5C8dde6df6a1b35F7d22C1A087aEa',
-  FORGE:     '0xA4865336E3e760f6738B0Dea009B574f3d8e0BbC',
-  COUNTDOWN: '0x7360590aD91AFE35e9e678842a79B0720F0425e7',
-  ESCROW:    '0xBA346012cc45BBD3aB66E953C6D5914a8E40D923',
+  TOKEN:     '0x669aa2605E66565EFe874dBb8cAB9450c75E7A00',
+  TREASURY:  '0x5E62B079AD08c8E20E027d53e9CF64bd93B40027',
+  WINDOW:    '0x7934276Bfcf25C8358dFf5a0C012056b97679087',
+  FORGE:     '0x6CCBD030Eab2020326d3D76725F8361ffD354303',
+  COUNTDOWN: '0x94D74ABf423E57ffA13D80FB116863c3E2895A30',
+  ESCROW:    '0x1e21c3536f3AE5590aA89A19DF599e7A6D50E985',
   REWARDS:   '0xEfD6e50be55b8eA31019eCFd44b72D77C5bd840d',
 }
 
@@ -59,27 +59,31 @@ export const CONTRACTS = {
 // Used throughout the UI for display and validation.
 
 // Mint price is batch-dependent — read current batch from contract, then look up here.
-// Keys are batch numbers (1–6) matching the on-chain batch index.
+// Keys are batch numbers (1–10) matching the on-chain batch index.
 export const BATCH_PRICES_ETH = {
-  1: 0.000004,
-  2: 0.000008,
-  3: 0.000016,
-  4: 0.000040,
-  5: 0.000080,
-  6: 0.000100,
+  1: 0.00008,
+  2: 0.00012,
+  3: 0.00020,
+  4: 0.00032,
+  5: 0.00056,
+  6: 0.00100,
+  7: 0.00180,
+  8: 0.00320,
+  9: 0.00520,
+  10: 0.00800,
 }
 
 // Helper — pass the current batch number returned by the contract
 export const getMintPrice = (batch) => BATCH_PRICES_ETH[batch] ?? BATCH_PRICES_ETH[1]
 
-// Combine ratios — T7 down to T2 only.
+// Combine ratios — T7 down to T2 only (v2.1 updated ratios).
 // T2→T1 (The Origin) is NOT available via combine. The Origin is sacrifice-only.
 export const COMBINE_RATIOS = {
-  7: 20,   // 20 Tier-7 → 1 Tier-6
-  6: 20,   // 20 Tier-6 → 1 Tier-5
-  5: 30,   // 30 Tier-5 → 1 Tier-4
-  4: 30,   // 30 Tier-4 → 1 Tier-3
-  3: 50,   // 50 Tier-3 → 1 Tier-2
+  7: 21,   // 21 Tier-7 → 1 Tier-6
+  6: 19,   // 19 Tier-6 → 1 Tier-5
+  5: 17,   // 17 Tier-5 → 1 Tier-4
+  4: 15,   // 15 Tier-4 → 1 Tier-3
+  3: 13,   // 13 Tier-3 → 1 Tier-2
 }
 
 export const TIER_NAMES = {

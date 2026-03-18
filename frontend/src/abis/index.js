@@ -1,12 +1,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // abis/index.js — Contract ABIs for The Block Hunt
 //
-// Updated: March 14, 2026 — Phase 5 (Audit Fixes)
-// Regenerated from compiled artifacts after:
-//   - H-1: Token setter guards (test-mode-gated)
-//   - H-3: Countdown round-based voting (countdownRound, challengeCountdown)
-//   - H-4: Royalty 10% cap
-//   - M-1: Escrow pull-payment (withdrawWinnerShare)
+// Updated: March 18, 2026 — v2.1 (Game Mechanics Update)
+// Changes:
+//   - Token: continuous rarity curve (totalMinted, t2Coeff/t3Coeff/t4Coeff),
+//            new combine ratios (21/19/17/15/13), setRarityCoefficients
+//   - MintWindow: 10-batch config (batchConfigs, batchCount, setBatchConfig)
+//   - Countdown: takeover mechanic (takeoverCount, safePeriod, countdownDuration)
 // ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -28,6 +28,18 @@ export const TOKEN_ABI = [
     inputs: [], outputs: [{ name: '', type: 'bool' }] },
   { name: 'countdownHolder', type: 'function', stateMutability: 'view',
     inputs: [], outputs: [{ name: '', type: 'address' }] },
+  // v2.1: continuous rarity curve
+  { name: 'totalMinted', type: 'function', stateMutability: 'view',
+    inputs: [], outputs: [{ name: '', type: 'uint256' }] },
+  { name: 't2Coeff', type: 'function', stateMutability: 'view',
+    inputs: [], outputs: [{ name: '', type: 'uint256' }] },
+  { name: 't3Coeff', type: 'function', stateMutability: 'view',
+    inputs: [], outputs: [{ name: '', type: 'uint256' }] },
+  { name: 't4Coeff', type: 'function', stateMutability: 'view',
+    inputs: [], outputs: [{ name: '', type: 'uint256' }] },
+  { name: 'combineRatio', type: 'function', stateMutability: 'view',
+    inputs: [{ name: 'tier', type: 'uint256' }],
+    outputs: [{ name: '', type: 'uint256' }] },
   // ── VRF Recovery ──
   { name: 'getPendingRequests', type: 'function', stateMutability: 'view',
     inputs: [{ name: 'player', type: 'address' }],
@@ -110,6 +122,18 @@ export const WINDOW_ABI = [
   { name: 'userDayMints', type: 'function', stateMutability: 'view',
     inputs: [{ name: '', type: 'uint256' }, { name: '', type: 'address' }],
     outputs: [{ name: '', type: 'uint256' }] },
+  // v2.1: 10-batch config
+  { name: 'batchCount', type: 'function', stateMutability: 'view',
+    inputs: [], outputs: [{ name: '', type: 'uint256' }] },
+  { name: 'batchConfigs', type: 'function', stateMutability: 'view',
+    inputs: [{ name: '', type: 'uint256' }],
+    outputs: [
+      { name: 'supply', type: 'uint256' }, { name: 'price', type: 'uint256' },
+      { name: 'windowCap', type: 'uint256' },
+    ] },
+  { name: 'batchPrice', type: 'function', stateMutability: 'view',
+    inputs: [{ name: 'batch', type: 'uint256' }],
+    outputs: [{ name: '', type: 'uint256' }] },
 ];
 
 
@@ -156,6 +180,13 @@ export const COUNTDOWN_ABI = [
   { name: 'holderScore', type: 'function', stateMutability: 'view',
     inputs: [], outputs: [{ name: '', type: 'uint256' }] },
   { name: 'lastChallengeTime', type: 'function', stateMutability: 'view',
+    inputs: [], outputs: [{ name: '', type: 'uint256' }] },
+  // v2.1: takeover mechanic
+  { name: 'takeoverCount', type: 'function', stateMutability: 'view',
+    inputs: [], outputs: [{ name: '', type: 'uint256' }] },
+  { name: 'safePeriod', type: 'function', stateMutability: 'view',
+    inputs: [], outputs: [{ name: '', type: 'uint256' }] },
+  { name: 'countdownDuration', type: 'function', stateMutability: 'view',
     inputs: [], outputs: [{ name: '', type: 'uint256' }] },
 
   // ── Events ──

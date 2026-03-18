@@ -14,7 +14,7 @@
 //   windowInfo      — mint window status: open/closed, timer, slots, minted/allocated
 //   countdownInfo   — countdown: active?, holder, time left, votes
 //   prizePool       — current prize pool in ETH (formatted string)
-//   currentBatch    — current batch number (1-6)
+//   currentBatch    — current batch number (1-10)
 //   mintPrice       — price per block for current batch (formatted ETH string)
 //   mintPriceWei    — price per block as bigint (for transaction value)
 //   escrowInfo      — sacrifice distribution state (null if not yet sacrificed)
@@ -55,7 +55,7 @@ export function useGameState() {
     query: { refetchInterval: 30_000 },
   })
 
-  // ── CURRENT BATCH (1-6) ────────────────────────────────────────────────────
+  // ── CURRENT BATCH (1-10) ───────────────────────────────────────────────────
   const {
     data: batchRaw,
     isLoading: batchLoading,

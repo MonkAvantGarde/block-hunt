@@ -54,20 +54,20 @@ export const TIER_NAMES = {
 
 // ── GAME CONSTANTS ───────────────────────────────────────────────────────────
 // T2→T1 combine does NOT exist. The Origin is sacrifice-only.
-export const COMBINE_RATIOS = { 7:20, 6:20, 5:30, 4:30, 3:50 };
+export const COMBINE_RATIOS = { 7:21, 6:19, 5:17, 4:15, 3:13 };
 
 // Forge probability is ratio-anchored: burning N of M = (N/M × 100)% chance
 // M = combine ratio for the source tier
-export const FORGE_RATIOS = { 7:20, 6:20, 5:30, 4:30, 3:50 };
+export const FORGE_RATIOS = { 7:21, 6:19, 5:17, 4:15, 3:13 };
 
 export const BATCH_PRICES_ETH = {
-  1: 0.000004, 2: 0.000008, 3: 0.000016,
-  4: 0.000040, 5: 0.000080, 6: 0.000100,
+  1: 0.00008, 2: 0.00012, 3: 0.00020, 4: 0.00032, 5: 0.00056,
+  6: 0.00100, 7: 0.00180, 8: 0.00320, 9: 0.00520, 10: 0.00800,
 };
 
 export const BATCH_SUPPLY = {
-  1: 500000,  2: 500000,  3: 1000000,
-  4: 2000000, 5: 4000000, 6: 2000000,
+  1: 100000, 2: 100000, 3: 150000, 4: 200000, 5: 250000,
+  6: 300000, 7: 400000, 8: 500000, 9: 500000, 10: 400000,
 };
 
 export const WINDOW_DURATION_HOURS = 6;
