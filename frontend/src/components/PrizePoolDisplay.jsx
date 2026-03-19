@@ -8,6 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { GOLD, GOLD_DK, GOLD_LT, CREAM, EMBER_LT, INK } from '../config/design-tokens'
+import RollingDigits from './RollingDigits'
 
 const ETH_USD = 2500;
 
@@ -21,7 +22,7 @@ export default function PrizePoolDisplay({ eth = 0, size = "medium" }) {
         fontFamily: "'Press Start 2P', monospace",
       }}>
         <span style={{ fontSize: 6, color: GOLD, opacity: .7, letterSpacing: 1 }}>PRIZE POOL</span>
-        <span style={{ fontSize: 8, color: GOLD_LT, letterSpacing: 1 }}>Ξ {eth.toFixed(4)}</span>
+        <RollingDigits value={eth} prefix="Ξ " decimals={4} fontSize={8} color={GOLD_LT} style={{ letterSpacing: 1 }} />
       </div>
     );
   }
@@ -35,7 +36,7 @@ export default function PrizePoolDisplay({ eth = 0, size = "medium" }) {
       }}>
         <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 6, color: GOLD, opacity: .7, letterSpacing: 1 }}>PRIZE POOL</span>
         <div style={{ textAlign: "right" }}>
-          <div style={{ fontFamily: "'VT323', monospace", fontSize: 28, color: GOLD_LT }}>Ξ {eth.toFixed(4)}</div>
+          <RollingDigits value={eth} prefix="Ξ " decimals={4} fontSize={28} color={GOLD_LT} />
           <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 5, color: GOLD, opacity: .5, letterSpacing: .5 }}>≈ ${usd}</div>
         </div>
       </div>
@@ -56,7 +57,7 @@ export default function PrizePoolDisplay({ eth = 0, size = "medium" }) {
         fontFamily: "'VT323', monospace", fontSize: "clamp(64px,10vw,96px)",
         color: GOLD_LT, lineHeight: 1, marginBottom: 8,
         animation: "prize-glow 3s ease-in-out infinite",
-      }}>Ξ {eth.toFixed(4)}</div>
+      }}><RollingDigits value={eth} prefix="Ξ " decimals={4} fontSize={72} color={GOLD_LT} /></div>
       <div style={{
         fontFamily: "'Press Start 2P', monospace", fontSize: 8,
         color: GOLD, opacity: .7, letterSpacing: 2,

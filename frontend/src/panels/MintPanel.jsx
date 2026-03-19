@@ -9,6 +9,7 @@ import {
 } from '../config/design-tokens';
 import { Btn, TxErrorPanel, VRFStatusHeader } from '../components/GameUI';
 import PrizePoolDisplay from '../components/PrizePoolDisplay';
+import VRFDrumRoll from '../components/VRFDrumRoll';
 
 function PendingMintItem({ item, onDelivered, onRequestId }) {
   const [elapsed, setElapsed] = useState(Math.floor((Date.now() - item.startTime) / 1000))
@@ -139,6 +140,8 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, pr
   const [pendingMints, setPendingMints] = useState(() => loadPending())
   const [mintError, setMintError] = useState(null)
   const [, setTick] = useState(0)
+  const [drumRollActive, setDrumRollActive] = useState(false)
+  const [drumRollFulfilled, setDrumRollFulfilled] = useState(false)
   const prevBlocksRef = useRef(null)
   const pollRef = useRef(null)
 
@@ -159,10 +162,15 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, pr
         savePending(next)
         return next
       })
-      setTimeout(() => onMint(), 500)
+      // Trigger drum roll release → shatter → then hand off to card flip
+      if (drumRollActive) {
+        setDrumRollFulfilled(true)
+      } else {
+        setTimeout(() => onMint(), 500)
+      }
     }
     prevBlocksRef.current = t7
-  }, [blocks])
+  }, [blocks]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const hasPending = pendingMints.some(m => m.status === "pending")
@@ -242,6 +250,8 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, pr
     }, {
       onSuccess: (hash) => {
         setMintError(null)
+        setDrumRollActive(true)
+        setDrumRollFulfilled(false)
         const item = { id: Date.now().toString(), txHash: hash, qty, startTime: Date.now(), status: "pending" }
         setPendingMints(prev => {
           const next = [...prev, item]
@@ -294,6 +304,23 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, pr
     <div className="mint-panel-layout" style={{ display:"flex", gap:20, height:"100%" }}>
       {/* LEFT COLUMN (60%): Action */}
       <div style={{ flex:"0 0 60%", display:"flex", flexDirection:"column", gap:10 }}>
+
+        {/* VRF Drum Roll — replaces mint controls while charging */}
+        {drumRollActive && (
+          <VRFDrumRoll
+            mode="mint"
+            chargeColor={GOLD}
+            fulfilled={drumRollFulfilled}
+            onReleaseDone={() => {
+              setDrumRollActive(false)
+              setDrumRollFulfilled(false)
+              onMint()
+            }}
+          />
+        )}
+
+        {drumRollActive ? null : (<>
+        {/* — Normal mint UI below (hidden during drum roll) — */}
         {mintError && (
           <TxErrorPanel error={mintError} context="mint" onRetry={() => setMintError(null)} />
         )}
@@ -388,6 +415,7 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, pr
             <span style={{ color:"#ffcc33" }}> — {userMintsRemaining} mints left this window</span>
           )}
         </div>
+        </>)}
       </div>
 
       {/* RIGHT COLUMN (40%): Context */}
@@ -396,7 +424,7 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, pr
         <div style={{ background:"rgba(0,0,0,0.25)", border:"1px solid rgba(255,255,255,0.06)", padding:"8px 10px" }}>
           <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:"rgba(255,255,255,0.45)", letterSpacing:1, marginBottom:6 }}>BATCH PRICES</div>
           <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
-            {[1,2,3,4,5,6].map(b => {
+            {[1,2,3,4,5,6,7,8,9,10].map(b => {
               const isCurrent = b === currentBatch;
               return (
                 <div key={b} style={{

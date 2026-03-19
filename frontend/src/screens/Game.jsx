@@ -10,6 +10,9 @@ import {
 import GameStatusBar from '../components/GameStatusBar'
 import AllTiersTrigger from './AllTiersTrigger'
 import RevealMoment, { CombineCeremony } from '../components/RevealMoment'
+import MintRevealCardFlip from '../components/MintRevealCardFlip'
+import CombineCollapse from '../components/CombineCollapse'
+import CollectionCascade from '../components/CollectionCascade'
 import { WalletButton } from '../components/WalletButton'
 import TierSlot from '../components/TierSlot'
 import VRFMintPanel from '../panels/MintPanel'
@@ -44,6 +47,16 @@ const GLOBAL_CSS = `
     30% { transform: scale(1.12); filter: brightness(2) saturate(2); }
     70% { transform: scale(0.95); filter: brightness(1.4); }
     100%{ transform: scale(1); filter: brightness(1); }
+  }
+  @keyframes combinePopIn {
+    0%   { transform: scale(0); opacity: 0; }
+    60%  { transform: scale(1.15); }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  /* B4: Quantity selector press feel */
+  .qty-btn:active, .mint-panel-layout button:active {
+    transform: scale(0.97) !important;
+    transition: transform 50ms !important;
   }
   @keyframes skeletonPulse {
     0%,100% { opacity: 0.08; }
@@ -131,6 +144,10 @@ const { data: countdownHolder } = useReadContract({
   const [resetAlert,  setResetAlert] = useState(false)
   const [revealTier,  setRevealTier] = useState(null)
   const [ceremonyCombineTier, setCeremonyCombineTier] = useState(null)
+  const [mintRevealResults, setMintRevealResults] = useState(null)
+  const [combineCollapseData, setCombineCollapseData] = useState(null) // { fromTier, startCount, combineRatio }
+  const [showCascade, setShowCascade] = useState(false)
+  const cascadeShownRef = useRef(false)
   const [rankToast,   setRankToast]  = useState(null)
   const [currentRank, setCurrentRank] = useState(() => {
     if (typeof window !== 'undefined' && address) {
@@ -190,6 +207,8 @@ const { data: countdownHolder } = useReadContract({
     if ((blocks[fromTier] || 0) < ratio) return
     setCombiningTier(fromTier)
     lastCombinedToTierRef.current = fromTier - 1
+    // Trigger CombineCollapse animation
+    setCombineCollapseData({ fromTier, startCount: blocks[fromTier] || 0, combineRatio: ratio })
     writeCombine({
       address: CONTRACTS.TOKEN,
       abi: TOKEN_ABI,
@@ -201,22 +220,36 @@ const { data: countdownHolder } = useReadContract({
     })
   }
 
-  // Detect rare pulls by comparing before/after balances
+  // Detect mint delivery by comparing before/after balances — trigger card flip
   useEffect(() => {
     if (!prevBalancesRef.current) {
       prevBalancesRef.current = { ...balances }
       return
     }
-    for (const tier of [2, 3, 4, 5]) {
+    // Compute tier deltas
+    const deltas = {}
+    let anyChange = false
+    for (const tier of [2, 3, 4, 5, 6, 7]) {
       const prev = prevBalancesRef.current[tier] || 0
       const curr = balances[tier] || 0
-      if (curr > prev) {
-        setRevealTier(tier)
-        break
-      }
+      const d = curr - prev
+      if (d > 0) { deltas[tier] = d; anyChange = true }
     }
     prevBalancesRef.current = { ...balances }
-  }, [balances])
+
+    if (anyChange && !mintRevealResults) {
+      // Trigger the card flip animation with the tier results
+      setMintRevealResults({
+        t7: deltas[7] || 0, t6: deltas[6] || 0, t5: deltas[5] || 0,
+        t4: deltas[4] || 0, t3: deltas[3] || 0, t2: deltas[2] || 0,
+      })
+    } else if (anyChange) {
+      // If card flip already showing (e.g. combine), fall back to old rare reveal
+      for (const tier of [2, 3, 4, 5]) {
+        if (deltas[tier] > 0) { setRevealTier(tier); break }
+      }
+    }
+  }, [balances]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleMint()  { refetchAll() }
   function handleForge() { refetchAll() }
@@ -253,6 +286,19 @@ const { data: countdownHolder } = useReadContract({
     const interval = setInterval(checkRank, 60_000)
     return () => clearInterval(interval)
   }, [address])
+
+  // Collection Cascade — trigger once when all 6 tiers first held
+  useEffect(() => {
+    const all = [2,3,4,5,6,7].every(t => (blocks[t] ?? 0) >= 1)
+    if (all && !cascadeShownRef.current && address) {
+      const key = `blockhunt_cascade_${address.toLowerCase()}`
+      if (!localStorage.getItem(key)) {
+        cascadeShownRef.current = true
+        localStorage.setItem(key, '1')
+        setShowCascade(true)
+      }
+    }
+  }, [blocks, address])
 
   // Task 3: all 6 tiers held = show takeover
   const all6held = [2,3,4,5,6,7].every(t => (blocks[t] ?? 0) >= 1)
@@ -346,6 +392,33 @@ const { data: countdownHolder } = useReadContract({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Collection Cascade (all 6 tiers held — once per player) */}
+      {showCascade && (
+        <CollectionCascade onComplete={() => setShowCascade(false)} />
+      )}
+
+      {/* Combine Collapse animation */}
+      {combineCollapseData && (
+        <CombineCollapse
+          fromTier={combineCollapseData.fromTier}
+          startCount={combineCollapseData.startCount}
+          combineRatio={combineCollapseData.combineRatio}
+          onComplete={() => setCombineCollapseData(null)}
+        />
+      )}
+
+      {/* Mint Reveal Card Flip animation */}
+      {mintRevealResults && (
+        <MintRevealCardFlip
+          results={mintRevealResults}
+          onComplete={() => setMintRevealResults(null)}
+          onRareReveal={(tier) => {
+            setMintRevealResults(null)
+            setRevealTier(tier)
+          }}
+        />
       )}
 
       {/* Reveal Moment (T5-T2 mint reveal) */}

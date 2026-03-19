@@ -1,5 +1,22 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { GOLD, GOLD_DK, GOLD_LT, INK, CREAM, BATCH_PRICES_ETH } from '../config/design-tokens'
+import RollingDigits from './RollingDigits'
+
+// B5: Hook for StatusBar number flash
+function useFlash(value) {
+  const [flash, setFlash] = useState(false)
+  const prevRef = useRef(value)
+  const timerRef = useRef(null)
+  useEffect(() => {
+    if (prevRef.current !== value && prevRef.current != null) {
+      setFlash(true)
+      clearTimeout(timerRef.current)
+      timerRef.current = setTimeout(() => setFlash(false), 500)
+    }
+    prevRef.current = value
+  }, [value])
+  return flash
+}
 
 const ETH_USD = 2500
 
@@ -74,6 +91,10 @@ export default function GameStatusBar({ prizePool, windowInfo, currentBatch, min
 
   const usd = prizePool ? (parseFloat(prizePool) * ETH_USD).toFixed(0) : "0"
 
+  // B5: Flash on value changes
+  const poolFlash = useFlash(prizePool)
+  const batchFlash = useFlash(currentBatch)
+
   return (
     <>
       <style>{`
@@ -120,8 +141,8 @@ export default function GameStatusBar({ prizePool, windowInfo, currentBatch, min
         {/* Col 1: Prize Pool */}
         <div style={colStyle}>
           <div style={labelStyle}>PRIZE POOL</div>
-          <div style={{ ...valueStyle, textShadow: `0 0 12px ${GOLD}66` }}>
-            Ξ {prizePool || "0.0000"}
+          <div style={{ ...valueStyle, textShadow: `0 0 12px ${GOLD}66`, color: poolFlash ? '#ffffff' : GOLD_LT, transition: 'color 0.3s ease-out' }}>
+            <RollingDigits value={parseFloat(prizePool || "0")} prefix="Ξ " decimals={4} fontSize={28} color={poolFlash ? '#ffffff' : GOLD_LT} />
           </div>
           <div style={detailStyle}>≈ ${usd}</div>
         </div>
@@ -185,7 +206,7 @@ export default function GameStatusBar({ prizePool, windowInfo, currentBatch, min
         {/* Col 3: Batch */}
         <div style={colStyle}>
           <div style={labelStyle}>BATCH</div>
-          <div style={valueStyle}>{currentBatch || 1} / 6</div>
+          <div style={{ ...valueStyle, color: batchFlash ? '#ffffff' : GOLD_LT, transition: 'color 0.3s ease-out' }}>{currentBatch || 1} / 10</div>
           <div style={detailStyle}>{mintPrice || BATCH_PRICES_ETH[1]} Ξ per block</div>
         </div>
       </div>

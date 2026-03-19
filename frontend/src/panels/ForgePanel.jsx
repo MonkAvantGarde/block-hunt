@@ -5,12 +5,14 @@ import { FORGE_ABI } from '../abis';
 import { GOLD, INK, CREAM, TMAP, COMBINE_RATIOS } from '../config/design-tokens';
 import { CARD_IMAGES } from '../components/TierCard';
 import { VRF, Btn, TxErrorPanel, VRFStatusHeader } from '../components/GameUI';
+import ForgeNumberReveal from '../components/ForgeNumberReveal';
 
 export default function ForgePanel({ blocks, onForge, address }) {
   const [selTier,   setSelTier]     = useState(null)
   const [burnCount, setBurn]        = useState(10)
   const [vrfState,  setVrfState]    = useState(VRF.IDLE)
   const [forgeResult, setForgeResult] = useState(null)
+  const [showNumberReveal, setShowNumberReveal] = useState(false)
   const [elapsed,   setElapsed]     = useState(0)
   const [forgeTxHash, setForgeTxHash] = useState(null)
   const [showConfirm, setShowConfirm] = useState(false)
@@ -68,6 +70,7 @@ export default function ForgePanel({ blocks, onForge, address }) {
           clearInterval(pollRef.current)
           pollRef.current = null
           setForgeResult({ success: log.args.success, fromTier: Number(log.args.fromTier) })
+          setShowNumberReveal(true)
           setVrfState(VRF.DELIVERED)
           onForge()
         }
@@ -104,6 +107,7 @@ export default function ForgePanel({ blocks, onForge, address }) {
       abi: FORGE_ABI,
       functionName: 'forge',
       args: [BigInt(selTier), BigInt(burnCount)],
+      gas: BigInt(300_000),
     }, {
       onSuccess: (hash) => setForgeTxHash(hash),
       onError: (err) => {
@@ -135,6 +139,7 @@ export default function ForgePanel({ blocks, onForge, address }) {
       abi: FORGE_ABI,
       functionName: 'forgeBatch',
       args: [fromTiers, burnCounts],
+      gas: BigInt(300_000) + BigInt(fromTiers.length) * BigInt(150_000),
     }, {
       onSuccess: (hash) => setForgeTxHash(hash),
       onError: (err) => {
@@ -167,6 +172,7 @@ export default function ForgePanel({ blocks, onForge, address }) {
     clearTimeout(autoRef.current)
     setVrfState(VRF.IDLE)
     setForgeResult(null)
+    setShowNumberReveal(false)
     setElapsed(0)
     setSelTier(null)
     setForgeTxHash(null)
@@ -237,6 +243,25 @@ export default function ForgePanel({ blocks, onForge, address }) {
           border:'1px solid rgba(255,255,255,0.15)', padding:'10px', cursor:'pointer',
         }}>← BACK TO FORGE</button>
       </div>
+    )
+  }
+
+  // Show ForgeNumberReveal spinner before final result
+  if (vrfState === VRF.DELIVERED && forgeResult && showNumberReveal) {
+    const ratio = COMBINE_RATIOS[forgeResult.fromTier] || 20
+    const neededPct = Math.min(Math.round((burnCount / ratio) * 100), 100)
+    // Generate a fake roll for display purposes
+    const rolledPct = forgeResult.success
+      ? Math.max(1, Math.floor(Math.random() * neededPct))
+      : Math.min(100, neededPct + Math.floor(Math.random() * 8) + 1)
+    return (
+      <ForgeNumberReveal
+        rolledPct={rolledPct}
+        neededPct={neededPct}
+        success={forgeResult.success}
+        fromTier={forgeResult.fromTier}
+        onComplete={() => setShowNumberReveal(false)}
+      />
     )
   }
 
