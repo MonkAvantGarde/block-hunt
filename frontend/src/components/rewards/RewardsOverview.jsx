@@ -1,10 +1,32 @@
+import { useState, useEffect } from 'react'
 import { GOLD, GOLD_LT, GOLD_DK, REWARDS_ACCENT, GREEN } from '../../config/design-tokens'
 
 const fp = { fontFamily: "'Press Start 2P', monospace" }
 const fv = { fontFamily: "'VT323', monospace" }
 
+function useCountdown(closeAt) {
+  const [display, setDisplay] = useState('--:--:--')
+  useEffect(() => {
+    if (!closeAt) return
+    function tick() {
+      const now = Math.floor(Date.now() / 1000)
+      if (closeAt <= now) { setDisplay('PENDING'); return }
+      const secs = closeAt - now
+      const h = String(Math.floor(secs / 3600)).padStart(2, '0')
+      const m = String(Math.floor((secs % 3600) / 60)).padStart(2, '0')
+      const s = String(secs % 60).padStart(2, '0')
+      setDisplay(`${h}:${m}:${s}`)
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [closeAt])
+  return display
+}
+
 export default function RewardsOverview({ rewards, onNavigate }) {
   const { streak, currentStreakTier, nextStreakTier, milestones, totalEarned, totalInProgress, lottery, bounty, hallOfFame } = rewards
+  const drawCountdown = useCountdown(lottery.windowCloseAt)
 
   const cardBase = {
     background: 'rgba(0,0,0,0.25)',
@@ -95,7 +117,7 @@ export default function RewardsOverview({ rewards, onNavigate }) {
           <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
             <div style={{ width: 6, height: 6, borderRadius: '50%', background: lottery.eligible ? GREEN : 'rgba(255,255,255,0.2)' }} />
             <div style={{ ...fp, fontSize: 5, color: lottery.eligible ? GREEN : 'rgba(255,255,255,0.3)', letterSpacing: 1 }}>
-              {lottery.eligible ? `ELIGIBLE · ${lottery.wallets} WALLETS · DRAW IN ${lottery.drawCountdown}` : `${lottery.wallets} WALLETS · MINT TO ENTER`}
+              {lottery.eligible ? `ELIGIBLE · ${lottery.wallets} WALLETS · DRAW IN ${drawCountdown}` : `${lottery.wallets} WALLETS · MINT TO ENTER`}
             </div>
           </div>
         </Card>
@@ -146,7 +168,7 @@ export default function RewardsOverview({ rewards, onNavigate }) {
             <div className="card-arrow" style={{ ...fp, fontSize: 6, color: REWARDS_ACCENT, opacity: 0, transition: 'opacity 0.2s' }}>→</div>
           </div>
           <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-            {hallOfFame.legends.filter(l => l.claimed).slice(0, 2).map((l, i) => (
+            {hallOfFame.legends.filter(l => l.wallet).slice(0, 2).map((l, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 {i > 0 && <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.08)' }} />}
                 <div style={{ width: 24, height: 24, background: `linear-gradient(135deg,${GOLD_DK},${GOLD})`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -160,11 +182,11 @@ export default function RewardsOverview({ rewards, onNavigate }) {
             ))}
             <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.08)' }} />
             <div style={{ ...fp, fontSize: 5, color: 'rgba(200,168,75,0.4)', letterSpacing: 1 }}>
-              + {hallOfFame.legends.filter(l => !l.claimed).length} UNCLAIMED LEGENDARY FIRSTS
+              + {hallOfFame.legends.filter(l => !l.wallet).length} UNCLAIMED LEGENDARY FIRSTS
             </div>
             <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.08)' }} />
             <div style={{ ...fp, fontSize: 5, color: 'rgba(78,205,196,0.5)', letterSpacing: 1 }}>
-              {hallOfFame.batchFirsts.filter(b => !b.claimed).length + hallOfFame.batchTierDiscovery.filter(b => !b.claimed).length} BATCH FIRSTS AVAILABLE (0.02 Ξ each)
+              {hallOfFame.batchFirsts.filter(b => !b.wallet).length + hallOfFame.batchTierDiscovery.filter(b => !b.wallet).length} BATCH FIRSTS AVAILABLE
             </div>
           </div>
         </Card>

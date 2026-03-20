@@ -1,11 +1,32 @@
+import { useState, useEffect } from 'react'
 import { GOLD, GOLD_LT, GOLD_DK, GREEN, INK, CREAM, REWARDS_ACCENT } from '../../config/design-tokens'
 
 const fp = { fontFamily: "'Press Start 2P', monospace" }
 const fv = { fontFamily: "'VT323', monospace" }
 
-export default function LotteryDetail({ rewards }) {
-  // TODO: Replace with contract read when BlockHuntRewards.sol is deployed
-  const { lottery } = rewards
+function useCountdown(closeAt) {
+  const [display, setDisplay] = useState('--:--:--')
+  useEffect(() => {
+    if (!closeAt) return
+    function tick() {
+      const now = Math.floor(Date.now() / 1000)
+      if (closeAt <= now) { setDisplay('PENDING'); return }
+      const secs = closeAt - now
+      const h = String(Math.floor(secs / 3600)).padStart(2, '0')
+      const m = String(Math.floor((secs % 3600) / 60)).padStart(2, '0')
+      const s = String(secs % 60).padStart(2, '0')
+      setDisplay(`${h}:${m}:${s}`)
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [closeAt])
+  return display
+}
+
+export default function LotteryDetail({ rewards, onClaim }) {
+  const { lottery, claimable } = rewards
+  const drawCountdown = useCountdown(lottery.windowCloseAt)
 
   return (
     <div style={{ animation: 'fadeInUp 0.25s ease-out' }}>
@@ -28,7 +49,7 @@ export default function LotteryDetail({ rewards }) {
             <div style={{ ...fp, fontSize: 5, color: 'rgba(255,255,255,0.35)', letterSpacing: 1, marginTop: 2 }}>YOUR ODDS</div>
           </div>
           <div style={{ padding: 14, textAlign: 'center', background: 'rgba(0,0,0,0.2)', borderLeft: '1px solid rgba(78,205,196,0.08)' }}>
-            <div style={{ ...fv, fontSize: 28, color: CREAM }}>{lottery.drawCountdown}</div>
+            <div style={{ ...fv, fontSize: 28, color: CREAM }}>{drawCountdown}</div>
             <div style={{ ...fp, fontSize: 5, color: 'rgba(255,255,255,0.35)', letterSpacing: 1, marginTop: 2 }}>DRAW IN</div>
           </div>
         </div>
@@ -49,24 +70,40 @@ export default function LotteryDetail({ rewards }) {
 
       {/* Yesterday's winner */}
       <div style={{ ...fp, fontSize: 7, color: 'rgba(255,255,255,0.5)', letterSpacing: 1, marginBottom: 12 }}>YESTERDAY'S WINNER</div>
-      <div style={{
-        padding: '14px 16px',
-        background: 'linear-gradient(135deg,rgba(200,168,75,0.08),rgba(78,205,196,0.05))',
-        border: '1px solid rgba(200,168,75,0.2)',
-        display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16,
-      }}>
-        <div style={{ width: 36, height: 36, background: `linear-gradient(135deg,${GOLD_DK},${GOLD})`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <span style={{ ...fv, fontSize: 20, color: INK }}>★</span>
+      {lottery.yesterdayWinner ? (
+        <div style={{
+          padding: '14px 16px',
+          background: 'linear-gradient(135deg,rgba(200,168,75,0.08),rgba(78,205,196,0.05))',
+          border: '1px solid rgba(200,168,75,0.2)',
+          display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16,
+        }}>
+          <div style={{ width: 36, height: 36, background: `linear-gradient(135deg,${GOLD_DK},${GOLD})`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ ...fv, fontSize: 20, color: INK }}>★</span>
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ ...fp, fontSize: 5, color: 'rgba(200,168,75,0.6)', letterSpacing: 1, marginBottom: 3 }}>WINNER — {lottery.yesterdayDate}</div>
+            <div style={{ ...fv, fontSize: 18, color: CREAM }}>{lottery.yesterdayWinner}</div>
+          </div>
+          <div style={{ ...fv, fontSize: 22, color: GOLD_LT, textShadow: '0 0 8px rgba(200,168,75,0.3)' }}>+{lottery.prize.toFixed(2)} Ξ</div>
         </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ ...fp, fontSize: 5, color: 'rgba(200,168,75,0.6)', letterSpacing: 1, marginBottom: 3 }}>WINNER — {lottery.yesterdayDate}</div>
-          <div style={{ ...fv, fontSize: 18, color: CREAM }}>{lottery.yesterdayWinner}</div>
+      ) : (
+        <div style={{
+          padding: '14px 16px',
+          background: 'rgba(0,0,0,0.2)',
+          border: '1px solid rgba(255,255,255,0.04)',
+          marginBottom: 16, textAlign: 'center',
+        }}>
+          <div style={{ ...fp, fontSize: 7, color: 'rgba(255,255,255,0.2)', letterSpacing: 1 }}>NO DRAW YET</div>
         </div>
-        <div style={{ ...fv, fontSize: 22, color: GOLD_LT, textShadow: '0 0 8px rgba(200,168,75,0.3)' }}>+{lottery.prize.toFixed(2)} Ξ</div>
-      </div>
+      )}
 
       {/* Recent draws */}
       <div style={{ ...fp, fontSize: 7, color: 'rgba(255,255,255,0.5)', letterSpacing: 1, marginBottom: 12 }}>RECENT DRAWS</div>
+      {lottery.recentDraws.length === 0 && (
+        <div style={{ padding: 16, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.04)', textAlign: 'center' }}>
+          <div style={{ ...fp, fontSize: 7, color: 'rgba(255,255,255,0.2)', letterSpacing: 1 }}>NO DRAWS YET</div>
+        </div>
+      )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         {lottery.recentDraws.map((draw, i) => (
           <div key={i} style={{
@@ -80,8 +117,18 @@ export default function LotteryDetail({ rewards }) {
               {draw.isYou && <span style={{ ...fp, fontSize: 5, color: GOLD, marginLeft: 4 }}>YOU!</span>}
             </div>
             <div style={{ ...fv, fontSize: 16, color: 'rgba(255,255,255,0.3)', width: 80 }}>{draw.wallets} wallets</div>
-            <div style={{ ...fv, fontSize: 18, color: draw.isYou ? GOLD_LT : REWARDS_ACCENT, width: 80, textAlign: 'right' }}>
-              {draw.prize.toFixed(2)} Ξ{draw.isYou ? ' ✓' : ''}
+            <div style={{ ...fv, fontSize: 18, color: draw.isYou ? GOLD_LT : REWARDS_ACCENT, width: draw.isYou && !draw.claimed ? 'auto' : 80, textAlign: 'right', display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
+              {draw.prize.toFixed(2)} Ξ{draw.isYou && draw.claimed ? ' ✓' : ''}
+              {draw.isYou && !draw.claimed && onClaim && (
+                <button
+                  onClick={e => { e.stopPropagation(); onClaim({ name: `Lottery Win — Day ${draw.day}`, amount: draw.prize, claimType: 'lottery', claimArgs: { day: draw.day } }) }}
+                  style={{
+                    fontFamily: "'Press Start 2P', monospace", fontSize: 5, letterSpacing: 1, padding: '3px 8px',
+                    color: '#0a0705', background: 'linear-gradient(135deg,#8a6820,#c8a84b)',
+                    border: '1px solid #c8a84b', cursor: 'pointer', flexShrink: 0,
+                  }}
+                >CLAIM</button>
+              )}
             </div>
           </div>
         ))}

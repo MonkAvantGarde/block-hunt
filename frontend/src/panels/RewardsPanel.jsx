@@ -28,9 +28,9 @@ const VIEW_LABELS = {
   hof: 'HALL OF FAME',
 }
 
-export default function RewardsPanel({ address, blocks }) {
+export default function RewardsPanel({ address, blocks, currentBatch }) {
   const [view, setView] = useState('overview')
-  const { rewards, loading } = useRewardsData(address, blocks)
+  const { rewards, loading } = useRewardsData(address, blocks, currentBatch)
 
   if (loading) {
     return (
