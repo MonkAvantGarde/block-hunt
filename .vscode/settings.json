@@ -1,0 +1,9 @@
+{
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/lib/forge-std/**": true,
+    "**/lib/chainlink/**": true,
+    "**/build/**": true
+  }
+}
+
