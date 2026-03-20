@@ -3,14 +3,14 @@ schema:
   file: ./schema.graphql
 
 dataSources:
+  # ── BlockHuntToken (v2.1) ──────────────────────────────────────────────────
   - kind: ethereum
     name: BlockHuntToken
     network: base-sepolia
     source:
-      address: "0x5A5335f138950C127Dc9baaA2618e89ADEce09aC"
+      address: "0x669aa2605E66565EFe874dBb8cAB9450c75E7A00"
       abi: BlockHuntToken
-      # Deployment block from Phase 5 Token redeploy (March 14, 2026)
-      startBlock: 38860000
+      startBlock: 39031734
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -34,3 +34,66 @@ dataSources:
         - event: BlocksForged(indexed address,indexed uint256,bool)
           handler: handleBlocksForged
       file: ./src/mapping.ts
+
+  # ── BlockHuntForge (v2.1) ──────────────────────────────────────────────────
+  - kind: ethereum
+    name: BlockHuntForge
+    network: base-sepolia
+    source:
+      address: "0x94d283a21386f1c5b051cE0ac5b9AD878182827c"
+      abi: BlockHuntForge
+      startBlock: 39031734
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - ForgeRequest
+        - Player
+      abis:
+        - name: BlockHuntForge
+          file: ./abis/BlockHuntForge.json
+      eventHandlers:
+        - event: ForgeRequested(indexed uint256,indexed address,uint256,uint256)
+          handler: handleForgeRequested
+        - event: ForgeResolved(indexed uint256,indexed address,uint256,bool)
+          handler: handleForgeResolved
+      file: ./src/forge-mapping.ts
+
+  # ── BlockHuntRewards ───────────────────────────────────────────────────────
+  - kind: ethereum
+    name: BlockHuntRewards
+    network: base-sepolia
+    source:
+      address: "0xEfD6e50be55b8eA31019eCFd44b72D77C5bd840d"
+      abi: BlockHuntRewards
+      startBlock: 39031734
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - DailyDraw
+        - BatchFirst
+        - BatchBounty
+        - BatchRewardConfig
+        - Player
+      abis:
+        - name: BlockHuntRewards
+          file: ./abis/BlockHuntRewards.json
+      eventHandlers:
+        - event: DailyDrawResolved(indexed uint256,indexed address,uint256)
+          handler: handleDailyDrawResolved
+        - event: DailyPrizeClaimed(indexed uint256,indexed address,uint256)
+          handler: handleDailyPrizeClaimed
+        - event: BatchFirstAwarded(indexed uint256,indexed uint256,indexed address,uint256)
+          handler: handleBatchFirstAwarded
+        - event: BatchFirstClaimed(indexed uint256,indexed uint256,indexed address,uint256)
+          handler: handleBatchFirstClaimed
+        - event: BatchBountySet(indexed uint256,uint256,uint256)
+          handler: handleBatchBountySet
+        - event: BatchBountyClaimed(indexed uint256,indexed address,uint256)
+          handler: handleBatchBountyClaimed
+        - event: BatchFunded(indexed uint256,uint256)
+          handler: handleBatchFunded
+      file: ./src/rewards-mapping.ts

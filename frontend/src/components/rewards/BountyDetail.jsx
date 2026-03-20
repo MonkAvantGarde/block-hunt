@@ -3,9 +3,8 @@ import { GOLD, REWARDS_ACCENT, GREEN } from '../../config/design-tokens'
 const fp = { fontFamily: "'Press Start 2P', monospace" }
 const fv = { fontFamily: "'VT323', monospace" }
 
-export default function BountyDetail({ rewards }) {
-  // TODO: Replace with contract read when BlockHuntRewards.sol is deployed
-  const { bounty } = rewards
+export default function BountyDetail({ rewards, onClaim }) {
+  const { bounty, claimable } = rewards
   const pct = ((bounty.minted / bounty.total) * 100).toFixed(1)
   const remaining = bounty.total - bounty.minted
 
@@ -68,6 +67,16 @@ export default function BountyDetail({ rewards }) {
           <div style={{ ...fp, fontSize: 7, color: bounty.userEligible ? GREEN : 'rgba(255,255,255,0.3)', letterSpacing: 1 }}>
             {bounty.userEligible ? `YOU MINTED IN BATCH ${bounty.currentBatch} — YOU'RE ELIGIBLE` : `MINT IN BATCH ${bounty.currentBatch} TO QUALIFY`}
           </div>
+          {bounty.distributed && bounty.userEligible && claimable?.bounty?.some(b => b.batch === bounty.currentBatch) && onClaim && (
+            <button
+              onClick={() => onClaim({ name: `Batch ${bounty.currentBatch} Bounty`, amount: bounty.perWallet, claimType: 'bounty', claimArgs: { batch: bounty.currentBatch } })}
+              style={{
+                fontFamily: "'Press Start 2P', monospace", fontSize: 6, letterSpacing: 1, padding: '6px 14px', marginLeft: 8,
+                color: '#0a0705', background: 'linear-gradient(135deg,#8a6820,#c8a84b)',
+                border: '1px solid #c8a84b', cursor: 'pointer', flexShrink: 0,
+              }}
+            >CLAIM BOUNTY</button>
+          )}
         </div>
       </div>
 

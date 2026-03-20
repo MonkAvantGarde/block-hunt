@@ -10,14 +10,13 @@ import { Player, PlayerActivity, SeasonStat } from "../generated/schema"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tier weights — T7 blocks required to produce 1 of each tier
-// Matches your combine ratios:
-//   T7→T6: 20   T6→T5: 20   T5→T4: 30   T4→T3: 30   T3→T2: 50
+// v2.1 combine ratios: T7→T6: 21, T6→T5: 19, T5→T4: 17, T4→T3: 15, T3→T2: 13
 // ─────────────────────────────────────────────────────────────────────────────
-const WEIGHT_T2 = BigInt.fromString("18000000") // 20 × 20 × 30 × 30 × 50
-const WEIGHT_T3 = BigInt.fromString("360000")   // 20 × 20 × 30 × 30
-const WEIGHT_T4 = BigInt.fromString("12000")    // 20 × 20 × 30
-const WEIGHT_T5 = BigInt.fromString("400")      // 20 × 20
-const WEIGHT_T6 = BigInt.fromString("20")       // 20
+const WEIGHT_T2 = BigInt.fromString("1322685") // 21 × 19 × 17 × 15 × 13
+const WEIGHT_T3 = BigInt.fromString("101745")  // 21 × 19 × 17 × 15
+const WEIGHT_T4 = BigInt.fromString("6783")    // 21 × 19 × 17
+const WEIGHT_T5 = BigInt.fromString("399")     // 21 × 19
+const WEIGHT_T6 = BigInt.fromString("21")      // 21
 const WEIGHT_T7 = BigInt.fromString("1")
 
 const ZERO        = BigInt.fromI32(0)

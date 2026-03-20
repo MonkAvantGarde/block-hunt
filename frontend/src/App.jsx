@@ -5,11 +5,13 @@ import GameScreen from "./screens/Game";
 import Modals from "./components/Modals";
 import CountdownHolder from "./screens/CountdownHolder";
 import CountdownSpectator from "./screens/CountdownSpectator";
+import { useGameState } from "./hooks/useGameState";
 
 export default function App() {
   const [screen, setScreen] = useState("landing");
   const [modal, setModal] = useState(null); // "rules" | "leaderboard" | "profile" | null
   const { address } = useAccount();
+  const { prizePool } = useGameState();
 
   function openModal(m) { setModal(m); }
   function closeModal() { setModal(null); }
@@ -31,6 +33,7 @@ export default function App() {
         onClose={closeModal}
         onOpenProfile={() => setModal("profile")}
         connectedAddress={address}
+        prizePool={prizePool}
       />
     </>
   );

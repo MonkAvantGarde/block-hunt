@@ -363,7 +363,7 @@ function buildLbQuery(skip = 0) {
   }`;
 }
 
-export function LeaderboardModal({ onClose, onOpenProfile, connectedAddress }) {
+export function LeaderboardModal({ onClose, onOpenProfile, connectedAddress, prizePool }) {
   const [players,     setPlayers]     = useState([]);
   const [stats,       setStats]       = useState(null);
   const [loading,     setLoading]     = useState(true);
@@ -417,7 +417,7 @@ export function LeaderboardModal({ onClose, onOpenProfile, connectedAddress }) {
         {[
           { label: "TOTAL MINTED", val: stats ? Number(stats.totalMinted).toLocaleString() : "—" },
           { label: "TOTAL BURNED", val: stats ? Number(stats.totalBurned).toLocaleString() : "—" },
-          { label: "PRIZE POOL",   val: "live ↗", gold: true },
+          { label: "PRIZE POOL",   val: prizePool ? `${prizePool} Ξ` : "—", gold: true },
           { label: "PLAYERS",      val: stats ? stats.uniquePlayers.toLocaleString()       : "—" },
         ].map((s, i) => (
           <div key={s.label} style={{ padding: "12px 20px", borderRight: i < 3 ? "1px solid rgba(255,255,255,.05)" : "none" }}>
@@ -553,9 +553,56 @@ const TIER_META = [
   { t: 1, name: "THE ORIGIN",     col: "#4466ff" },
 ];
 
+const PROFILE_SUBGRAPH_URL = "https://api.studio.thegraph.com/query/1744131/blok-hunt/v2.1.0";
+
 export function ProfileModal({ onClose, connectedAddress }) {
   const { balances, isConnected } = useGameState();
   const [copied, setCopied] = useState(false);
+  const [activities, setActivities] = useState([]);
+  const [actLoading, setActLoading] = useState(false);
+
+  // Fetch activity history from subgraph
+  useEffect(() => {
+    if (!connectedAddress) return;
+    let cancelled = false;
+    setActLoading(true);
+
+    async function fetchActivities() {
+      try {
+        const query = `{
+          playerActivities(
+            where: { player: "${connectedAddress.toLowerCase()}" }
+            orderBy: date
+            orderDirection: desc
+            first: 20
+          ) {
+            date
+            hasMint
+            hasCombine
+            hasForge
+            mintCount
+            combineCount
+            forgeCount
+          }
+        }`;
+        const res = await fetch(PROFILE_SUBGRAPH_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query }),
+        });
+        const json = await res.json();
+        if (!cancelled) {
+          setActivities(json?.data?.playerActivities || []);
+          setActLoading(false);
+        }
+      } catch {
+        if (!cancelled) setActLoading(false);
+      }
+    }
+
+    fetchActivities();
+    return () => { cancelled = true; };
+  }, [connectedAddress]);
 
   const addr = connectedAddress || "";
   const shortAddr = addr ? `${addr.slice(0,6)}...${addr.slice(-4)}` : "Not connected";
@@ -632,26 +679,56 @@ export function ProfileModal({ onClose, connectedAddress }) {
         </div>
       </div>
 
-      {/* Activity — honest empty state */}
+      {/* Activity history from subgraph */}
       <div style={{ padding: "18px 28px 24px" }}>
         <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: CREAM, opacity: .4, letterSpacing: 2, marginBottom: 10 }}>ACTIVITY</div>
-        <div style={{
-          textAlign: "center", padding: "24px 0",
-          fontFamily: "'Courier Prime', monospace", fontSize: 13, color: "rgba(255,255,255,0.3)", lineHeight: 1.6,
-        }}>
-          Transaction history will be available at mainnet launch.
-          {addr && (
-            <div style={{ marginTop: 12 }}>
-              <a
-                href={`https://sepolia.basescan.org/address/${addr}`}
-                target="_blank" rel="noreferrer"
-                style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: GOLD, opacity: .6, textDecoration: "none", letterSpacing: 1 }}
-                onMouseEnter={e => { e.currentTarget.style.opacity = '1'; }}
-                onMouseLeave={e => { e.currentTarget.style.opacity = '.6'; }}
-              >VIEW ON BASESCAN ↗</a>
-            </div>
-          )}
-        </div>
+
+        {actLoading && (
+          <div style={{ textAlign: "center", padding: "16px 0", fontFamily: "'Press Start 2P', monospace", fontSize: 6, color: CREAM, opacity: .3, letterSpacing: 1 }}>
+            LOADING...
+          </div>
+        )}
+
+        {!actLoading && activities.length === 0 && (
+          <div style={{ textAlign: "center", padding: "16px 0", fontFamily: "'Courier Prime', monospace", fontSize: 13, color: "rgba(255,255,255,0.3)" }}>
+            No activity yet. Mint some blocks to get started.
+          </div>
+        )}
+
+        {!actLoading && activities.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 2, maxHeight: 220, overflowY: "auto" }}>
+            {activities.map((a, i) => {
+              const actions = [];
+              if (a.hasMint) actions.push(`Minted${a.mintCount ? ` ${a.mintCount}` : ""} blocks`);
+              if (a.hasCombine) actions.push(`Combined${a.combineCount ? ` ${a.combineCount}x` : ""}`);
+              if (a.hasForge) actions.push(`Forged${a.forgeCount ? ` ${a.forgeCount}x` : ""}`);
+              const dateObj = new Date(a.date + "T00:00:00Z");
+              const dateStr = dateObj.toLocaleDateString("en-US", { month: "short", day: "numeric" }).toUpperCase();
+              return (
+                <div key={i} style={{
+                  display: "flex", alignItems: "center", padding: "8px 12px",
+                  background: i % 2 === 0 ? "rgba(0,0,0,0.2)" : "rgba(0,0,0,0.1)",
+                  border: "1px solid rgba(255,255,255,0.03)",
+                }}>
+                  <div style={{ fontFamily: "'VT323', monospace", fontSize: 16, color: "rgba(255,255,255,0.35)", width: 70 }}>{dateStr}</div>
+                  <div style={{ fontFamily: "'VT323', monospace", fontSize: 16, color: CREAM, opacity: .7, flex: 1 }}>{actions.join(" · ")}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {addr && (
+          <div style={{ textAlign: "center", marginTop: 12 }}>
+            <a
+              href={`https://sepolia.basescan.org/address/${addr}`}
+              target="_blank" rel="noreferrer"
+              style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: GOLD, opacity: .6, textDecoration: "none", letterSpacing: 1 }}
+              onMouseEnter={e => { e.currentTarget.style.opacity = '1'; }}
+              onMouseLeave={e => { e.currentTarget.style.opacity = '.6'; }}
+            >VIEW ON BASESCAN ↗</a>
+          </div>
+        )}
       </div>
     </ModalShell>
   );
@@ -661,12 +738,12 @@ export function ProfileModal({ onClose, connectedAddress }) {
 // EXPORT — MODAL CONTROLLER (convenience wrapper)
 // Usage: <Modals open="rules|leaderboard|profile|null" onClose={fn} />
 // ═══════════════════════════════════════════════════════════════
-export default function Modals({ open, onClose, onOpenProfile, connectedAddress }) {
+export default function Modals({ open, onClose, onOpenProfile, connectedAddress, prizePool }) {
   return (
     <>
       <style>{MODAL_CSS}</style>
       {open === "rules"       && <GameRulesModal   onClose={onClose} />}
-      {open === "leaderboard" && <LeaderboardModal onClose={onClose} onOpenProfile={onOpenProfile} connectedAddress={connectedAddress} />}
+      {open === "leaderboard" && <LeaderboardModal onClose={onClose} onOpenProfile={onOpenProfile} connectedAddress={connectedAddress} prizePool={prizePool} />}
       {open === "profile"     && <ProfileModal     onClose={onClose} connectedAddress={connectedAddress} />}
     </>
   );

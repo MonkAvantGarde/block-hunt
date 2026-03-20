@@ -23,6 +23,9 @@ type Player @entity {
 
   # Reverse lookups
   activities: [PlayerActivity!]! @derivedFrom(field: "player")
+  forgeRequests: [ForgeRequest!]! @derivedFrom(field: "player")
+  dailyDrawWins: [DailyDraw!]! @derivedFrom(field: "winner")
+  batchFirstWins: [BatchFirst!]! @derivedFrom(field: "winner")
 }
 
 # One entity per player per UTC day — used for streak calculation
@@ -42,4 +45,57 @@ type SeasonStat @entity {
   totalMinted: BigInt!
   totalBurned: BigInt!
   uniquePlayers: Int!
+}
+
+# ── Forge tracking ─────────────────────────────────────────────────────────
+
+type ForgeRequest @entity {
+  id: ID!                    # "{requestId}"
+  requestId: BigInt!
+  player: Player!
+  fromTier: Int!
+  burnCount: BigInt!
+  resolved: Boolean!
+  success: Boolean
+  createdAt: BigInt!
+  resolvedAt: BigInt
+}
+
+# ── Rewards tracking ──────────────────────────────────────────────────────
+
+type DailyDraw @entity {
+  id: ID!                    # "draw-{day}"
+  day: BigInt!
+  winner: Player!
+  prize: BigInt!
+  resolvedAt: BigInt!
+  claimed: Boolean!
+  claimedAmount: BigInt
+}
+
+type BatchFirst @entity {
+  id: ID!                    # "{batch}-{achievementId}"
+  batch: Int!
+  achievementId: Int!
+  winner: Player!
+  prize: BigInt!
+  awardedAt: BigInt!
+  claimed: Boolean!
+  claimedAmount: BigInt
+}
+
+type BatchBounty @entity {
+  id: ID!                    # "bounty-{batch}"
+  batch: Int!
+  totalRecipients: BigInt!
+  perWalletShare: BigInt!
+  setAt: BigInt!
+  distributed: Boolean!
+}
+
+type BatchRewardConfig @entity {
+  id: ID!                    # "config-{batch}"
+  batch: Int!
+  totalDeposit: BigInt!
+  active: Boolean!
 }

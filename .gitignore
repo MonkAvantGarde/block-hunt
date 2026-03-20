@@ -4,3 +4,5 @@ cache/
 .env
 frontend/node_modules/
 .DS_Store
+subgraph/node_modules/
+frontend/dist/

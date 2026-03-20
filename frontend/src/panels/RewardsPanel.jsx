@@ -7,6 +7,7 @@ import MilestoneDetail from '../components/rewards/MilestoneDetail'
 import LotteryDetail from '../components/rewards/LotteryDetail'
 import BountyDetail from '../components/rewards/BountyDetail'
 import HallOfFameDetail from '../components/rewards/HallOfFameDetail'
+import ClaimModal from '../components/rewards/ClaimModal'
 
 const fp = { fontFamily: "'Press Start 2P', monospace" }
 const fv = { fontFamily: "'VT323', monospace" }
@@ -30,7 +31,12 @@ const VIEW_LABELS = {
 
 export default function RewardsPanel({ address, blocks, currentBatch }) {
   const [view, setView] = useState('overview')
-  const { rewards, loading } = useRewardsData(address, blocks, currentBatch)
+  const [claimReward, setClaimReward] = useState(null)
+  const { rewards, loading, refetchClaimable } = useRewardsData(address, blocks, currentBatch)
+
+  function handleClaim(reward) { setClaimReward(reward) }
+  function handleClaimClose() { setClaimReward(null) }
+  function handleClaimSuccess() { if (refetchClaimable) refetchClaimable() }
 
   if (loading) {
     return (
@@ -54,7 +60,6 @@ export default function RewardsPanel({ address, blocks, currentBatch }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(78,205,196,0.06)', border: '1px solid rgba(78,205,196,0.15)', padding: '8px 16px' }}>
           <div>
             <div style={{ ...fp, fontSize: 6, color: 'rgba(78,205,196,0.6)', letterSpacing: 1 }}>REWARDS POOL</div>
-            {/* TODO: Replace with contract read when BlockHuntRewards.sol is deployed */}
             <div style={{ ...fv, fontSize: 24, color: REWARDS_ACCENT, textShadow: '0 0 8px rgba(78,205,196,0.4)' }}>{rewards.rewardsPool.toFixed(4)} Ξ</div>
           </div>
         </div>
@@ -82,9 +87,17 @@ export default function RewardsPanel({ address, blocks, currentBatch }) {
       {view === 'overview' && <RewardsOverview rewards={rewards} onNavigate={setView} />}
       {view === 'streak' && <StreakDetail rewards={rewards} />}
       {view === 'milestones' && <MilestoneDetail rewards={rewards} />}
-      {view === 'lottery' && <LotteryDetail rewards={rewards} />}
-      {view === 'bounty' && <BountyDetail rewards={rewards} />}
-      {view === 'hof' && <HallOfFameDetail rewards={rewards} />}
+      {view === 'lottery' && <LotteryDetail rewards={rewards} onClaim={handleClaim} />}
+      {view === 'bounty' && <BountyDetail rewards={rewards} onClaim={handleClaim} />}
+      {view === 'hof' && <HallOfFameDetail rewards={rewards} onClaim={handleClaim} />}
+
+      {claimReward && (
+        <ClaimModal
+          reward={claimReward}
+          onClose={handleClaimClose}
+          onSuccess={handleClaimSuccess}
+        />
+      )}
     </div>
   )
 }
