@@ -330,16 +330,18 @@ const { data: countdownHolder } = useReadContract({
 
   // ── COUNTDOWN NAVIGATION ────────────────
   useEffect(() => {
+    if (showCascade) return
     if (countdownActive === true && isConnected && !isActiveHolder && !dismissedSpectator) {
       onNavigate('countdown-spectator')
     }
-  }, [countdownActive, isConnected, isActiveHolder, dismissedSpectator])
+  }, [countdownActive, isConnected, isActiveHolder, dismissedSpectator, showCascade])
 
   useEffect(() => {
+    if (showCascade) return
     if (isActiveHolder && !showTrigger) {
       onNavigate('countdown-holder')
     }
-  }, [isActiveHolder, triggerAnimShown])
+  }, [isActiveHolder, triggerAnimShown, showCascade])
 
   const panels = [
     { id:"mint",  label:"⬡ MINT",  bg:"#0a1f15", titleColor:"#6eff8a" },
