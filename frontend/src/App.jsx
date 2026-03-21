@@ -9,6 +9,7 @@ import { useGameState } from "./hooks/useGameState";
 
 export default function App() {
   const [screen, setScreen] = useState("landing");
+  const [dismissedSpectator, setDismissedSpectator] = useState(false);
   const [modal, setModal] = useState(null); // "rules" | "leaderboard" | "profile" | null
   const { address } = useAccount();
   const { prizePool } = useGameState();
@@ -19,7 +20,7 @@ export default function App() {
   if (screen === "countdown-holder") return <CountdownHolder />;
 
   if (screen === "countdown-spectator") return (
-    <CountdownSpectator onBack={() => setScreen("game")} />
+    <CountdownSpectator onBack={() => { setDismissedSpectator(true); setScreen("game"); }} />
   );
 
   if (screen === "game") return (
@@ -27,6 +28,7 @@ export default function App() {
       <GameScreen
         onOpenModal={openModal}
         onNavigate={(s) => setScreen(s)}
+        dismissedSpectator={dismissedSpectator}
       />
       <Modals
         open={modal}

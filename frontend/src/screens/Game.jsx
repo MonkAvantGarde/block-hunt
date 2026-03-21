@@ -108,7 +108,7 @@ const GLOBAL_CSS = `
 // MAIN GAME SCREEN
 // ═══════════════════════════════════════════════════════════════
 
-export default function GameScreen({ onOpenModal, onNavigate }) {
+export default function GameScreen({ onOpenModal, onNavigate, dismissedSpectator = false }) {
   // ── LIVE DATA FROM CHAIN ────────────────────────────────────
   const {
     address,
@@ -330,10 +330,10 @@ const { data: countdownHolder } = useReadContract({
 
   // ── COUNTDOWN NAVIGATION ────────────────
   useEffect(() => {
-    if (countdownActive === true && isConnected && !isActiveHolder) {
+    if (countdownActive === true && isConnected && !isActiveHolder && !dismissedSpectator) {
       onNavigate('countdown-spectator')
     }
-  }, [countdownActive, isConnected, isActiveHolder])
+  }, [countdownActive, isConnected, isActiveHolder, dismissedSpectator])
 
   useEffect(() => {
     if (isActiveHolder && !showTrigger) {
