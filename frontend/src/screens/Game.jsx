@@ -158,6 +158,9 @@ const { data: countdownHolder } = useReadContract({
   const [mintRevealResults, setMintRevealResults] = useState(null)
   const [combineCollapseData, setCombineCollapseData] = useState(null) // { fromTier, startCount, combineRatio }
   const [showCascade, setShowCascade] = useState(false)
+  // True if cascade hasn't been seen yet for this wallet (or ?cascade=test) — block premature navigation
+  const cascadeTest = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('cascade') === 'test'
+  const cascadePending = cascadeTest || (address && !localStorage.getItem(`blockhunt_cascade_${address.toLowerCase()}`))
   const [rankToast,   setRankToast]  = useState(null)
   const [currentRank, setCurrentRank] = useState(() => {
     if (typeof window !== 'undefined' && address) {
@@ -299,8 +302,13 @@ const { data: countdownHolder } = useReadContract({
     return () => clearInterval(interval)
   }, [address])
 
-  // Collection Cascade — trigger once when all 6 tiers first held
+  // Collection Cascade — trigger once when all 6 tiers first held (or ?cascade=test)
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('cascade') === 'test') {
+      setShowCascade(true)
+      return
+    }
     const totalBlocks = Object.values(blocks).reduce((sum, v) => sum + (v ?? 0), 0)
     if (totalBlocks <= 0) return
     const all = [2,3,4,5,6,7].every(t => (blocks[t] ?? 0) >= 1)
@@ -330,18 +338,18 @@ const { data: countdownHolder } = useReadContract({
 
   // ── COUNTDOWN NAVIGATION ────────────────
   useEffect(() => {
-    if (showCascade) return
+    if (showCascade || cascadePending) return
     if (countdownActive === true && isConnected && !isActiveHolder && !dismissedSpectator) {
       onNavigate('countdown-spectator')
     }
-  }, [countdownActive, isConnected, isActiveHolder, dismissedSpectator, showCascade])
+  }, [countdownActive, isConnected, isActiveHolder, dismissedSpectator, showCascade, cascadePending])
 
   useEffect(() => {
-    if (showCascade) return
+    if (showCascade || cascadePending) return
     if (isActiveHolder && !showTrigger) {
       onNavigate('countdown-holder')
     }
-  }, [isActiveHolder, triggerAnimShown, showCascade])
+  }, [isActiveHolder, triggerAnimShown, showCascade, cascadePending])
 
   const panels = [
     { id:"mint",  label:"⬡ MINT",  bg:"#0a1f15", titleColor:"#6eff8a" },
