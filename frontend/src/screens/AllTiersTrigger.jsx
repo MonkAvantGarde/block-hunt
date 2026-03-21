@@ -48,7 +48,7 @@ function fmtCountdown(secs) {
 }
 
 // ─────────────────────────────────────────────────────────────────
-export default function AllTiersTrigger({ walletAddress, balances, onTriggered }) {
+export default function AllTiersTrigger({ walletAddress, balances, onTriggered, alreadyTriggered = false }) {
   const [secondsLeft, setSecondsLeft] = useState(TRIGGER_DURATION);
   const [phase, setPhase]             = useState('READY');
   const [shareError, setShareError]   = useState(null);
@@ -92,8 +92,14 @@ export default function AllTiersTrigger({ walletAddress, balances, onTriggered }
     return () => clearInterval(tick);
   }, [phase]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── THE KEY FIX: calls BlockHuntToken.claimHolderStatus() ────
+  // ── TRIGGER: call contract or skip if already triggered on-chain ────
   const fireTrigger = useCallback(() => {
+    if (alreadyTriggered) {
+      // Countdown already active on-chain — just play the DONE animation
+      setPhase('DONE');
+      setTimeout(onTriggered, 1200);
+      return;
+    }
     setPhase('TRIGGERING');
     setTxError(null);
     writeContract({
@@ -104,7 +110,7 @@ export default function AllTiersTrigger({ walletAddress, balances, onTriggered }
       gas: 300000n,
     });
     setPhase('WAITING_TX');
-  }, [writeContract]);
+  }, [writeContract, alreadyTriggered, onTriggered]);
 
   const handleShare = useCallback(async () => {
     setPhase('SHARING');

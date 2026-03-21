@@ -318,7 +318,15 @@ const { data: countdownHolder } = useReadContract({
   const have6 = all6held ? 6 : [2,3,4,5,6,7].filter(t => (blocks[t] ?? 0) > 0).length
   const isActiveHolder = countdownActive === true &&
    countdownHolder?.toLowerCase() === address?.toLowerCase()
-  const showTrigger = all6held && countdownActive === false
+
+  // Show trigger animation when player just became the countdown holder
+  // and hasn't seen the animation yet this session
+  const [triggerAnimShown, setTriggerAnimShown] = useState(false)
+  const showTrigger = isActiveHolder && !triggerAnimShown && (() => {
+    if (!address) return false
+    const key = `blockhunt_trigger_anim_${address.toLowerCase()}`
+    return !sessionStorage.getItem(key)
+  })()
 
   // ── COUNTDOWN NAVIGATION ────────────────
   useEffect(() => {
@@ -328,10 +336,10 @@ const { data: countdownHolder } = useReadContract({
   }, [countdownActive, isConnected, isActiveHolder])
 
   useEffect(() => {
-    if (isActiveHolder) {
+    if (isActiveHolder && !showTrigger) {
       onNavigate('countdown-holder')
     }
-  }, [isActiveHolder])
+  }, [isActiveHolder, triggerAnimShown])
 
   const panels = [
     { id:"mint",  label:"⬡ MINT",  bg:"#0a1f15", titleColor:"#6eff8a" },
@@ -480,7 +488,13 @@ const { data: countdownHolder } = useReadContract({
         <AllTiersTrigger
           walletAddress={address}
           balances={blocks}
-          onTriggered={() => onNavigate('countdown-holder')}
+          alreadyTriggered={true}
+          onTriggered={() => {
+            const key = `blockhunt_trigger_anim_${address.toLowerCase()}`
+            sessionStorage.setItem(key, '1')
+            setTriggerAnimShown(true)
+            onNavigate('countdown-holder')
+          }}
         />
       )}
 
