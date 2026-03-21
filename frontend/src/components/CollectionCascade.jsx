@@ -13,17 +13,17 @@ const tierImage = (n) => new URL(`../assets/T${n}.png`, import.meta.url).href;
 // ── Formation order & angles ────────────────────────────────────────────────
 const FORMATION = [
   { tier: 7, angle: -90,  activateAt: 0.0 },
-  { tier: 6, angle: -30,  activateAt: 0.5 },
-  { tier: 5, angle:  30,  activateAt: 0.9 },
-  { tier: 4, angle: 150,  activateAt: 1.2 },
-  { tier: 3, angle: 210,  activateAt: 1.4 },
-  { tier: 2, angle:  90,  activateAt: 1.5 },
+  { tier: 6, angle: -30,  activateAt: 1.5 },
+  { tier: 5, angle:  30,  activateAt: 2.7 },
+  { tier: 4, angle: 150,  activateAt: 3.6 },
+  { tier: 3, angle: 210,  activateAt: 4.2 },
+  { tier: 2, angle:  90,  activateAt: 4.5 },
 ];
 
 const RADIUS = 200;
 const CARD_W = 120;
 const CARD_H = 160;
-const TOTAL_DURATION = 9000;
+const TOTAL_DURATION = 27000;
 
 export default function CollectionCascade({ onComplete }) {
   const [elapsed, setElapsed] = useState(0);
@@ -56,7 +56,7 @@ export default function CollectionCascade({ onComplete }) {
 
   // ── Skip handler (Phase 4-5 only) ────────────────────────────────────────
   const handleClick = useCallback(() => {
-    if (elapsed >= 6000) setDismissed(true);
+    if (elapsed >= 18000) setDismissed(true);
   }, [elapsed]);
 
   if (dismissed) return null;
@@ -64,27 +64,27 @@ export default function CollectionCascade({ onComplete }) {
   // ── Phase calculations ────────────────────────────────────────────────────
   const s = elapsed / 1000; // seconds
 
-  // Phase 1: Formation    0-3s
-  // Phase 2: Beams        3-4.5s
-  // Phase 3: Flash        4.5-6s
-  // Phase 4: Message      6-8s
-  // Phase 5: Dissolve     8-9s
+  // Phase 1: Formation    0-9s
+  // Phase 2: Beams        9-13.5s
+  // Phase 3: Flash        13.5-18s
+  // Phase 4: Message      18-24s
+  // Phase 5: Dissolve     24-27s
 
-  const inFormation = s < 3;
-  const inBeams     = s >= 3 && s < 4.5;
-  const inFlash     = s >= 4.5 && s < 6;
-  const inMessage   = s >= 6 && s < 8;
-  const inDissolve  = s >= 8;
+  const inFormation = s < 9;
+  const inBeams     = s >= 9 && s < 13.5;
+  const inFlash     = s >= 13.5 && s < 18;
+  const inMessage   = s >= 18 && s < 24;
+  const inDissolve  = s >= 24;
 
   // Overlay opacity
   let overlayOpacity = 1;
-  if (inDissolve) overlayOpacity = Math.max(0, 1 - (s - 8));
+  if (inDissolve) overlayOpacity = Math.max(0, 1 - (s - 24) / 3);
 
-  // Flash circle scale (4.5-6s: grows from 0 to fill screen)
-  const flashProgress = inFlash ? (s - 4.5) / 1.5 : 0;
+  // Flash circle scale (13.5-18s: grows from 0 to fill screen)
+  const flashProgress = inFlash ? (s - 13.5) / 4.5 : 0;
   const flashScale = inFlash ? flashProgress * 20 : 0;
-  // Hold white from 5.5-6s
-  const pureWhite = s >= 5.5 && s < 6;
+  // Hold white from 16.5-18s
+  const pureWhite = s >= 16.5 && s < 18;
 
   // Background: black in formation/beams, transition to white in flash
   let bgColor = '#000';
@@ -92,11 +92,11 @@ export default function CollectionCascade({ onComplete }) {
   if (inMessage || inDissolve) bgColor = '#fff';
 
   // Cards & beams visible until flash dissolves them
-  const showCards = s < 5.0;
-  const showBeams = inBeams || (inFlash && s < 5.0);
+  const showCards = s < 15.0;
+  const showBeams = inBeams || (inFlash && s < 15.0);
 
   // Center glow (during beams)
-  const centerGlowSize = inBeams ? Math.min(40, 40 * ((s - 3) / 1.5)) : 0;
+  const centerGlowSize = inBeams ? Math.min(40, 40 * ((s - 9) / 4.5)) : 0;
 
   return (
     <div
@@ -104,7 +104,7 @@ export default function CollectionCascade({ onComplete }) {
         ...styles.overlay,
         opacity: overlayOpacity,
         backgroundColor: bgColor,
-        cursor: s >= 6 ? 'pointer' : 'default',
+        cursor: s >= 18 ? 'pointer' : 'default',
       }}
       onClick={handleClick}
     >
@@ -114,7 +114,7 @@ export default function CollectionCascade({ onComplete }) {
       {showCards && FORMATION.map(({ tier, angle, activateAt }, i) => {
         const activated = s >= activateAt;
         const activationProgress = activated
-          ? Math.min(1, (s - activateAt) / 0.4)
+          ? Math.min(1, (s - activateAt) / 1.2)
           : 0;
 
         const rad = (angle * Math.PI) / 180;
@@ -127,8 +127,8 @@ export default function CollectionCascade({ onComplete }) {
         const accent = TMAP[tier]?.accent || '#888';
 
         // Radar ping ring
-        const showPing = activated && (s - activateAt) < 0.8;
-        const pingProgress = showPing ? (s - activateAt) / 0.8 : 0;
+        const showPing = activated && (s - activateAt) < 2.4;
+        const pingProgress = showPing ? (s - activateAt) / 2.4 : 0;
 
         return (
           <div key={tier} style={{
@@ -176,14 +176,15 @@ export default function CollectionCascade({ onComplete }) {
       {showBeams && FORMATION.map(({ tier, angle }) => {
         const accent = TMAP[tier]?.accent || '#888';
         const rad = (angle * Math.PI) / 180;
-        // Beam origin: card center
-        const ox = Math.cos(rad) * RADIUS;
-        const oy = Math.sin(rad) * RADIUS;
-        // Beam length = distance from card to center = RADIUS
-        const beamProgress = inBeams ? Math.min(1, (s - 3) / 0.5) : 1;
+        // Beam grows from card toward center
+        const beamProgress = inBeams ? Math.min(1, (s - 9) / 1.5) : 1;
         const beamLength = RADIUS * beamProgress;
-        // Beam angle: from card toward center = angle + 180
-        const beamAngle = angle + 180;
+        // Beam starts at card edge, grows inward
+        const startDist = RADIUS - beamLength;
+        const bx = Math.cos(rad) * (startDist + beamLength / 2);
+        const by = Math.sin(rad) * (startDist + beamLength / 2);
+        // Rotate beam to align along the radius (toward center)
+        const beamRotation = angle + 90;
 
         return (
           <div key={`beam-${tier}`} style={{
@@ -193,9 +194,9 @@ export default function CollectionCascade({ onComplete }) {
             width: 15,
             height: beamLength,
             background: `linear-gradient(to bottom, ${accent}00, ${accent}cc, ${accent}ff)`,
-            transformOrigin: 'center top',
-            transform: `translate(calc(-50% + ${ox}px), ${oy}px) rotate(${beamAngle + 90}deg)`,
-            opacity: inFlash ? Math.max(0, 1 - (s - 4.5) * 4) : 1,
+            transformOrigin: 'center center',
+            transform: `translate(calc(-50% + ${bx}px), calc(-50% + ${by}px)) rotate(${beamRotation}deg)`,
+            opacity: inFlash ? Math.max(0, 1 - (s - 13.5) * 1.33) : 1,
             borderRadius: 4,
             pointerEvents: 'none',
             zIndex: 5,
@@ -215,7 +216,7 @@ export default function CollectionCascade({ onComplete }) {
           background: '#fff',
           transform: 'translate(-50%, -50%)',
           boxShadow: '0 0 40px 20px rgba(255,255,255,0.5)',
-          opacity: inFlash ? Math.max(0, 1 - flashProgress * 0.5) : 1,
+          opacity: inFlash ? Math.max(0, 1 - flashProgress * 0.3) : 1,
           pointerEvents: 'none',
           zIndex: 15,
         }} />
@@ -224,40 +225,40 @@ export default function CollectionCascade({ onComplete }) {
       {/* ── Phase 4: Message text ─────────────────────────────────────────── */}
       {(inMessage || inDissolve) && (
         <div style={styles.messageWrap}>
-          {s >= 6.0 && (
+          {s >= 18.0 && (
             <div style={{
               ...styles.msgLine,
               fontSize: 14,
-              opacity: Math.min(1, (s - 6.0) / 0.3),
+              opacity: Math.min(1, (s - 18.0) / 0.9),
             }}>
               ALL SIX TIERS HELD.
             </div>
           )}
-          {s >= 6.5 && (
+          {s >= 19.5 && (
             <div style={{
               ...styles.msgLine,
               fontSize: 14,
-              opacity: Math.min(1, (s - 6.5) / 0.3),
+              opacity: Math.min(1, (s - 19.5) / 0.9),
               marginTop: 20,
             }}>
               THE COUNTDOWN HAS BEGUN.
             </div>
           )}
-          {s >= 7.0 && (
+          {s >= 21.0 && (
             <div style={{
               ...styles.msgLine,
               fontSize: 24,
-              opacity: Math.min(1, (s - 7.0) / 0.3),
+              opacity: Math.min(1, (s - 21.0) / 0.9),
               marginTop: 28,
             }}>
               7 DAYS.
             </div>
           )}
-          {s >= 7.5 && (
+          {s >= 22.5 && (
             <div style={{
               ...styles.msgLine,
               fontSize: 9,
-              opacity: Math.min(0.5, (s - 7.5) / 0.3 * 0.5),
+              opacity: Math.min(0.5, (s - 22.5) / 0.9 * 0.5),
               marginTop: 24,
             }}>
               The community is watching.

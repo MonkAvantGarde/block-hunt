@@ -23,7 +23,6 @@ import { useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import html2canvas from 'html2canvas';
 import { CONTRACTS } from '../config/wagmi.js';
 import { TOKEN_ABI } from '../abis/index.js';
-import CollectionCascade from '../components/CollectionCascade';
 
 // ── Tier metadata ─────────────────────────────────────────────────
 const TIER_META = {
@@ -50,10 +49,6 @@ function fmtCountdown(secs) {
 
 // ─────────────────────────────────────────────────────────────────
 export default function AllTiersTrigger({ walletAddress, balances, onTriggered, alreadyTriggered = false }) {
-  const cascadeKey = `blockhunt_cascade_${walletAddress}`;
-  const alreadySeen = walletAddress ? localStorage.getItem(cascadeKey) : true;
-  const [showCascade, setShowCascade] = useState(!alreadySeen);
-
   const [secondsLeft, setSecondsLeft] = useState(TRIGGER_DURATION);
   const [phase, setPhase]             = useState('READY');
   const [shareError, setShareError]   = useState(null);
@@ -153,17 +148,6 @@ export default function AllTiersTrigger({ walletAddress, balances, onTriggered, 
 
   const urgent   = secondsLeft <= 20;
   const critical = secondsLeft <= 5;
-
-  if (showCascade) {
-    return (
-      <CollectionCascade
-        onComplete={() => {
-          localStorage.setItem(cascadeKey, '1');
-          setShowCascade(false);
-        }}
-      />
-    );
-  }
 
   return (
     <div style={styles.overlay}>
