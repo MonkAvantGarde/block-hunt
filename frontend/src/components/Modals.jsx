@@ -55,7 +55,7 @@ function ModalShell({ onClose, width = 560, children }) {
           onClick={onClose}
           style={{
             position: "absolute", top: 14, right: 16,
-            fontFamily: "'Press Start 2P', monospace", fontSize: 8,
+            fontFamily: "'Press Start 2P', monospace", fontSize: 9,
             color: CREAM, opacity: .4, background: "none", border: "none",
             cursor: "pointer", zIndex: 10, lineHeight: 1,
             transition: "opacity .15s",
@@ -84,7 +84,7 @@ const TIERS = [
 
 const CARDS = [
   {
-    num: "01 / 06", icon: "◈", title: "SEVEN BLOCKS EXIST.",
+    num: "01 / 07", icon: "◈", title: "SEVEN BLOCKS EXIST.",
     body: (
       <div>
         <div style={{ fontFamily: "'VT323', monospace", fontSize: 22, color: CREAM, opacity: .9, lineHeight: 1.5, marginBottom: 16 }}>
@@ -98,7 +98,7 @@ const CARDS = [
             <div key={t.t} style={{ display: "flex", alignItems: "center", gap: 10, fontFamily: "'VT323', monospace", fontSize: 18 }}>
               <div style={{ width: 8, height: 8, background: t.col, flexShrink: 0 }} />
               <span style={{ flex: 1, color: t.col }}>{t.name}</span>
-              <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 5, opacity: .5, letterSpacing: 1 }}>{t.rarity}</span>
+              <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, opacity: .5, letterSpacing: 1 }}>{t.rarity}</span>
             </div>
           ))}
         </div>
@@ -106,11 +106,11 @@ const CARDS = [
     ),
   },
   {
-    num: "02 / 06", icon: "⬡", title: "THE HUNT OPENS DAILY.",
+    num: "02 / 07", icon: "⬡", title: "THE HUNT OPENS DAILY.",
     body: (
       <div>
         <div style={{ fontFamily: "'VT323', monospace", fontSize: 22, color: CREAM, opacity: .9, lineHeight: 1.5, marginBottom: 16 }}>
-          Once a day, a window opens. You have <span style={{ color: GOLD_LT }}>6 hours</span> to enter.<br /><br />
+          Once a day, a window opens. You have <span style={{ color: GOLD_LT }}>3 hours</span> to enter.<br /><br />
           State how many blocks you want. The window closes.<br />
           What you receive is determined then — not before.<br />
           No one gets an advantage by moving faster.
@@ -118,7 +118,7 @@ const CARDS = [
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {["0.00008 ETH (Batch 1, price rises)", "Up to 500 per player", "Batch-scaled daily cap", "Quiet days roll over"].map(s => (
             <div key={s} style={{
-              fontFamily: "'Press Start 2P', monospace", fontSize: 6,
+              fontFamily: "'Press Start 2P', monospace", fontSize: 7,
               border: "1px solid rgba(255,255,255,.1)",
               padding: "5px 9px", color: CREAM, opacity: .8, letterSpacing: .5,
             }}>{s}</div>
@@ -128,7 +128,7 @@ const CARDS = [
     ),
   },
   {
-    num: "03 / 06", icon: "◈", title: "MANY BECOME ONE.",
+    num: "03 / 07", icon: "◈", title: "MANY BECOME ONE.",
     body: (
       <div>
         <div style={{ fontFamily: "'VT323', monospace", fontSize: 22, color: CREAM, opacity: .9, lineHeight: 1.5, marginBottom: 16 }}>
@@ -138,9 +138,9 @@ const CARDS = [
           Every combine destroys what it consumes.
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {["T7 → T6: 20 blocks", "T6 → T5: 20 blocks", "T5 → T4: 30 blocks", "T4 → T3: 30 blocks", "T3 → T2: 50 blocks"].map(s => (
+          {["T7 → T6: 21 blocks", "T6 → T5: 19 blocks", "T5 → T4: 17 blocks", "T4 → T3: 15 blocks", "T3 → T2: 13 blocks"].map(s => (
             <div key={s} style={{
-              fontFamily: "'Press Start 2P', monospace", fontSize: 6,
+              fontFamily: "'Press Start 2P', monospace", fontSize: 7,
               border: "1px solid rgba(255,255,255,.1)",
               padding: "5px 9px", color: CREAM, opacity: .8, letterSpacing: .5,
             }}>{s}</div>
@@ -150,20 +150,20 @@ const CARDS = [
     ),
   },
   {
-    num: "04 / 06", icon: "⚡", title: "THE FORGE DOES NOT FORGIVE.",
+    num: "04 / 07", icon: "⚡", title: "THE FORGE DOES NOT FORGIVE.",
     body: (
       <div>
         <div style={{ fontFamily: "'VT323', monospace", fontSize: 22, color: CREAM, opacity: .9, lineHeight: 1.5, marginBottom: 16 }}>
           Feed it blocks. Name your risk.<br />
-          Burn <span style={{ color: GOLD_LT }}>10 of 20</span> — a 50% chance of something rarer.<br />
-          Burn <span style={{ color: GOLD_LT }}>all 20</span> — certain. But 20 blocks gone either way.<br /><br />
+          Burn <span style={{ color: GOLD_LT }}>10 of 21</span> — a 47% chance of something rarer.<br />
+          Burn <span style={{ color: GOLD_LT }}>all 21</span> — certain. But 21 blocks gone either way.<br /><br />
           The Forge is indifferent to your hope.<br />
           It only counts what you commit.
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {["Burn N of M = (N/M)% chance", "Fail = all blocks destroyed", "Applies to Tiers 3–7"].map(s => (
             <div key={s} style={{
-              fontFamily: "'Press Start 2P', monospace", fontSize: 6,
+              fontFamily: "'Press Start 2P', monospace", fontSize: 7,
               border: "1px solid rgba(255,255,255,.1)",
               padding: "5px 9px", color: CREAM, opacity: .8, letterSpacing: .5,
             }}>{s}</div>
@@ -173,7 +173,7 @@ const CARDS = [
     ),
   },
   {
-    num: "05 / 06", icon: "⇄", title: "NOTHING IS UNTRADEABLE.",
+    num: "05 / 07", icon: "⇄", title: "NOTHING IS UNTRADEABLE.",
     body: (
       <div>
         <div style={{ fontFamily: "'VT323', monospace", fontSize: 22, color: CREAM, opacity: .9, lineHeight: 1.5, marginBottom: 16 }}>
@@ -185,7 +185,7 @@ const CARDS = [
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {["10% royalty on all trades", "All blocks are ERC-1155"].map(s => (
             <div key={s} style={{
-              fontFamily: "'Press Start 2P', monospace", fontSize: 6,
+              fontFamily: "'Press Start 2P', monospace", fontSize: 7,
               border: "1px solid rgba(255,255,255,.1)",
               padding: "5px 9px", color: CREAM, opacity: .8, letterSpacing: .5,
             }}>{s}</div>
@@ -195,15 +195,38 @@ const CARDS = [
     ),
   },
   {
-    num: "06 / 06", icon: "★", title: "ONE PLAYER ENDS IT.",
+    num: "06 / 07", icon: "★", title: "ONE PLAYER ENDS IT.",
     body: (
       <div style={{ fontFamily: "'VT323', monospace", fontSize: 22, color: CREAM, opacity: .9, lineHeight: 1.5 }}>
         Collect all six — Tiers 2 through 7 — simultaneously.<br />
-        The moment you do, the clock starts. <span style={{ color: GOLD_LT }}>Seven days.</span><br /><br />
-        At the end, you choose:<br />
-        <span style={{ color: GOLD_LT }}>Claim</span> — take everything. Season ends.<br />
-        <span style={{ color: GOLD_LT }}>Sacrifice</span> — take half. Seed the next world. Become The Origin.<br /><br />
-        The community will have a voice. The choice is yours alone.
+        The moment you do, a <span style={{ color: GOLD_LT }}>7-day countdown</span> begins.<br /><br />
+        But holding all six doesn't make you safe.<br />
+        Anyone with all six tiers and a <span style={{ color: GOLD_LT }}>stronger collection</span> can <span style={{ color: GOLD_LT }}>take over</span> your countdown.<br /><br />
+        Minting never stops. The race continues until the clock runs out.
+      </div>
+    ),
+  },
+  {
+    num: "07 / 07", icon: "⚔", title: "THE TAKEOVER.",
+    body: (
+      <div>
+        <div style={{ fontFamily: "'VT323', monospace", fontSize: 22, color: CREAM, opacity: .9, lineHeight: 1.5, marginBottom: 16 }}>
+          If a player holds all six tiers and <span style={{ color: GOLD_LT }}>ranks above</span> the current countdown holder, they can challenge.<br /><br />
+          A successful takeover <span style={{ color: GOLD_LT }}>resets the 7-day clock</span> entirely.<br />
+          The old holder loses their position. The new holder inherits the countdown.<br /><br />
+          When the clock finally expires, the holder chooses:<br />
+          <span style={{ color: GOLD_LT }}>Claim</span> — take 100% of the treasury. Season ends.<br />
+          <span style={{ color: GOLD_LT }}>Sacrifice</span> — take 50%. Seed the next season. Become The Origin.
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {["Must hold all 6 tiers (T2–T7)", "Rank: most tiers, then most blocks", "24-hour safe period after each takeover", "Full 7-day reset on takeover"].map(s => (
+            <div key={s} style={{
+              fontFamily: "'Press Start 2P', monospace", fontSize: 7,
+              border: "1px solid rgba(255,255,255,.1)",
+              padding: "5px 9px", color: CREAM, opacity: .8, letterSpacing: .5,
+            }}>{s}</div>
+          ))}
+        </div>
       </div>
     ),
   },
@@ -218,20 +241,26 @@ export function GameRulesModal({ onClose }) {
     <ModalShell onClose={onClose} width={560}>
       {/* Header */}
       <div style={{ padding: "22px 24px 0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 6, color: GOLD, opacity: .6, letterSpacing: 2 }}>⬡ THE BLOCK HUNT</div>
-        <div style={{ display: "flex", gap: 7, alignItems: "center" }}>
+        <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: GOLD, opacity: .6, letterSpacing: 2 }}>⬡ THE BLOCK HUNT</div>
+        <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
           {CARDS.map((_, i) => (
             <div
               key={i}
               className="ob-dot-btn"
               onClick={() => setCard(i)}
               style={{
+                width: 28, height: 28,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                cursor: "pointer",
+              }}
+            >
+              <div style={{
                 width: 7, height: 7,
                 border: `1px solid ${GOLD_DK}`,
                 background: i === card ? GOLD : "transparent",
-                cursor: "pointer",
-              }}
-            />
+                transition: "background 0.15s",
+              }} />
+            </div>
           ))}
         </div>
       </div>
@@ -239,7 +268,7 @@ export function GameRulesModal({ onClose }) {
       {/* Card */}
       <div style={{ padding: "28px 32px 24px", height: 380, overflowY: "auto", display: "flex", flexDirection: "column" }}>
         <div>
-          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 6, color: CREAM, opacity: .3, letterSpacing: 2, marginBottom: 14 }}>{c.num}</div>
+          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: CREAM, opacity: .3, letterSpacing: 2, marginBottom: 14 }}>{c.num}</div>
           <div style={{ fontSize: 32, marginBottom: 16, lineHeight: 1 }}>{c.icon}</div>
           <div style={{
             fontFamily: "'Press Start 2P', monospace", fontSize: 12,
@@ -259,7 +288,7 @@ export function GameRulesModal({ onClose }) {
         <button
           onClick={() => card > 0 && setCard(card - 1)}
           style={{
-            fontFamily: "'Press Start 2P', monospace", fontSize: 7, letterSpacing: 1,
+            fontFamily: "'Press Start 2P', monospace", fontSize: 8, letterSpacing: 1,
             padding: "9px 16px", border: "2px solid rgba(255,255,255,.12)",
             background: "rgba(255,255,255,.06)", color: CREAM,
             cursor: card === 0 ? "default" : "pointer",
@@ -270,7 +299,7 @@ export function GameRulesModal({ onClose }) {
         <button
           onClick={onClose}
           style={{
-            fontFamily: "'Press Start 2P', monospace", fontSize: 6,
+            fontFamily: "'Press Start 2P', monospace", fontSize: 8,
             color: CREAM, opacity: .3, background: "none", border: "none",
             cursor: "pointer", letterSpacing: 1,
           }}
@@ -282,7 +311,7 @@ export function GameRulesModal({ onClose }) {
           onClick={() => isLast ? onClose() : setCard(card + 1)}
           style={{
             fontFamily: "'Press Start 2P', monospace",
-            fontSize: isLast ? 7 : 7, letterSpacing: isLast ? 2 : 1,
+            fontSize: isLast ? 9 : 8, letterSpacing: isLast ? 2 : 1,
             padding: isLast ? "10px 20px" : "9px 16px",
             background: GOLD, color: INK,
             border: `2px solid ${INK}`, boxShadow: `3px 3px 0 ${INK}`,
@@ -409,7 +438,7 @@ export function LeaderboardModal({ onClose, onOpenProfile, connectedAddress, pri
       {/* Header */}
       <div style={{ padding: "22px 28px 16px", borderBottom: "1px solid rgba(255,255,255,.06)", display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
         <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 11, color: GOLD, letterSpacing: 1, textShadow: `2px 2px 0 ${GOLD_DK}` }}>⬡ THE RACE</div>
-        <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 6, color: CREAM, opacity: .4, letterSpacing: 1 }}>WHO'S CLOSEST TO WINNING · SEASON 1</div>
+        <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 8, color: CREAM, opacity: .4, letterSpacing: 1 }}>WHO'S CLOSEST TO WINNING · SEASON 1</div>
       </div>
 
       {/* Season stats */}
@@ -421,22 +450,22 @@ export function LeaderboardModal({ onClose, onOpenProfile, connectedAddress, pri
           { label: "PLAYERS",      val: stats ? stats.uniquePlayers.toLocaleString()       : "—" },
         ].map((s, i) => (
           <div key={s.label} style={{ padding: "12px 20px", borderRight: i < 3 ? "1px solid rgba(255,255,255,.05)" : "none" }}>
-            <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 5, color: CREAM, opacity: .4, letterSpacing: 1, marginBottom: 5 }}>{s.label}</div>
-            <div style={{ fontFamily: "'VT323', monospace", fontSize: 22, color: s.gold ? GOLD_LT : CREAM, letterSpacing: .5 }}>{s.val}</div>
+            <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 8, color: CREAM, opacity: .4, letterSpacing: 1, marginBottom: 5 }}>{s.label}</div>
+            <div style={{ fontFamily: "'VT323', monospace", fontSize: 24, color: s.gold ? GOLD_LT : CREAM, letterSpacing: .5 }}>{s.val}</div>
           </div>
         ))}
       </div>
 
       {/* Loading / error states */}
       {loading && (
-        <div style={{ padding: "40px 28px", textAlign: "center", fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: CREAM, opacity: .4, letterSpacing: 1 }}>
+        <div style={{ padding: "40px 28px", textAlign: "center", fontFamily: "'Press Start 2P', monospace", fontSize: 8, color: CREAM, opacity: .4, letterSpacing: 1 }}>
           <span style={{ animation: "pulse-dot 1s infinite" }}>● </span>LOADING...
         </div>
       )}
 
       {error && !loading && (
         <div style={{ padding: "28px", margin: "20px 28px", border: `1px solid ${EMBER}33`, background: "rgba(204,51,34,.06)" }}>
-          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 6, color: EMBER, letterSpacing: 1, marginBottom: 8 }}>⚠ COULD NOT LOAD</div>
+          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 8, color: EMBER, letterSpacing: 1, marginBottom: 8 }}>⚠ COULD NOT LOAD</div>
           <div style={{ fontFamily: "'VT323', monospace", fontSize: 17, color: CREAM, opacity: .6 }}>{error}</div>
         </div>
       )}
@@ -445,7 +474,7 @@ export function LeaderboardModal({ onClose, onOpenProfile, connectedAddress, pri
       {!loading && !error && (
         <div style={{ padding: "0 0 16px" }}>
           {players.length === 0 ? (
-            <div style={{ padding: "40px 28px", textAlign: "center", fontFamily: "'VT323', monospace", fontSize: 22, color: CREAM, opacity: .4 }}>
+            <div style={{ padding: "40px 28px", textAlign: "center", fontFamily: "'VT323', monospace", fontSize: 24, color: CREAM, opacity: .4 }}>
               No players yet. Be the first.
             </div>
           ) : (
@@ -455,7 +484,7 @@ export function LeaderboardModal({ onClose, onOpenProfile, connectedAddress, pri
                   <tr>
                     {["#", "PLAYER", "TIERS HELD", "SCORE", "MINTS"].map((h, i) => (
                       <th key={h} style={{
-                        fontFamily: "'Press Start 2P', monospace", fontSize: 6,
+                        fontFamily: "'Press Start 2P', monospace", fontSize: 8,
                         color: CREAM, opacity: .35, letterSpacing: 1,
                         padding: "10px 16px",
                         textAlign: i >= 3 ? "right" : "left",
@@ -483,8 +512,8 @@ export function LeaderboardModal({ onClose, onOpenProfile, connectedAddress, pri
                         <td style={{ padding: "9px 16px", borderBottom: "1px solid rgba(255,255,255,.04)" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                             <div style={{ fontFamily: "'Courier Prime', monospace", fontSize: 11, color: CREAM, opacity: .7 }}>{fmtAddr(p.id)}</div>
-                            {isMe && <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 5, color: GOLD, background: "rgba(200,168,75,.15)", border: `1px solid ${GOLD_DK}`, padding: "2px 6px", letterSpacing: 1 }}>YOU</span>}
-                            {Number(p.tiersUnlocked) >= 5 && <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 5, color: EMBER, background: "rgba(204,51,34,.12)", border: `1px solid ${EMBER}44`, padding: "2px 6px", letterSpacing: 1, animation: "pulse-dot 2s ease-in-out infinite" }}>{6 - Number(p.tiersUnlocked)} AWAY</span>}
+                            {isMe && <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 8, color: GOLD, background: "rgba(200,168,75,.15)", border: `1px solid ${GOLD_DK}`, padding: "2px 6px", letterSpacing: 1 }}>YOU</span>}
+                            {Number(p.tiersUnlocked) >= 5 && <span style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 8, color: EMBER, background: "rgba(204,51,34,.12)", border: `1px solid ${EMBER}44`, padding: "2px 6px", letterSpacing: 1, animation: "pulse-dot 2s ease-in-out infinite" }}>{6 - Number(p.tiersUnlocked)} AWAY</span>}
                           </div>
                         </td>
                         <td style={{ padding: "9px 16px", borderBottom: "1px solid rgba(255,255,255,.04)" }}>
@@ -492,7 +521,7 @@ export function LeaderboardModal({ onClose, onOpenProfile, connectedAddress, pri
                             {tierDots.map((held, i) => (
                               <div key={i} style={{ width: 9, height: 9, background: held ? TIER_COLS[i] : "transparent", border: held ? "none" : "1px solid rgba(255,255,255,.2)" }} />
                             ))}
-                            <span style={{ fontFamily: "'VT323', monospace", fontSize: 16, color: CREAM, opacity: .45, marginLeft: 6 }}>{p.tiersUnlocked}/6</span>
+                            <span style={{ fontFamily: "'VT323', monospace", fontSize: 18, color: CREAM, opacity: .45, marginLeft: 6 }}>{p.tiersUnlocked}/6</span>
                           </div>
                         </td>
                         <td style={{ padding: "9px 16px", borderBottom: "1px solid rgba(255,255,255,.04)", textAlign: "right" }}>
@@ -514,7 +543,7 @@ export function LeaderboardModal({ onClose, onOpenProfile, connectedAddress, pri
                     onClick={handleLoadMore}
                     disabled={loadingMore}
                     style={{
-                      fontFamily: "'Press Start 2P', monospace", fontSize: 7,
+                      fontFamily: "'Press Start 2P', monospace", fontSize: 8,
                       padding: "10px 24px", letterSpacing: 1,
                       background: "transparent", color: GOLD,
                       border: `1px solid ${GOLD_DK}`, cursor: loadingMore ? "default" : "pointer",
@@ -528,7 +557,7 @@ export function LeaderboardModal({ onClose, onOpenProfile, connectedAddress, pri
 
               {/* End of list indicator */}
               {!hasMore && players.length >= PAGE_SIZE && (
-                <div style={{ padding: "14px", textAlign: "center", fontFamily: "'Press Start 2P', monospace", fontSize: 5, color: CREAM, opacity: .25, letterSpacing: 1 }}>
+                <div style={{ padding: "14px", textAlign: "center", fontFamily: "'Press Start 2P', monospace", fontSize: 8, color: CREAM, opacity: .25, letterSpacing: 1 }}>
                   ALL {players.length} PLAYERS SHOWN
                 </div>
               )}
@@ -626,7 +655,7 @@ export function ProfileModal({ onClose, connectedAddress }) {
             <div style={{ fontFamily: "'Courier Prime', monospace", fontSize: 13, color: CREAM, opacity: .6, letterSpacing: .5, display: "flex", alignItems: "center", gap: 8 }}>
               {shortAddr}
               {addr && <button onClick={copyAddr} style={{
-                fontFamily: "'Press Start 2P', monospace", fontSize: 7,
+                fontFamily: "'Press Start 2P', monospace", fontSize: 8,
                 color: CREAM, opacity: .45, background: "none",
                 border: "1px solid rgba(255,255,255,.1)", padding: "3px 7px",
                 cursor: "pointer", letterSpacing: 1,
@@ -634,7 +663,7 @@ export function ProfileModal({ onClose, connectedAddress }) {
             </div>
           </div>
           <div style={{
-            fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: CREAM,
+            fontFamily: "'Press Start 2P', monospace", fontSize: 8, color: CREAM,
             border: `1px solid ${GOLD_DK}`, padding: "6px 12px", letterSpacing: 1,
             opacity: .8, background: `rgba(200,168,75,.06)`, flexShrink: 0,
           }}>SEASON 1</div>
@@ -650,8 +679,8 @@ export function ProfileModal({ onClose, connectedAddress }) {
               flex: 1, padding: "10px 14px", textAlign: "center",
               borderRight: i < 1 ? "1px solid rgba(255,255,255,.05)" : "none",
             }}>
-              <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: CREAM, opacity: .35, letterSpacing: 1, marginBottom: 4 }}>{s.label}</div>
-              <div style={{ fontFamily: "'VT323', monospace", fontSize: 22, color: CREAM, opacity: .85 }}>{s.val}</div>
+              <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 8, color: CREAM, opacity: .35, letterSpacing: 1, marginBottom: 4 }}>{s.label}</div>
+              <div style={{ fontFamily: "'VT323', monospace", fontSize: 24, color: CREAM, opacity: .85 }}>{s.val}</div>
             </div>
           ))}
         </div>
@@ -659,7 +688,7 @@ export function ProfileModal({ onClose, connectedAddress }) {
 
       {/* Holdings — live from chain */}
       <div style={{ padding: "18px 28px", borderBottom: "1px solid rgba(255,255,255,.05)" }}>
-        <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: CREAM, opacity: .4, letterSpacing: 2, marginBottom: 10 }}>CURRENT HOLDINGS</div>
+        <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 8, color: CREAM, opacity: .4, letterSpacing: 2, marginBottom: 10 }}>CURRENT HOLDINGS</div>
         <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
           {TIER_META.map(h => {
             const qty = balances[h.t] || 0;
@@ -670,9 +699,9 @@ export function ProfileModal({ onClose, connectedAddress }) {
                 background: "rgba(0,0,0,.2)", minWidth: 68,
                 opacity: qty === 0 ? .35 : 1,
               }}>
-                <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: h.col, opacity: .5, letterSpacing: 1 }}>T{h.t}</div>
+                <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 8, color: h.col, opacity: .5, letterSpacing: 1 }}>T{h.t}</div>
                 <div style={{ fontFamily: "'VT323', monospace", fontSize: 14, color: h.col, letterSpacing: .5, textAlign: "center" }}>{h.name}</div>
-                <div style={{ fontFamily: "'VT323', monospace", fontSize: 18, color: h.col, opacity: .7 }}>{qty}</div>
+                <div style={{ fontFamily: "'VT323', monospace", fontSize: 20, color: h.col, opacity: .7 }}>{qty}</div>
               </div>
             );
           })}
@@ -681,10 +710,10 @@ export function ProfileModal({ onClose, connectedAddress }) {
 
       {/* Activity history from subgraph */}
       <div style={{ padding: "18px 28px 24px" }}>
-        <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: CREAM, opacity: .4, letterSpacing: 2, marginBottom: 10 }}>ACTIVITY</div>
+        <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 8, color: CREAM, opacity: .4, letterSpacing: 2, marginBottom: 10 }}>ACTIVITY</div>
 
         {actLoading && (
-          <div style={{ textAlign: "center", padding: "16px 0", fontFamily: "'Press Start 2P', monospace", fontSize: 6, color: CREAM, opacity: .3, letterSpacing: 1 }}>
+          <div style={{ textAlign: "center", padding: "16px 0", fontFamily: "'Press Start 2P', monospace", fontSize: 8, color: CREAM, opacity: .3, letterSpacing: 1 }}>
             LOADING...
           </div>
         )}
@@ -710,8 +739,8 @@ export function ProfileModal({ onClose, connectedAddress }) {
                   background: i % 2 === 0 ? "rgba(0,0,0,0.2)" : "rgba(0,0,0,0.1)",
                   border: "1px solid rgba(255,255,255,0.03)",
                 }}>
-                  <div style={{ fontFamily: "'VT323', monospace", fontSize: 16, color: "rgba(255,255,255,0.35)", width: 70 }}>{dateStr}</div>
-                  <div style={{ fontFamily: "'VT323', monospace", fontSize: 16, color: CREAM, opacity: .7, flex: 1 }}>{actions.join(" · ")}</div>
+                  <div style={{ fontFamily: "'VT323', monospace", fontSize: 18, color: "rgba(255,255,255,0.35)", width: 70 }}>{dateStr}</div>
+                  <div style={{ fontFamily: "'VT323', monospace", fontSize: 18, color: CREAM, opacity: .7, flex: 1 }}>{actions.join(" · ")}</div>
                 </div>
               );
             })}
@@ -723,7 +752,7 @@ export function ProfileModal({ onClose, connectedAddress }) {
             <a
               href={`https://sepolia.basescan.org/address/${addr}`}
               target="_blank" rel="noreferrer"
-              style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: GOLD, opacity: .6, textDecoration: "none", letterSpacing: 1 }}
+              style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 8, color: GOLD, opacity: .6, textDecoration: "none", letterSpacing: 1 }}
               onMouseEnter={e => { e.currentTarget.style.opacity = '1'; }}
               onMouseLeave={e => { e.currentTarget.style.opacity = '.6'; }}
             >VIEW ON BASESCAN ↗</a>

@@ -73,7 +73,7 @@ export default function TierSlot({ tierId, count, onCombine, combining=false }) 
   return (
     <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:5, userSelect:"none" }}>
       <div style={{
-        fontFamily:"'Press Start 2P', monospace", fontSize:7,
+        fontFamily:"'Press Start 2P', monospace", fontSize:8,
         color: count > 0 ? `${t.accent}cc` : "rgba(255,255,255,0.18)",
         letterSpacing:0.5, height:16, display:"flex", alignItems:"center", textAlign:"center",
         textShadow: count > 0 ? "0 0 8px rgba(200,168,75,0.3)" : "none",
@@ -114,7 +114,7 @@ export default function TierSlot({ tierId, count, onCombine, combining=false }) 
               boxShadow:`3px 3px 0 ${INK}`,
             }}>
               <span style={{ fontSize:20, opacity:0.3 }}>🔒</span>
-              <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:"rgba(255,255,255,0.12)", letterSpacing:0.5 }}>T{tierId}</span>
+              <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:"rgba(255,255,255,0.12)", letterSpacing:0.5 }}>T{tierId}</span>
             </div>
           )}
         </div>
@@ -122,7 +122,7 @@ export default function TierSlot({ tierId, count, onCombine, combining=false }) 
           <div style={{
             position:"absolute", top:-5, right:-5, zIndex:10,
             background:t.accent, color:"#000",
-            fontFamily:"'Press Start 2P', monospace", fontSize:7,
+            fontFamily:"'Press Start 2P', monospace", fontSize:8,
             padding:"2px 5px", borderRadius:2, boxShadow:`1px 1px 0 ${INK}`,
           }}>×{count > 9999 ? "9k+" : count}</div>
         )}
@@ -148,12 +148,12 @@ export default function TierSlot({ tierId, count, onCombine, combining=false }) 
               transition:"width 0.4s",
             }} />
           </div>
-          <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:"rgba(255,255,255,0.45)", letterSpacing:0.5 }}>
+          <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:"rgba(255,255,255,0.45)", letterSpacing:0.5 }}>
             {count}/{ratio}
           </div>
           {count < ratio && (
             <div style={{
-              fontFamily:"'VT323', monospace", fontSize:16,
+              fontFamily:"'VT323', monospace", fontSize:18,
               color: count === 0 ? "rgba(255,255,255,0.2)" : `${t.accent}88`,
               textAlign:"center", lineHeight:1.2, marginTop:1,
             }}>
@@ -170,7 +170,7 @@ export default function TierSlot({ tierId, count, onCombine, combining=false }) 
           onClick={() => canCombine && !combining && onCombine(tierId)}
           style={{
             width:130, padding:"6px 0",
-            fontFamily:"'Press Start 2P', monospace", fontSize:7, letterSpacing:0.5,
+            fontFamily:"'Press Start 2P', monospace", fontSize:8, letterSpacing:0.5,
             background: combining ? "rgba(200,168,75,0.4)" : canCombine ? GOLD : "rgba(0,0,0,0.25)",
             color: canCombine ? INK : "rgba(255,255,255,0.1)",
             border: canCombine ? `2px solid ${GOLD_DK}` : "2px solid rgba(255,255,255,0.06)",
@@ -186,13 +186,13 @@ export default function TierSlot({ tierId, count, onCombine, combining=false }) 
       )}
 
       {tierId === 1 && count > 0 && (
-        <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:"#4466ff", animation:"badgePulse 1.5s infinite" }}>
+        <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:"#4466ff", animation:"badgePulse 1.5s infinite" }}>
           ★ WINNER
         </div>
       )}
       {tierId === 1 && count === 0 && (
         <div style={{
-          fontFamily:"'Press Start 2P', monospace", fontSize:7,
+          fontFamily:"'Press Start 2P', monospace", fontSize:8,
           color: GOLD, opacity:0.6, textAlign:"center", lineHeight:1.4,
         }}>
           ★ SACRIFICE<br/>ONLY

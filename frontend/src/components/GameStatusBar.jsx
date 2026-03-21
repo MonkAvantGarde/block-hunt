@@ -120,7 +120,7 @@ export default function GameStatusBar({ prizePool, windowInfo, currentBatch, min
           padding: "10px 0",
           textAlign: "center",
           fontFamily: "'Press Start 2P', monospace",
-          fontSize: 9,
+          fontSize: 10,
           color: INK,
           letterSpacing: 2,
           textShadow: `0 0 8px ${GOLD}66`,
@@ -155,7 +155,7 @@ export default function GameStatusBar({ prizePool, windowInfo, currentBatch, min
           <div style={{
             ...valueStyle,
             color: windowOpen ? urgencyColor : "#ff8888",
-            fontSize: 22,
+            fontSize: 24,
             animation: windowOpen ? urgencyPulse : "none",
           }}>
             {windowOpen ? "● OPEN" : "○ CLOSED"}
@@ -233,7 +233,7 @@ const colStyle = {
 
 const labelStyle = {
   fontFamily: "'Press Start 2P', monospace",
-  fontSize: 7,
+  fontSize: 8,
   color: GOLD,
   opacity: 0.6,
   letterSpacing: 2,
@@ -250,7 +250,7 @@ const valueStyle = {
 
 const detailStyle = {
   fontFamily: "'Press Start 2P', monospace",
-  fontSize: 7,
+  fontSize: 8,
   color: CREAM,
   opacity: 0.45,
 }

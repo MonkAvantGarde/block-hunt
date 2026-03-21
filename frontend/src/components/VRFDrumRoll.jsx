@@ -109,6 +109,19 @@ export default function VRFDrumRoll({ mode = 'mint', chargeColor, fulfilled, onR
   const intervalRef = useRef(null)
   const panelRef = useRef(null)
   const fulfilledAtRef = useRef(null)
+  const [panelSize, setPanelSize] = useState({ w: 280, h: 200 })
+
+  // Measure actual panel size
+  useEffect(() => {
+    const el = panelRef.current
+    if (!el) return
+    const obs = new ResizeObserver(entries => {
+      const { width, height } = entries[0].contentRect
+      if (width > 0 && height > 0) setPanelSize({ w: width, h: height })
+    })
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [])
 
   // Tick elapsed time
   useEffect(() => {
@@ -131,23 +144,21 @@ export default function VRFDrumRoll({ mode = 'mint', chargeColor, fulfilled, onR
   useEffect(() => {
     if (releasePhase) return
     const count = cfg.particles
-    const w = 280, h = 200 // approximate panel size
     const newP = []
     for (let i = 0; i < count; i++) {
-      newP.push(spawnParticle(i, w, h))
+      newP.push(spawnParticle(i, panelSize.w, panelSize.h))
     }
     setParticles(newP)
-  }, [phase, releasePhase])
+  }, [phase, releasePhase, panelSize.w, panelSize.h])
 
   // Recycle particles periodically
   useEffect(() => {
     if (releasePhase) return
     const t = setInterval(() => {
-      const w = 280, h = 200
-      setParticles(prev => prev.map((p, i) => spawnParticle(i, w, h)))
+      setParticles(prev => prev.map((p, i) => spawnParticle(i, panelSize.w, panelSize.h)))
     }, 2000)
     return () => clearInterval(t)
-  }, [releasePhase])
+  }, [releasePhase, panelSize.w, panelSize.h])
 
   // Handle VRF fulfillment → release sequence
   useEffect(() => {
@@ -232,7 +243,7 @@ export default function VRFDrumRoll({ mode = 'mint', chargeColor, fulfilled, onR
 
       {/* Particles */}
       {!releasePhase && particles.map(p => {
-        const cx = 140, cy = 100 // center
+        const cx = panelSize.w / 2, cy = panelSize.h / 2
         return (
           <div key={p.id} style={{
             position: 'absolute',
@@ -309,11 +320,13 @@ export default function VRFDrumRoll({ mode = 'mint', chargeColor, fulfilled, onR
               : 'none',
             transition: isSnap ? 'all 0.15s ease-out' : 'all 0.5s ease-out',
           }}>
-            <span style={{
-              fontFamily: "'Press Start 2P', monospace",
-              fontSize: 12, color, textAlign: 'center',
-              lineHeight: 1.3, opacity: 0.9,
-            }}>BH</span>
+            <svg width="36" height="36" viewBox="0 0 36 36" fill="none" style={{ opacity: 0.9 }}>
+              <circle cx="18" cy="18" r="16" fill={`${color}44`} stroke={color} strokeWidth="1.5" />
+              <circle cx="18" cy="18" r="12" fill="none" stroke={`${color}66`} strokeWidth="0.5" />
+              <polygon points="18,6 26,14 18,22 10,14" fill={color} opacity="0.7" />
+              <polygon points="10,14 18,22 18,28 10,20" fill={`${color}88`} />
+              <polygon points="26,14 18,22 18,28 26,20" fill={`${color}cc`} />
+            </svg>
           </div>
         </div>
       )}

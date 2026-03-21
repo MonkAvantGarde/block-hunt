@@ -1,18 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import { useBalance } from "wagmi";
 import { CONTRACTS } from "../config/wagmi";
-
-// ═══════════════════════════════════════════════════════════════
-// DESIGN TOKENS
-// ═══════════════════════════════════════════════════════════════
-const FELT       = "#1e4d32";
-const FELT_DEEP  = "#142e1e";
-const WOOD       = "#2c1810";
-const GOLD       = "#c8a84b";
-const GOLD_DK    = "#8a6820";
-const GOLD_LT    = "#e8c86b";
-const INK        = "#1a1208";
-const CREAM      = "#f0ead6";
+import {
+  FELT, FELT_DEEP, WOOD_LIGHT as WOOD, GOLD, GOLD_DK, GOLD_LT,
+  INK_DEEP as INK, CREAM,
+} from "../config/design-tokens";
 
 const ETH_USD = 2500;
 

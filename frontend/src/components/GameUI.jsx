@@ -14,7 +14,7 @@ export function Btn({ onClick, children, color="#c8a84b", disabled=false, danger
       onClick={disabled ? undefined : onClick}
       style={{
         width:"100%", height: sm ? 44 : 52,
-        fontFamily:"'Press Start 2P', monospace", fontSize: sm ? 7 : 9, letterSpacing:1,
+        fontFamily:"'Press Start 2P', monospace", fontSize: sm ? 8 : 10, letterSpacing:1,
         background:bg, color:clr,
         border: danger ? "2px solid #990000" : disabled ? "2px solid rgba(255,255,255,0.06)" : `2px solid ${GOLD_DK}`,
         boxShadow: disabled ? "none" : `3px 3px 0 ${INK}`,
@@ -30,8 +30,8 @@ export function Btn({ onClick, children, color="#c8a84b", disabled=false, danger
 export function StatBox({ label, value, accent }) {
   return (
     <div style={{ flex:1, background:"rgba(0,0,0,0.35)", border:"1px solid rgba(255,255,255,0.07)", padding:"6px 8px" }}>
-      <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:"rgba(255,255,255,0.35)", letterSpacing:1 }}>{label}</div>
-      <div style={{ fontFamily:"'VT323', monospace", fontSize:22, color: accent || CREAM, marginTop:2 }}>{value}</div>
+      <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:"rgba(255,255,255,0.35)", letterSpacing:1 }}>{label}</div>
+      <div style={{ fontFamily:"'VT323', monospace", fontSize:24, color: accent || CREAM, marginTop:2 }}>{value}</div>
     </div>
   );
 }
@@ -45,7 +45,7 @@ export function TxErrorPanel({ error, onRetry, context="transaction" }) {
       background:'rgba(255,50,30,0.06)', border:'1px solid rgba(255,50,30,0.25)',
       padding:'14px 16px', display:'flex', flexDirection:'column', gap:10,
     }}>
-      <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:'#ff8888' }}>
+      <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:9, color:'#ff8888' }}>
         ✕ Transaction failed
       </div>
       <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:12, color:'rgba(255,255,255,0.5)' }}>
@@ -53,7 +53,7 @@ export function TxErrorPanel({ error, onRetry, context="transaction" }) {
       </div>
       <button onClick={() => setExpanded(e => !e)} style={{
         background:'none', border:'none', cursor:'pointer', textAlign:'left',
-        fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'rgba(255,255,255,0.35)',
+        fontFamily:"'Press Start 2P', monospace", fontSize:8, color:'rgba(255,255,255,0.35)',
       }}>
         {expanded ? '▾' : '▸'} What happened?
       </button>
@@ -115,7 +115,7 @@ export function VRFStatusHeader({ state }) {
       padding:"10px 12px", display:"flex", flexDirection:"column", gap:3,
       animation: state === VRF.PENDING ? "vrfPulse 2s infinite" : "none",
     }}>
-      <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:cfg.color, letterSpacing:1 }}>
+      <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:9, color:cfg.color, letterSpacing:1 }}>
         {cfg.icon} {cfg.label}
       </div>
       <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:11, color:`${cfg.color}99` }}>

@@ -35,7 +35,7 @@ export function WalletButton() {
 
   const btnBase = {
     fontFamily: "'Press Start 2P', monospace",
-    fontSize: 7,
+    fontSize: 8,
     color: CREAM,
     background: 'rgba(200,168,75,0.1)',
     border: `2px solid ${GOLD_DK}`,
@@ -83,7 +83,7 @@ export function WalletButton() {
                   display: 'block', width: '100%', padding: '10px 16px',
                   background: 'transparent', border: 'none',
                   borderBottom: `1px solid rgba(200,168,75,0.2)`,
-                  fontFamily: "'Press Start 2P', monospace", fontSize: 7,
+                  fontFamily: "'Press Start 2P', monospace", fontSize: 8,
                   color: CREAM, cursor: 'pointer', textAlign: 'left', letterSpacing: 1,
                 }}
                 onMouseEnter={e => { e.currentTarget.style.background = 'rgba(200,168,75,0.12)' }}
@@ -97,7 +97,7 @@ export function WalletButton() {
                 onClick={() => setShowMenu(false)}
                 style={{
                   display: 'block', padding: '10px 16px',
-                  fontFamily: "'Press Start 2P', monospace", fontSize: 7,
+                  fontFamily: "'Press Start 2P', monospace", fontSize: 8,
                   color: 'rgba(240,234,214,0.45)', textDecoration: 'none',
                   textAlign: 'left', letterSpacing: 1,
                 }}
@@ -146,7 +146,7 @@ export function WalletButton() {
             boxShadow: `4px 4px 0 ${INK}`, zIndex: 100, minWidth: 180,
           }}>
             <div style={{
-              fontFamily: "'Press Start 2P', monospace", fontSize: 7,
+              fontFamily: "'Press Start 2P', monospace", fontSize: 8,
               color: GOLD, opacity: 0.6, letterSpacing: 1,
               padding: '10px 14px 6px', borderBottom: '1px solid rgba(255,255,255,0.06)',
             }}>
@@ -154,7 +154,7 @@ export function WalletButton() {
             </div>
             {uniqueConnectors.length === 0 && (
               <div style={{
-                fontFamily: "'Press Start 2P', monospace", fontSize: 7,
+                fontFamily: "'Press Start 2P', monospace", fontSize: 8,
                 color: CREAM, opacity: 0.4, padding: '12px 14px',
               }}>
                 No wallets detected
@@ -165,7 +165,7 @@ export function WalletButton() {
                 key={c.id}
                 onClick={() => { connect({ connector: c }); setShowPicker(false) }}
                 style={{
-                  fontFamily: "'Press Start 2P', monospace", fontSize: 7,
+                  fontFamily: "'Press Start 2P', monospace", fontSize: 8,
                   display: 'block', width: '100%', background: 'transparent',
                   color: CREAM, border: 'none',
                   borderBottom: '1px solid rgba(255,255,255,0.04)',

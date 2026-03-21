@@ -41,7 +41,7 @@ export default function RewardsPanel({ address, blocks, currentBatch }) {
   if (loading) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 300 }}>
-        <div style={{ ...fp, fontSize: 7, color: 'rgba(78,205,196,0.4)', letterSpacing: 2, animation: 'progressPulse 1.5s infinite' }}>LOADING REWARDS...</div>
+        <div style={{ ...fp, fontSize: 8, color: 'rgba(78,205,196,0.4)', letterSpacing: 2, animation: 'progressPulse 1.5s infinite' }}>LOADING REWARDS...</div>
       </div>
     )
   }
@@ -59,7 +59,7 @@ export default function RewardsPanel({ address, blocks, currentBatch }) {
         <div style={{ ...fp, fontSize: 11, color: REWARDS_ACCENT, letterSpacing: 2, textShadow: '0 0 12px rgba(78,205,196,0.3)' }}>REWARDS</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(78,205,196,0.06)', border: '1px solid rgba(78,205,196,0.15)', padding: '8px 16px' }}>
           <div>
-            <div style={{ ...fp, fontSize: 6, color: 'rgba(78,205,196,0.6)', letterSpacing: 1 }}>REWARDS POOL</div>
+            <div style={{ ...fp, fontSize: 8, color: 'rgba(78,205,196,0.6)', letterSpacing: 1 }}>REWARDS POOL</div>
             <div style={{ ...fv, fontSize: 24, color: REWARDS_ACCENT, textShadow: '0 0 8px rgba(78,205,196,0.4)' }}>{rewards.rewardsPool.toFixed(4)} Ξ</div>
           </div>
         </div>
@@ -71,15 +71,15 @@ export default function RewardsPanel({ address, blocks, currentBatch }) {
           <button
             onClick={() => setView('overview')}
             style={{
-              ...fp, fontSize: 6, color: 'rgba(255,255,255,0.35)', letterSpacing: 1,
+              ...fp, fontSize: 8, color: 'rgba(255,255,255,0.35)', letterSpacing: 1,
               cursor: 'pointer', transition: 'color 0.15s',
               background: 'none', border: 'none', padding: 0,
             }}
             onMouseEnter={e => { e.target.style.color = REWARDS_ACCENT }}
             onMouseLeave={e => { e.target.style.color = 'rgba(255,255,255,0.35)' }}
           >★ REWARDS</button>
-          <span style={{ ...fp, fontSize: 6, color: 'rgba(255,255,255,0.15)' }}>›</span>
-          <span style={{ ...fp, fontSize: 6, color: REWARDS_ACCENT, letterSpacing: 1 }}>{VIEW_LABELS[view]}</span>
+          <span style={{ ...fp, fontSize: 8, color: 'rgba(255,255,255,0.15)' }}>›</span>
+          <span style={{ ...fp, fontSize: 8, color: REWARDS_ACCENT, letterSpacing: 1 }}>{VIEW_LABELS[view]}</span>
         </div>
       )}
 

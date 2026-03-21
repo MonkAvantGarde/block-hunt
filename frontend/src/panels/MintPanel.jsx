@@ -79,7 +79,7 @@ function PendingMintItem({ item, onDelivered, onRequestId }) {
       padding:"6px 10px",
     }}>
       <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-        <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7,
+        <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8,
           color: isDelivered ? "#6eff8a" : canCancel ? "#ff6666" : "#ffcc33",
           minWidth:8,
         }}>
@@ -88,7 +88,7 @@ function PendingMintItem({ item, onDelivered, onRequestId }) {
         <span style={{ fontFamily:"'Courier Prime', monospace", fontSize:11, color:"rgba(255,255,255,0.35)", flex:1 }}>
           {item.txHash ? item.txHash.slice(0,8)+"…"+item.txHash.slice(-4) : "—"}
         </span>
-        <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:"rgba(255,255,255,0.4)" }}>
+        <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:"rgba(255,255,255,0.4)" }}>
           x{item.qty}
         </span>
         <span style={{ fontFamily:"'VT323', monospace", fontSize:18,
@@ -100,7 +100,7 @@ function PendingMintItem({ item, onDelivered, onRequestId }) {
         {isDelivered && (
           <button onClick={() => onDelivered(item.id)} style={{
             background:"none", border:"none", color:"rgba(255,255,255,0.3)",
-            cursor:"pointer", fontFamily:"'Press Start 2P', monospace", fontSize:7, padding:"0 4px",
+            cursor:"pointer", fontFamily:"'Press Start 2P', monospace", fontSize:8, padding:"0 4px",
           }}>x</button>
         )}
       </div>
@@ -114,7 +114,7 @@ function PendingMintItem({ item, onDelivered, onRequestId }) {
               background: canCancel ? "rgba(255,80,80,0.12)" : "rgba(0,0,0,0.2)",
               border: `1px solid ${canCancel ? "rgba(255,80,80,0.35)" : "rgba(255,255,255,0.08)"}`,
               color: canCancel ? "#ff6666" : "rgba(255,255,255,0.2)",
-              fontFamily:"'Press Start 2P', monospace", fontSize:7,
+              fontFamily:"'Press Start 2P', monospace", fontSize:8,
               padding:"4px 8px", cursor: canCancel ? "pointer" : "default",
             }}
           >
@@ -332,7 +332,7 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, pr
           padding:"8px 12px",
         }}>
           <span style={{
-            fontFamily:"'Press Start 2P', monospace", fontSize:7,
+            fontFamily:"'Press Start 2P', monospace", fontSize:8,
             color: windowOpen ? "#6eff8a" : "#ff8888",
             animation: windowOpen ? "badgePulse 2s infinite" : "none",
           }}>
@@ -397,7 +397,7 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, pr
             background:"rgba(255,80,80,0.1)",
             border:"1px solid rgba(255,80,80,0.3)",
             padding:"8px 12px",
-            fontFamily:"'Press Start 2P', monospace", fontSize:7,
+            fontFamily:"'Press Start 2P', monospace", fontSize:8,
             color:"#ff8888", textAlign:"center", lineHeight:1.8,
           }}>
             MINT CAP REACHED ({perUserCap}/{perUserCap})<br/>
@@ -409,7 +409,7 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, pr
           {!windowOpen ? "✕  WINDOW CLOSED" : userCapReached ? "✕  WINDOW CAP REACHED" : "▶  MINT NOW"}
         </Btn>
 
-        <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:"rgba(255,255,255,0.45)", textAlign:"center" }}>
+        <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:"rgba(255,255,255,0.45)", textAlign:"center" }}>
           Current price: {mintPrice} Ξ (Batch {currentBatch})
           {windowOpen && !userCapReached && userMintedThisWindow > 0 && (
             <span style={{ color:"#ffcc33" }}> — {userMintsRemaining} mints left this window</span>
@@ -422,7 +422,7 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, pr
       <div style={{ flex:"0 0 calc(40% - 20px)", display:"flex", flexDirection:"column", gap:10 }}>
         {/* Batch price ladder */}
         <div style={{ background:"rgba(0,0,0,0.25)", border:"1px solid rgba(255,255,255,0.06)", padding:"8px 10px" }}>
-          <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:"rgba(255,255,255,0.45)", letterSpacing:1, marginBottom:6 }}>BATCH PRICES</div>
+          <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:"rgba(255,255,255,0.45)", letterSpacing:1, marginBottom:6 }}>BATCH PRICES</div>
           <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
             {[1,2,3,4,5,6,7,8,9,10].map(b => {
               const isCurrent = b === currentBatch;
@@ -432,15 +432,15 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, pr
                   background: isCurrent ? "rgba(200,168,75,0.1)" : "transparent",
                   border: isCurrent ? `1px solid ${GOLD_DK}` : "1px solid transparent",
                 }}>
-                  <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color: isCurrent ? GOLD : "rgba(255,255,255,0.45)", width:18 }}>B{b}</span>
+                  <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color: isCurrent ? GOLD : "rgba(255,255,255,0.45)", width:18 }}>B{b}</span>
                   <span style={{ fontFamily:"'VT323', monospace", fontSize:16, color: isCurrent ? GOLD_LT : "rgba(255,255,255,0.35)", flex:1 }}>{BATCH_PRICES_ETH[b]} Ξ</span>
-                  <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color: isCurrent ? GOLD : "rgba(255,255,255,0.45)" }}>{(BATCH_SUPPLY[b] / 1000).toFixed(0)}K</span>
-                  {isCurrent && <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:GOLD }}>◄</span>}
+                  <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color: isCurrent ? GOLD : "rgba(255,255,255,0.45)" }}>{(BATCH_SUPPLY[b] / 1000).toFixed(0)}K</span>
+                  {isCurrent && <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:GOLD }}>◄</span>}
                 </div>
               );
             })}
           </div>
-          <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:"rgba(255,255,255,0.45)", marginTop:6, lineHeight:1.6 }}>
+          <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:"rgba(255,255,255,0.45)", marginTop:6, lineHeight:1.6 }}>
             Batch 1 is the cheapest entry. Prices rise as batches advance.
           </div>
         </div>
@@ -449,7 +449,7 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, pr
         {windowInfo && windowInfo.allocated > 0 && (
           <div style={{ background:"rgba(0,0,0,0.25)", border:"1px solid rgba(255,255,255,0.06)", padding:"8px 10px" }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:4 }}>
-              <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:"rgba(255,255,255,0.45)", letterSpacing:0.5 }}>
+              <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:"rgba(255,255,255,0.45)", letterSpacing:0.5 }}>
                 {(() => {
                   const pct = Math.round((windowInfo.minted / windowInfo.allocated) * 100);
                   return pct >= 100 ? "WINDOW SOLD OUT" : pct >= 80 ? "FILLING FAST" : "MINTED THIS WINDOW";
@@ -476,7 +476,7 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, pr
         {/* In-flight mints */}
         {pendingMints.length > 0 && (
           <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
-            <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:"rgba(255,255,255,0.45)", marginBottom:2 }}>
+            <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:"rgba(255,255,255,0.45)", marginBottom:2 }}>
               IN-FLIGHT MINTS
             </div>
             {pendingMints.map(item => (

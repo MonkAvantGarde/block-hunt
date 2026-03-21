@@ -88,7 +88,7 @@ export default function ClaimModal({ reward, onClose, onSuccess }) {
       <div
         onClick={e => e.stopPropagation()}
         style={{
-          background: '#0a1520',
+          background: '#0a1a15',
           border: `2px solid ${claimState === 'success' ? GREEN : claimState === 'error' ? EMBER : REWARDS_ACCENT}`,
           padding: 28, maxWidth: 400, width: '90%',
           boxShadow: `0 0 40px rgba(78,205,196,0.2)`,
@@ -99,14 +99,14 @@ export default function ClaimModal({ reward, onClose, onSuccess }) {
           <>
             <div style={{ textAlign: 'center', padding: '16px 0' }}>
               <div style={{ ...fv, fontSize: 48, color: GREEN, marginBottom: 12 }}>+{reward.amount} Ξ</div>
-              <div style={{ ...fp, fontSize: 9, color: GREEN, letterSpacing: 2, marginBottom: 8 }}>CLAIMED!</div>
-              <div style={{ ...fv, fontSize: 18, color: 'rgba(255,255,255,0.4)' }}>{reward.name}</div>
+              <div style={{ ...fp, fontSize: 10, color: GREEN, letterSpacing: 2, marginBottom: 8 }}>CLAIMED!</div>
+              <div style={{ ...fv, fontSize: 20, color: 'rgba(255,255,255,0.4)' }}>{reward.name}</div>
             </div>
             <button
               onClick={onClose}
               style={{
                 width: '100%', padding: '12px 0', marginTop: 16,
-                ...fp, fontSize: 7, letterSpacing: 1,
+                ...fp, fontSize: 8, letterSpacing: 1,
                 color: INK, background: `linear-gradient(135deg,${GOLD_DK},${GOLD})`,
                 border: `1px solid ${GOLD}`, cursor: 'pointer',
               }}
@@ -117,16 +117,16 @@ export default function ClaimModal({ reward, onClose, onSuccess }) {
         {/* Error state */}
         {claimState === 'error' && (
           <>
-            <div style={{ ...fp, fontSize: 9, color: EMBER, letterSpacing: 2, marginBottom: 16 }}>CLAIM FAILED</div>
+            <div style={{ ...fp, fontSize: 10, color: EMBER, letterSpacing: 2, marginBottom: 16 }}>CLAIM FAILED</div>
             <div style={{ background: 'rgba(204,51,34,0.08)', border: `1px solid ${EMBER}33`, padding: 16, marginBottom: 16 }}>
-              <div style={{ ...fv, fontSize: 16, color: 'rgba(255,255,255,0.5)', wordBreak: 'break-word' }}>{errorMsg}</div>
+              <div style={{ ...fv, fontSize: 18, color: 'rgba(255,255,255,0.5)', wordBreak: 'break-word' }}>{errorMsg}</div>
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
               <button
                 onClick={onClose}
                 style={{
                   flex: 1, padding: '12px 0',
-                  ...fp, fontSize: 7, letterSpacing: 1,
+                  ...fp, fontSize: 8, letterSpacing: 1,
                   color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.05)',
                   border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer',
                 }}
@@ -135,7 +135,7 @@ export default function ClaimModal({ reward, onClose, onSuccess }) {
                 onClick={handleClaim}
                 style={{
                   flex: 1, padding: '12px 0',
-                  ...fp, fontSize: 7, letterSpacing: 1,
+                  ...fp, fontSize: 8, letterSpacing: 1,
                   color: INK, background: `linear-gradient(135deg,${GOLD_DK},${GOLD})`,
                   border: `1px solid ${GOLD}`, cursor: 'pointer',
                 }}
@@ -147,23 +147,23 @@ export default function ClaimModal({ reward, onClose, onSuccess }) {
         {/* Idle + confirming + pending states */}
         {(claimState === 'idle' || claimState === 'confirming' || claimState === 'pending') && (
           <>
-            <div style={{ ...fp, fontSize: 9, color: REWARDS_ACCENT, letterSpacing: 2, marginBottom: 16 }}>CLAIM REWARD</div>
+            <div style={{ ...fp, fontSize: 10, color: REWARDS_ACCENT, letterSpacing: 2, marginBottom: 16 }}>CLAIM REWARD</div>
 
             <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(78,205,196,0.1)', padding: 16, marginBottom: 16 }}>
-              <div style={{ ...fp, fontSize: 6, color: 'rgba(255,255,255,0.4)', letterSpacing: 1, marginBottom: 6 }}>REWARD</div>
-              <div style={{ ...fv, fontSize: 22, color: CREAM }}>{reward.name}</div>
+              <div style={{ ...fp, fontSize: 7, color: 'rgba(255,255,255,0.4)', letterSpacing: 1, marginBottom: 6 }}>REWARD</div>
+              <div style={{ ...fv, fontSize: 24, color: CREAM }}>{reward.name}</div>
               {reward.amount > 0 && (
                 <>
-                  <div style={{ ...fp, fontSize: 6, color: 'rgba(255,255,255,0.4)', letterSpacing: 1, marginBottom: 4, marginTop: 12 }}>AMOUNT</div>
+                  <div style={{ ...fp, fontSize: 7, color: 'rgba(255,255,255,0.4)', letterSpacing: 1, marginBottom: 4, marginTop: 12 }}>AMOUNT</div>
                   <div style={{ ...fv, fontSize: 28, color: REWARDS_ACCENT, textShadow: '0 0 12px rgba(78,205,196,0.3)' }}>{reward.amount.toFixed(4)} Ξ</div>
                 </>
               )}
-              <div style={{ ...fp, fontSize: 5, color: 'rgba(255,255,255,0.25)', marginTop: 10 }}>EST. GAS: ~0.0001 Ξ</div>
+              <div style={{ ...fp, fontSize: 7, color: 'rgba(255,255,255,0.25)', marginTop: 10 }}>EST. GAS: ~0.0001 Ξ</div>
             </div>
 
             {isActive && (
               <div style={{ textAlign: 'center', padding: '8px 0 16px' }}>
-                <div style={{ ...fp, fontSize: 6, color: REWARDS_ACCENT, letterSpacing: 1, animation: 'progressPulse 1.5s infinite' }}>
+                <div style={{ ...fp, fontSize: 7, color: REWARDS_ACCENT, letterSpacing: 1, animation: 'progressPulse 1.5s infinite' }}>
                   {claimState === 'confirming' ? 'CONFIRM IN WALLET...' : 'TRANSACTION PENDING...'}
                 </div>
               </div>
@@ -175,7 +175,7 @@ export default function ClaimModal({ reward, onClose, onSuccess }) {
                 disabled={isActive}
                 style={{
                   flex: 1, padding: '12px 0',
-                  ...fp, fontSize: 7, letterSpacing: 1,
+                  ...fp, fontSize: 8, letterSpacing: 1,
                   color: 'rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.05)',
                   border: '1px solid rgba(255,255,255,0.1)',
                   cursor: isActive ? 'default' : 'pointer',
@@ -187,7 +187,7 @@ export default function ClaimModal({ reward, onClose, onSuccess }) {
                 disabled={isActive}
                 style={{
                   flex: 1, padding: '12px 0',
-                  ...fp, fontSize: 7, letterSpacing: 1,
+                  ...fp, fontSize: 8, letterSpacing: 1,
                   color: INK, background: `linear-gradient(135deg,${GOLD_DK},${GOLD})`,
                   border: `1px solid ${GOLD}`,
                   cursor: isActive ? 'default' : 'pointer',

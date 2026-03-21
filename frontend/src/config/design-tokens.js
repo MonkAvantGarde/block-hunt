@@ -27,7 +27,7 @@ export const GREEN      = "#6eff8a";
 export const PURPLE     = "#b86bff";
 export const ORANGE     = "#ffa84b";
 export const REWARDS_ACCENT = "#4ecdc4";
-export const REWARDS_BG = "#0a1520";
+export const REWARDS_BG = "#0a1a15";
 
 // ── TIER METADATA ────────────────────────────────────────────────────────────
 export const TIERS = [
@@ -70,7 +70,7 @@ export const BATCH_SUPPLY = {
   6: 300000, 7: 400000, 8: 500000, 9: 500000, 10: 400000,
 };
 
-export const WINDOW_DURATION_HOURS = 6;
+export const WINDOW_DURATION_HOURS = 3;
 export const COUNTDOWN_DURATION_DAYS = 7;
 export const PER_USER_WINDOW_CAP = 500;
 export const CLAIM_WINDOW_DAYS = 30;

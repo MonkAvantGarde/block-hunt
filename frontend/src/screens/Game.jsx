@@ -79,7 +79,17 @@ const GLOBAL_CSS = `
     .tier-grid { grid-template-columns: repeat(3, 1fr) !important; gap: 10px !important; }
     .tier-card-img { width: 100px !important; height: 100px !important; }
     .game-header-nav { display: none !important; }
+    .game-mobile-menu-btn { display: flex !important; }
     .tab-bar button { font-size: 7px !important; height: 44px !important; }
+  }
+  @media (min-width: 801px) {
+    .game-mobile-menu-btn { display: none !important; }
+  }
+  .mobile-menu-item {
+    transition: background 0.1s;
+  }
+  .mobile-menu-item:hover {
+    background: rgba(200,168,75,0.1) !important;
   }
   @keyframes fadeInDown {
     from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
@@ -140,6 +150,7 @@ const { data: countdownHolder } = useReadContract({
 
   // ── UI STATE ────────────────────────────────────────────────
   const [activePanel, setPanel]      = useState("mint")
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [combineMsg,  setCombineMsg] = useState(null)
   const [resetAlert,  setResetAlert] = useState(false)
   const [revealTier,  setRevealTier] = useState(null)
@@ -207,15 +218,17 @@ const { data: countdownHolder } = useReadContract({
     if ((blocks[fromTier] || 0) < ratio) return
     setCombiningTier(fromTier)
     lastCombinedToTierRef.current = fromTier - 1
-    // Trigger CombineCollapse animation
-    setCombineCollapseData({ fromTier, startCount: blocks[fromTier] || 0, combineRatio: ratio })
     writeCombine({
       address: CONTRACTS.TOKEN,
       abi: TOKEN_ABI,
       functionName: 'combine',
       args: [BigInt(fromTier)],
     }, {
-      onSuccess: (hash) => setCombineTxHash(hash),
+      onSuccess: (hash) => {
+        // Trigger CombineCollapse animation AFTER wallet approval
+        setCombineCollapseData({ fromTier, startCount: blocks[fromTier] || 0, combineRatio: ratio })
+        setCombineTxHash(hash)
+      },
       onError:   ()     => { setCombiningTier(null); lastCombinedToTierRef.current = null },
     })
   }
@@ -324,7 +337,7 @@ const { data: countdownHolder } = useReadContract({
     { id:"mint",  label:"⬡ MINT",  bg:"#0a1f15", titleColor:"#6eff8a" },
     { id:"forge", label:"⚡ FORGE", bg:"#14071f", titleColor:"#cc66ff" },
     { id:"trade", label:"⇄ TRADE", bg:"#1f1007", titleColor:"#ffa84b" },
-    { id:"rewards", label:"★ REWARDS", bg:"#0a1520", titleColor:"#4ecdc4" },
+    { id:"rewards", label:"★ REWARDS", bg:"#0a1a15", titleColor:"#4ecdc4" },
   ]
 
   return (
@@ -353,7 +366,7 @@ const { data: countdownHolder } = useReadContract({
           background:"linear-gradient(135deg,#1a4a1a,#0a3a0a)",
           border:"2px solid #3aaa3a",
           borderRadius:4, padding:"10px 24px",
-          fontFamily:"'Press Start 2P', monospace", fontSize:9,
+          fontFamily:"'Press Start 2P', monospace", fontSize:10,
           color:"#6eff8a", letterSpacing:1, whiteSpace:"nowrap",
           boxShadow:"0 0 20px rgba(110,255,138,0.4)",
           animation:"fadeInDown 0.2s ease-out",
@@ -381,7 +394,7 @@ const { data: countdownHolder } = useReadContract({
             {rankToast.direction === 'up' ? '↑' : '↓'}
           </span>
           <div>
-            <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color: rankToast.direction === 'up' ? '#6eff8a' : '#ffcc33', letterSpacing:1 }}>
+            <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color: rankToast.direction === 'up' ? '#6eff8a' : '#ffcc33', letterSpacing:1 }}>
               {rankToast.direction === 'up' ? 'RANK UP' : 'RANK DOWN'}
             </div>
             <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:12, color:'rgba(255,255,255,0.6)', marginTop:2 }}>
@@ -447,7 +460,7 @@ const { data: countdownHolder } = useReadContract({
           background: "linear-gradient(135deg,#1a0a2e,#0a0014)",
           border: "2px solid #cc66ff",
           borderRadius: 4, padding: "12px 28px",
-          fontFamily: "'Press Start 2P', monospace", fontSize: 8,
+          fontFamily: "'Press Start 2P', monospace", fontSize: 9,
           color: "#cc66ff", letterSpacing: 1, whiteSpace: "nowrap",
           boxShadow: "0 0 24px rgba(204,102,255,0.5)",
           animation: "fadeInDown 0.2s ease-out",
@@ -456,7 +469,7 @@ const { data: countdownHolder } = useReadContract({
           lineHeight: 2,
         }}>
           ⚡ COUNTDOWN RESET<br/>
-          <span style={{ fontSize: 7, color: "rgba(204,102,255,0.7)", letterSpacing: 0.5 }}>
+          <span style={{ fontSize: 8, color: "rgba(204,102,255,0.7)", letterSpacing: 0.5 }}>
             You hold all 6 tiers — you can trigger now
           </span>
         </div>
@@ -485,7 +498,7 @@ const { data: countdownHolder } = useReadContract({
         <div className="game-header-nav" style={{ display:"flex", gap:28, alignItems:"center" }}>
           {["LEADERBOARD","RULES","PROFILE"].map(l => (
             <span key={l}
-              style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:"rgba(255,255,255,0.5)", cursor:"pointer", letterSpacing:1, transition:"color 0.1s" }}
+              style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:"rgba(255,255,255,0.5)", cursor:"pointer", letterSpacing:1, transition:"color 0.1s" }}
               onMouseEnter={e=>e.target.style.color=GOLD}
               onMouseLeave={e=>e.target.style.color="rgba(255,255,255,0.5)"}
               onClick={()=>onOpenModal(l==="RULES"?"rules":l==="LEADERBOARD"?"leaderboard":"profile")}
@@ -493,7 +506,59 @@ const { data: countdownHolder } = useReadContract({
           ))}
         </div>
 
-        <WalletButton />
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          {/* Mobile hamburger */}
+          <div className="game-mobile-menu-btn" style={{ position:"relative", display:"none" }}>
+            <button
+              onClick={() => setMobileMenuOpen(v => !v)}
+              style={{
+                background:"none", border:`1px solid ${GOLD_DK}`, padding:"6px 8px",
+                cursor:"pointer", display:"flex", flexDirection:"column", gap:3,
+                alignItems:"center", justifyContent:"center",
+              }}
+            >
+              <div style={{ width:16, height:2, background:GOLD, transition:"all 0.15s", transform: mobileMenuOpen ? "rotate(45deg) translateY(5px)" : "none" }} />
+              <div style={{ width:16, height:2, background:GOLD, transition:"all 0.15s", opacity: mobileMenuOpen ? 0 : 1 }} />
+              <div style={{ width:16, height:2, background:GOLD, transition:"all 0.15s", transform: mobileMenuOpen ? "rotate(-45deg) translateY(-5px)" : "none" }} />
+            </button>
+
+            {mobileMenuOpen && (
+              <>
+                <div onClick={() => setMobileMenuOpen(false)} style={{ position:"fixed", inset:0, zIndex:899 }} />
+                <div style={{
+                  position:"absolute", top:"calc(100% + 8px)", right:0, zIndex:900,
+                  background:WOOD, border:`2px solid ${GOLD}`,
+                  boxShadow:"0 8px 24px rgba(0,0,0,0.7)",
+                  minWidth:160, overflow:"hidden",
+                }}>
+                  {[
+                    { label:"LEADERBOARD", icon:"⬡", modal:"leaderboard" },
+                    { label:"RULES",       icon:"◈", modal:"rules" },
+                    { label:"PROFILE",     icon:"★", modal:"profile" },
+                  ].map(item => (
+                    <button
+                      key={item.label}
+                      className="mobile-menu-item"
+                      onClick={() => { onOpenModal(item.modal); setMobileMenuOpen(false) }}
+                      style={{
+                        display:"flex", alignItems:"center", gap:10, width:"100%",
+                        padding:"12px 16px", background:"transparent", border:"none",
+                        borderBottom:"1px solid rgba(200,168,75,0.12)", cursor:"pointer",
+                        fontFamily:"'Press Start 2P', monospace", fontSize:8,
+                        color:CREAM, letterSpacing:1, textAlign:"left",
+                      }}
+                    >
+                      <span style={{ color:GOLD, fontSize:12 }}>{item.icon}</span>
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          <WalletButton />
+        </div>
       </div>
 
       {/* ── MAIN CONTENT ── */}
@@ -504,7 +569,7 @@ const { data: countdownHolder } = useReadContract({
           display:"flex", alignItems:"center", gap:16, marginBottom:20,
           padding:"10px 16px", background:"rgba(0,0,0,0.2)", border:"1px solid rgba(255,255,255,0.05)",
         }}>
-          <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:"rgba(255,255,255,0.45)", whiteSpace:"nowrap" }}>COLLECTION</div>
+          <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:"rgba(255,255,255,0.45)", whiteSpace:"nowrap" }}>COLLECTION</div>
           <div style={{ flex:1, height:10, background:"rgba(0,0,0,0.45)", border:"1px solid rgba(0,0,0,0.4)", overflow:"hidden", position:"relative" }}>
             <div style={{
               height:"100%", width:`${(have6/6)*100}%`,
@@ -519,12 +584,12 @@ const { data: countdownHolder } = useReadContract({
             {[7,6,5,4,3,2].map(t => {
               const held = (blocks[t] ?? 0) > 0
               const tier = TMAP[t]
-              return <span key={t} style={{ fontFamily:"'VT323', monospace", fontSize:16, color: held ? tier.accent : "rgba(255,255,255,0.2)", lineHeight:1 }}>{held ? "■" : "◇"}</span>
+              return <span key={t} style={{ fontFamily:"'VT323', monospace", fontSize:18, color: held ? tier.accent : "rgba(255,255,255,0.2)", lineHeight:1 }}>{held ? "■" : "◇"}</span>
             })}
           </div>
-          <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7.5, color:GOLD, whiteSpace:"nowrap" }}>{have6} / 6 TIERS</div>
+          <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:GOLD, whiteSpace:"nowrap" }}>{have6} / 6 TIERS</div>
           {have6 === 6 && (
-            <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:"#4466ff", animation:"badgePulse 1.2s infinite" }}>
+            <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:"#4466ff", animation:"badgePulse 1.2s infinite" }}>
               ★ CLAIM NOW
             </div>
           )}
@@ -551,7 +616,7 @@ const { data: countdownHolder } = useReadContract({
             const s2Starters = [2,3,4,5,6].reduce((sum, t) => sum + (blocks[t] || 0), 0)
             return (
               <div style={{
-                fontFamily:"'Press Start 2P', monospace", fontSize:7,
+                fontFamily:"'Press Start 2P', monospace", fontSize:8,
                 color:"rgba(255,255,255,0.45)", textAlign:"center",
                 marginTop:10, letterSpacing:0.5,
                 textShadow:"0 0 8px rgba(200,168,75,0.3)",
@@ -589,7 +654,7 @@ const { data: countdownHolder } = useReadContract({
                 <button key={p.id} onClick={() => setPanel(p.id)} style={{
                   flex:1, height:48,
                   fontFamily:"'Press Start 2P', monospace",
-                  fontSize: active ? 9 : 7,
+                  fontSize: active ? 10 : 8,
                   letterSpacing: 2,
                   color: active ? p.titleColor : "rgba(255,255,255,0.5)",
                   background: active ? `rgba(200,168,75,0.08)` : "rgba(0,0,0,0.15)",

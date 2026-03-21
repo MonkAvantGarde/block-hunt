@@ -28,7 +28,7 @@ export default function ForgePanel({ blocks, onForge, address }) {
 
   const sel     = selTier ? TMAP[selTier]     : null
   const target  = selTier ? TMAP[selTier - 1] : null
-  const maxBurn = selTier ? Math.min(blocks[selTier] || 0, COMBINE_RATIOS[selTier] || 20) : 20
+  const maxBurn = selTier ? Math.min(blocks[selTier] || 0, COMBINE_RATIOS[selTier] || 21) : 20
 
   function startClock() {
     setElapsed(0)
@@ -70,7 +70,7 @@ export default function ForgePanel({ blocks, onForge, address }) {
           clearInterval(pollRef.current)
           pollRef.current = null
           setForgeResult({ success: log.args.success, fromTier: Number(log.args.fromTier) })
-          setShowNumberReveal(true)
+          setShowNumberReveal(false)
           setVrfState(VRF.DELIVERED)
           onForge()
         }
@@ -205,7 +205,7 @@ export default function ForgePanel({ blocks, onForge, address }) {
           fontFamily:"'Courier Prime', monospace", fontSize:11, color:'rgba(255,255,255,0.5)',
         }}>
           Forging {burnCount}× {sel?.name} → 1× {target?.name}<br/>
-          <span style={{color:'rgba(255,80,80,0.6)', fontFamily:"'Press Start 2P', monospace", fontSize:7, marginTop:4, display:'block'}}>
+          <span style={{color:'rgba(255,80,80,0.6)', fontFamily:"'Press Start 2P', monospace", fontSize:8, marginTop:4, display:'block'}}>
             ⚠ Blocks already burned. Result pending.
           </span>
         </div>
@@ -229,7 +229,7 @@ export default function ForgePanel({ blocks, onForge, address }) {
         <div style={{
           background:'rgba(255,80,80,0.06)', border:'1px solid rgba(255,80,80,0.25)',
           padding:'14px', textAlign:'center',
-          fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'#ff8888', lineHeight:2.4,
+          fontFamily:"'Press Start 2P', monospace", fontSize:8, color:'#ff8888', lineHeight:2.4,
         }}>
           VRF RESPONSE TIMED OUT<br/>
           <span style={{color:'rgba(255,255,255,0.4)', fontFamily:"'Courier Prime', monospace", fontSize:11}}>
@@ -238,7 +238,7 @@ export default function ForgePanel({ blocks, onForge, address }) {
         </div>
         <button onClick={reset} style={{
           marginTop:'auto',
-          fontFamily:"'Press Start 2P', monospace", fontSize:7, letterSpacing:1,
+          fontFamily:"'Press Start 2P', monospace", fontSize:8, letterSpacing:1,
           background:'rgba(255,255,255,0.06)', color:CREAM,
           border:'1px solid rgba(255,255,255,0.15)', padding:'10px', cursor:'pointer',
         }}>← BACK TO FORGE</button>
@@ -248,7 +248,7 @@ export default function ForgePanel({ blocks, onForge, address }) {
 
   // Show ForgeNumberReveal spinner before final result
   if (vrfState === VRF.DELIVERED && forgeResult && showNumberReveal) {
-    const ratio = COMBINE_RATIOS[forgeResult.fromTier] || 20
+    const ratio = COMBINE_RATIOS[forgeResult.fromTier] || 21
     const neededPct = Math.min(Math.round((burnCount / ratio) * 100), 100)
     // Generate a fake roll for display purposes
     const rolledPct = forgeResult.success
@@ -266,7 +266,7 @@ export default function ForgePanel({ blocks, onForge, address }) {
   }
 
   if (vrfState === VRF.DELIVERED && forgeResult) {
-    const ratio = COMBINE_RATIOS[forgeResult.fromTier] || 20
+    const ratio = COMBINE_RATIOS[forgeResult.fromTier] || 21
     const pct = Math.min(Math.round((burnCount / ratio) * 100), 100)
     const targetTier = forgeResult.fromTier - 1
     const targetData = TMAP[targetTier]
@@ -321,7 +321,7 @@ export default function ForgePanel({ blocks, onForge, address }) {
                 }}
                 style={{
                   height:44, width:160,
-                  fontFamily:"'Press Start 2P', monospace", fontSize:7, letterSpacing:1,
+                  fontFamily:"'Press Start 2P', monospace", fontSize:8, letterSpacing:1,
                   color:CREAM, background:'rgba(255,255,255,0.08)',
                   border:'1px solid rgba(255,255,255,0.2)', cursor:'pointer',
                 }}
@@ -358,7 +358,7 @@ export default function ForgePanel({ blocks, onForge, address }) {
             background:'rgba(0,0,0,0.3)', border:'1px solid rgba(255,255,255,0.08)',
             padding:'14px 20px', textAlign:'center', width:'100%', maxWidth:300,
           }}>
-            <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'rgba(255,255,255,0.35)', marginBottom:8 }}>
+            <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:'rgba(255,255,255,0.35)', marginBottom:8 }}>
               YOUR ODDS
             </div>
             <div style={{ fontFamily:"'VT323', monospace", fontSize:36, color:'#ff8888' }}>
@@ -369,7 +369,7 @@ export default function ForgePanel({ blocks, onForge, address }) {
             </div>
             {nearMiss && (
               <div style={{
-                fontFamily:"'Press Start 2P', monospace", fontSize:8,
+                fontFamily:"'Press Start 2P', monospace", fontSize:9,
                 color:'#ffcc33', marginTop:10,
                 textShadow:'0 0 8px rgba(255,204,51,0.3)',
               }}>
@@ -391,13 +391,13 @@ export default function ForgePanel({ blocks, onForge, address }) {
 
       {/* Mode toggle */}
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-        <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'rgba(255,255,255,0.4)', letterSpacing:1 }}>
+        <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:'rgba(255,255,255,0.4)', letterSpacing:1 }}>
           {batchMode ? '⚡ BATCH FORGE' : 'SELECT TIER TO FORGE'}
         </div>
         <button
           onClick={() => { setBatchMode(m => !m); setBatchAttempts([]); setSelTier(null) }}
           style={{
-            fontFamily:"'Press Start 2P', monospace", fontSize:7,
+            fontFamily:"'Press Start 2P', monospace", fontSize:8,
             color: batchMode ? '#cc66ff' : 'rgba(255,255,255,0.35)',
             background: batchMode ? 'rgba(184,107,255,0.1)' : 'transparent',
             border: `1px solid ${batchMode ? 'rgba(184,107,255,0.3)' : 'rgba(255,255,255,0.1)'}`,
@@ -426,8 +426,8 @@ export default function ForgePanel({ blocks, onForge, address }) {
               cursor: enabled ? 'pointer' : 'not-allowed', opacity: enabled ? 1 : 0.35,
               display:'flex', flexDirection:'column', alignItems:'center', gap:2, transition:'all 0.12s',
             }}>
-              <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color: selected ? t.accent : 'rgba(255,255,255,0.7)' }}>T{tid}</div>
-              <div style={{ fontFamily:"'VT323', monospace", fontSize:18, color: selected ? t.accent : 'rgba(255,255,255,0.4)' }}>×{count}</div>
+              <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:9, color: selected ? t.accent : 'rgba(255,255,255,0.7)' }}>T{tid}</div>
+              <div style={{ fontFamily:"'VT323', monospace", fontSize:20, color: selected ? t.accent : 'rgba(255,255,255,0.4)' }}>×{count}</div>
             </button>
           )
         })}
@@ -436,7 +436,7 @@ export default function ForgePanel({ blocks, onForge, address }) {
       {selTier && sel && target ? (
         <>
           {(() => {
-            const ratio = COMBINE_RATIOS[selTier] || 20;
+            const ratio = COMBINE_RATIOS[selTier] || 21;
             const pct = Math.min(Math.round((burnCount / ratio) * 100), 100);
             const holdAfter = (blocks[selTier] || 0) - burnCount;
             return (
@@ -445,20 +445,20 @@ export default function ForgePanel({ blocks, onForge, address }) {
                 <div style={{ flex:'0 0 55%', display:'flex', flexDirection:'column', gap:10 }}>
                   <div style={{ background:'rgba(0,0,0,0.3)', border:'1px solid rgba(255,255,255,0.08)', padding:'10px 12px' }}>
                     <div style={{ display:'flex', justifyContent:'space-between', marginBottom:6 }}>
-                      <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'rgba(255,255,255,0.4)' }}>BURN COUNT</span>
+                      <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:'rgba(255,255,255,0.4)' }}>BURN COUNT</span>
                       <span style={{ fontFamily:"'VT323', monospace", fontSize:24, color:sel.accent }}>{burnCount}</span>
                     </div>
                     <input type="range" min={10} max={maxBurn} value={burnCount}
                       onChange={e => setBurn(parseInt(e.target.value))}
                       style={{ width:'100%', accentColor:sel.accent }} />
                     <div style={{ display:'flex', justifyContent:'space-between', marginTop:4 }}>
-                      <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'rgba(255,255,255,0.45)' }}>10 = {Math.round((10 / ratio) * 100)}%</span>
-                      <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'rgba(255,255,255,0.45)' }}>{maxBurn} = {Math.min(Math.round((maxBurn / ratio) * 100), 100)}%</span>
+                      <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:'rgba(255,255,255,0.45)' }}>10 = {Math.round((10 / ratio) * 100)}%</span>
+                      <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:'rgba(255,255,255,0.45)' }}>{maxBurn} = {Math.min(Math.round((maxBurn / ratio) * 100), 100)}%</span>
                     </div>
                   </div>
 
                   <div style={{ background:'rgba(0,0,0,0.2)', border:'1px solid rgba(255,255,255,0.06)', padding:'8px 12px' }}>
-                    <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'rgba(255,255,255,0.35)', marginBottom:4 }}>HOLDINGS IMPACT</div>
+                    <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:'rgba(255,255,255,0.35)', marginBottom:4 }}>HOLDINGS IMPACT</div>
                     <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:12, color:'rgba(255,255,255,0.5)', lineHeight:1.6 }}>
                       You hold: <span style={{color:sel.accent}}>{blocks[selTier] || 0}</span> {sel.short}<br/>
                       After forge: <span style={{color:'#ff6644'}}>{holdAfter}</span> {sel.short} (-{burnCount})
@@ -468,7 +468,7 @@ export default function ForgePanel({ blocks, onForge, address }) {
                   <div style={{
                     background:'rgba(255,50,30,0.06)', border:'1px solid rgba(255,50,30,0.2)',
                     padding:'8px 12px',
-                    fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'rgba(255,80,80,0.7)', lineHeight:1.8,
+                    fontFamily:"'Press Start 2P', monospace", fontSize:8, color:'rgba(255,80,80,0.7)', lineHeight:1.8,
                   }}>
                     ⚠ {burnCount}× {sel.name} burned whether you win or lose
                   </div>
@@ -482,7 +482,7 @@ export default function ForgePanel({ blocks, onForge, address }) {
                       background:'rgba(255,50,30,0.08)', border:'1px solid rgba(255,50,30,0.3)',
                       padding:'12px', textAlign:'center',
                     }}>
-                      <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'#ff8888', marginBottom:8 }}>
+                      <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:'#ff8888', marginBottom:8 }}>
                         ⚠ HIGH BURN WARNING
                       </div>
                       <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:12, color:'rgba(255,255,255,0.6)', marginBottom:12, lineHeight:1.5 }}>
@@ -512,8 +512,8 @@ export default function ForgePanel({ blocks, onForge, address }) {
                       display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
                       boxShadow:`3px 3px 0 ${INK}`,
                     }}>
-                      <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:sel.accent }}>T{selTier}</div>
-                      <div style={{ fontFamily:"'VT323', monospace", fontSize:16, color:'rgba(255,255,255,0.5)', marginTop:2 }}>×{burnCount}</div>
+                      <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:9, color:sel.accent }}>T{selTier}</div>
+                      <div style={{ fontFamily:"'VT323', monospace", fontSize:18, color:'rgba(255,255,255,0.5)', marginTop:2 }}>×{burnCount}</div>
                     </div>
                     <div style={{ fontFamily:"'VT323', monospace", fontSize:28, color:'rgba(255,255,255,0.3)' }}>→</div>
                     <div style={{
@@ -521,8 +521,8 @@ export default function ForgePanel({ blocks, onForge, address }) {
                       display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
                       boxShadow:`3px 3px 0 ${INK}`,
                     }}>
-                      <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:target.accent }}>T{selTier - 1}</div>
-                      <div style={{ fontFamily:"'VT323', monospace", fontSize:16, color:'rgba(255,255,255,0.5)', marginTop:2 }}>×1</div>
+                      <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:9, color:target.accent }}>T{selTier - 1}</div>
+                      <div style={{ fontFamily:"'VT323', monospace", fontSize:18, color:'rgba(255,255,255,0.5)', marginTop:2 }}>×1</div>
                     </div>
                   </div>
 
@@ -534,18 +534,18 @@ export default function ForgePanel({ blocks, onForge, address }) {
                     <div style={{ fontFamily:"'VT323', monospace", fontSize:44, color: pct >= 80 ? '#6eff8a' : pct >= 50 ? GOLD : '#ff6644' }}>
                       {pct}%
                     </div>
-                    <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'rgba(255,255,255,0.35)' }}>
+                    <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:'rgba(255,255,255,0.35)' }}>
                       CHANCE
                     </div>
                   </div>
 
                   <div style={{ width:'100%', display:'flex', flexDirection:'column', gap:4 }}>
                     <div style={{ background:'rgba(110,255,138,0.06)', border:'1px solid rgba(110,255,138,0.15)', padding:'6px 10px' }}>
-                      <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'#6eff8a' }}>✓ WIN: </span>
+                      <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:'#6eff8a' }}>✓ WIN: </span>
                       <span style={{ fontFamily:"'Courier Prime', monospace", fontSize:11, color:'rgba(255,255,255,0.5)' }}>+1 {target.name}</span>
                     </div>
                     <div style={{ background:'rgba(255,80,80,0.06)', border:'1px solid rgba(255,80,80,0.15)', padding:'6px 10px' }}>
-                      <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'#ff8888' }}>✗ LOSE: </span>
+                      <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:'#ff8888' }}>✗ LOSE: </span>
                       <span style={{ fontFamily:"'Courier Prime', monospace", fontSize:11, color:'rgba(255,255,255,0.5)' }}>-{burnCount} {sel.name}</span>
                     </div>
                   </div>
@@ -573,8 +573,8 @@ export default function ForgePanel({ blocks, onForge, address }) {
                   background: canForge ? `${t.accent}11` : 'transparent',
                   border: canForge ? `1px solid ${t.accent}33` : '1px solid transparent',
                 }}>
-                  <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:t.accent, width:22 }}>T{tid}</span>
-                  <span style={{ fontFamily:"'VT323', monospace", fontSize:18, color:'rgba(255,255,255,0.5)', width:40 }}>×{count}</span>
+                  <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:t.accent, width:22 }}>T{tid}</span>
+                  <span style={{ fontFamily:"'VT323', monospace", fontSize:20, color:'rgba(255,255,255,0.5)', width:40 }}>×{count}</span>
                   <span style={{ fontFamily:"'Courier Prime', monospace", fontSize:11, color: canForge ? '#6eff8a' : 'rgba(255,255,255,0.3)', flex:1 }}>
                     {canForge ? `Ready — up to ${Math.round((Math.min(count, ratio) / ratio) * 100)}% chance` : `${needed} more needed`}
                   </span>
@@ -584,19 +584,19 @@ export default function ForgePanel({ blocks, onForge, address }) {
           </div>
 
           <div style={{ background:'rgba(0,0,0,0.25)', border:'1px solid rgba(255,255,255,0.06)', padding:'10px 12px' }}>
-            <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'rgba(255,255,255,0.35)', letterSpacing:1, marginBottom:6 }}>
+            <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:'rgba(255,255,255,0.35)', letterSpacing:1, marginBottom:6 }}>
               HOW THE FORGE WORKS
             </div>
             <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
               {[
-                { from:'T7→T6', ratio:20 },
-                { from:'T6→T5', ratio:20 },
-                { from:'T5→T4', ratio:30 },
-                { from:'T4→T3', ratio:30 },
-                { from:'T3→T2', ratio:50 },
+                { from:'T7→T6', ratio:21 },
+                { from:'T6→T5', ratio:19 },
+                { from:'T5→T4', ratio:17 },
+                { from:'T4→T3', ratio:15 },
+                { from:'T3→T2', ratio:13 },
               ].map(r => (
                 <div key={r.from} style={{ display:'flex', alignItems:'center', gap:8, padding:'2px 0' }}>
-                  <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'rgba(255,255,255,0.45)', width:52 }}>{r.from}</span>
+                  <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:'rgba(255,255,255,0.45)', width:52 }}>{r.from}</span>
                   <span style={{ fontFamily:"'Courier Prime', monospace", fontSize:11, color:'rgba(255,255,255,0.35)' }}>
                     Burn 10-{r.ratio} of {r.ratio} = {Math.round(10/r.ratio*100)}%-100% chance
                   </span>
@@ -613,7 +613,7 @@ export default function ForgePanel({ blocks, onForge, address }) {
       {/* Batch queue */}
       {batchMode && batchAttempts.length > 0 && (
         <div style={{ display:'flex', flexDirection:'column', gap:6, marginTop:4 }}>
-          <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'rgba(255,255,255,0.35)', letterSpacing:1 }}>
+          <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:'rgba(255,255,255,0.35)', letterSpacing:1 }}>
             QUEUED ATTEMPTS
           </div>
           {batchAttempts.map((a, i) => {
@@ -628,17 +628,17 @@ export default function ForgePanel({ blocks, onForge, address }) {
                 border:'1px solid rgba(184,107,255,0.15)',
                 padding:'8px 12px',
               }}>
-                <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:'rgba(255,255,255,0.45)', width:16 }}>#{i+1}</span>
-                <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:t?.accent || '#fff' }}>T{a.tier} → T{a.tier-1}</span>
-                <span style={{ fontFamily:"'VT323', monospace", fontSize:18, color:'rgba(255,255,255,0.5)', flex:1 }}>
+                <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:'rgba(255,255,255,0.45)', width:16 }}>#{i+1}</span>
+                <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:t?.accent || '#fff' }}>T{a.tier} → T{a.tier-1}</span>
+                <span style={{ fontFamily:"'VT323', monospace", fontSize:20, color:'rgba(255,255,255,0.5)', flex:1 }}>
                   Burn: {a.burnCount}
                 </span>
-                <span style={{ fontFamily:"'VT323', monospace", fontSize:18, color: chance >= 80 ? '#6eff8a' : chance >= 50 ? GOLD : '#ff6644' }}>
+                <span style={{ fontFamily:"'VT323', monospace", fontSize:20, color: chance >= 80 ? '#6eff8a' : chance >= 50 ? GOLD : '#ff6644' }}>
                   {chance}%
                 </span>
                 <button onClick={() => removeBatchAttempt(i)} style={{
                   background:'none', border:'1px solid rgba(255,80,80,0.25)',
-                  color:'#ff8888', fontFamily:"'Press Start 2P', monospace", fontSize:7,
+                  color:'#ff8888', fontFamily:"'Press Start 2P', monospace", fontSize:8,
                   padding:'3px 8px', cursor:'pointer',
                 }}>✕</button>
               </div>
