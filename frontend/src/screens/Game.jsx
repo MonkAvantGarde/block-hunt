@@ -278,6 +278,7 @@ const { data: countdownHolder } = useReadContract({
       try {
         const query = `{ players(orderBy: progressionScore, orderDirection: desc, where: { id_not_in: ${JSON.stringify(BURN_ADDRS)} }) { id } }`
         const res = await fetch(SUBGRAPH_URL, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ query }) })
+        if (!res.ok) return
         const json = await res.json()
         const players = json?.data?.players || []
         const idx = players.findIndex(p => p.id.toLowerCase() === address.toLowerCase())

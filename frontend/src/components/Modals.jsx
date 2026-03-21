@@ -411,6 +411,7 @@ export function LeaderboardModal({ onClose, onOpenProfile, connectedAddress, pri
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({ query: buildLbQuery(skip) }),
       });
+      if (!res.ok) throw new Error(`Subgraph error (${res.status}) — try again in a moment`);
       const json = await res.json();
       if (json.errors) throw new Error(json.errors[0].message);
       const page = json.data.players || [];
@@ -623,6 +624,7 @@ export function ProfileModal({ onClose, connectedAddress }) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ query }),
         });
+        if (!res.ok) throw new Error('Rate limited');
         const json = await res.json();
         if (!cancelled) {
           setActivities(json?.data?.playerActivities || []);

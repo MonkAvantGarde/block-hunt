@@ -281,6 +281,7 @@ export function useRewardsData(address, blocks, currentBatch) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ query }),
         })
+        if (!res.ok) throw new Error('Rate limited')
         const json = await res.json()
         if (!cancelled) {
           setSubgraphData(json?.data || null)
