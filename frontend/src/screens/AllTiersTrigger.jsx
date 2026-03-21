@@ -95,9 +95,9 @@ export default function AllTiersTrigger({ walletAddress, balances, onTriggered, 
   // ── TRIGGER: call contract or skip if already triggered on-chain ────
   const fireTrigger = useCallback(() => {
     if (alreadyTriggered) {
-      // Countdown already active on-chain — just play the DONE animation
+      // Countdown already active on-chain — play the full celebration sequence
       setPhase('DONE');
-      setTimeout(onTriggered, 1200);
+      setTimeout(onTriggered, 4000);
       return;
     }
     setPhase('TRIGGERING');
@@ -241,8 +241,11 @@ export default function AllTiersTrigger({ walletAddress, balances, onTriggered, 
 
         {phase === 'DONE' && (
           <div style={styles.doneState}>
-            <div style={styles.doneIcon}>✓</div>
+            <div style={styles.doneFlare} />
+            <div style={styles.doneIcon}>⚡</div>
             <div style={styles.doneText}>COUNTDOWN STARTED</div>
+            <div style={styles.doneSubtext}>7 days on the clock</div>
+            <div style={styles.donePulseRing} />
           </div>
         )}
 
@@ -259,6 +262,10 @@ export default function AllTiersTrigger({ walletAddress, balances, onTriggered, 
         @keyframes cardFloat  { 0%,100%{transform:translateY(0px)} 50%{transform:translateY(-5px)} }
         @keyframes spin       { to{transform:rotate(360deg)} }
         @keyframes doneFlash  { 0%{opacity:0;transform:scale(0.6)} 60%{transform:scale(1.1)} 100%{opacity:1;transform:scale(1)} }
+        @keyframes doneGlow   { 0%{opacity:0;transform:scale(0.3)} 40%{opacity:1;transform:scale(1.2)} 100%{opacity:0.6;transform:scale(1)} }
+        @keyframes pulseRing  { 0%{transform:scale(0.5);opacity:0.8;border-width:4px} 100%{transform:scale(2.5);opacity:0;border-width:1px} }
+        @keyframes subtextIn  { 0%{opacity:0;transform:translateY(10px)} 100%{opacity:1;transform:translateY(0)} }
+        @keyframes iconPulse  { 0%,100%{transform:scale(1);text-shadow:0 0 20px rgba(110,255,138,0.8)} 50%{transform:scale(1.1);text-shadow:0 0 40px rgba(110,255,138,1), 0 0 80px rgba(110,255,138,0.5)} }
       `}</style>
     </div>
   );
@@ -298,9 +305,12 @@ const styles = {
   spinner:    { width:32, height:32, border:'3px solid rgba(200,168,75,0.2)', borderTop:'3px solid #c8a84b', borderRadius:'50%', animation:'spin 0.8s linear infinite' },
   txPendingText: { fontFamily:FONT_RETRO, fontSize:20, color:'#c8a84b', letterSpacing:1 },
   txLink:     { fontFamily:FONT_RETRO, fontSize:14, color:'rgba(200,168,75,0.6)', textDecoration:'none' },
-  doneState:  { display:'flex', flexDirection:'column', alignItems:'center', gap:8, animation:'doneFlash 0.5s ease-out' },
-  doneIcon:   { fontSize:48, color:'#6eff8a', textShadow:'0 0 20px rgba(110,255,138,0.8)' },
-  doneText:   { fontFamily:FONT_RETRO, fontSize:28, color:'#6eff8a', letterSpacing:3 },
+  doneState:  { position:'relative', display:'flex', flexDirection:'column', alignItems:'center', gap:12, animation:'doneFlash 0.8s ease-out', padding:'30px 0' },
+  doneFlare:  { position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)', width:200, height:200, borderRadius:'50%', background:'radial-gradient(circle, rgba(110,255,138,0.3) 0%, rgba(110,255,138,0.05) 50%, transparent 70%)', animation:'doneGlow 1s ease-out', pointerEvents:'none' },
+  doneIcon:   { fontSize:64, color:'#6eff8a', animation:'iconPulse 1.5s ease-in-out infinite', zIndex:1 },
+  doneText:   { fontFamily:FONT_RETRO, fontSize:32, color:'#6eff8a', letterSpacing:4, textShadow:'0 0 20px rgba(110,255,138,0.8)', zIndex:1 },
+  doneSubtext:{ fontFamily:FONT_RETRO, fontSize:18, color:'rgba(110,255,138,0.6)', letterSpacing:2, animation:'subtextIn 0.6s ease-out 0.4s both', zIndex:1 },
+  donePulseRing:{ position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)', width:100, height:100, borderRadius:'50%', border:'3px solid rgba(110,255,138,0.6)', animation:'pulseRing 1.5s ease-out infinite', pointerEvents:'none' },
   errorMsg:   { fontFamily:FONT_RETRO, fontSize:14, color:'#ff5544', textAlign:'center', padding:'8px 16px', background:'rgba(255,85,68,0.1)', border:'1px solid rgba(255,85,68,0.3)', borderRadius:3, maxWidth:400 },
   footNote:   { fontFamily:FONT_RETRO, fontSize:13, color:'rgba(240,234,214,0.3)', textAlign:'center', letterSpacing:0.5, maxWidth:400 },
 };

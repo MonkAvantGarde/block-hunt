@@ -158,7 +158,6 @@ const { data: countdownHolder } = useReadContract({
   const [mintRevealResults, setMintRevealResults] = useState(null)
   const [combineCollapseData, setCombineCollapseData] = useState(null) // { fromTier, startCount, combineRatio }
   const [showCascade, setShowCascade] = useState(false)
-  const cascadeShownRef = useRef(false)
   const [rankToast,   setRankToast]  = useState(null)
   const [currentRank, setCurrentRank] = useState(() => {
     if (typeof window !== 'undefined' && address) {
@@ -302,11 +301,12 @@ const { data: countdownHolder } = useReadContract({
 
   // Collection Cascade — trigger once when all 6 tiers first held
   useEffect(() => {
+    const totalBlocks = Object.values(blocks).reduce((sum, v) => sum + (v ?? 0), 0)
+    if (totalBlocks <= 0) return
     const all = [2,3,4,5,6,7].every(t => (blocks[t] ?? 0) >= 1)
-    if (all && !cascadeShownRef.current && address) {
+    if (all && address) {
       const key = `blockhunt_cascade_${address.toLowerCase()}`
       if (!localStorage.getItem(key)) {
-        cascadeShownRef.current = true
         localStorage.setItem(key, '1')
         setShowCascade(true)
       }
