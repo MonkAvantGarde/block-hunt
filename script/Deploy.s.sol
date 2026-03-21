@@ -13,16 +13,9 @@ import "../src/BlockHuntSeasonRegistry.sol";
 import "../src/BlockHuntRewards.sol";
 
 /**
- * @title  Block Hunt — Base Sepolia Redeployment (Phase 6 — Keeper + Fixes)
- * @notice Deploys 4 changed contracts (Token, MintWindow, Countdown, Rewards)
- *         and re-wires them to the 5 existing contracts (Treasury, Forge,
- *         Escrow, Migration, SeasonRegistry).
- *
- *         Changes since Phase 5:
- *           - Token: countdownDuration settable (was constant 7 days)
- *           - MintWindow: keeper role, resetWindowCap, new 25% growth batch configs
- *           - Countdown: keeper role
- *           - Rewards: MAX_BATCHES 6→10, keeper role
+ * @title  Block Hunt — Full Fresh Deployment (Season 1 Testnet)
+ * @notice Deploys ALL 9 contracts from scratch and wires them together.
+ *         Production game settings: 7-day countdown, 24-hour safe period.
  *
  * ── Before running ───────────────────────────────────────────────────────────
  *
@@ -47,10 +40,8 @@ import "../src/BlockHuntRewards.sol";
  *
  *  1. Copy printed addresses into frontend/src/config/wagmi.js
  *  2. On Chainlink VRF subscription (https://vrf.chain.link):
- *       - ADD the new Token address as a consumer
- *       - REMOVE the old Token address (0x669aa2605E66565EFe874dBb8cAB9450c75E7A00)
- *       (Forge address unchanged — already a consumer)
- *  3. Update subgraph/subgraph.yaml with new Token + MintWindow addresses
+ *       - ADD the new Token AND Forge addresses as consumers
+ *  3. Update subgraph/subgraph.yaml with new Token address + startBlock
  *  4. Fund Rewards contract: call deposit() with ETH for batch 1
  *  5. Set Gelato keeper: call setKeeper() on MintWindow, Countdown, Rewards
  *
@@ -70,18 +61,9 @@ contract Deploy is Script {
     uint32 constant TOKEN_VRF_GAS = 2_500_000;
     uint32 constant FORGE_VRF_GAS = 300_000;
 
-    // ── Existing contracts (NOT redeployed) ─────────────────────────────────
-
-    address constant EXISTING_TREASURY   = 0x5E62B079AD08c8E20E027d53e9CF64bd93B40027;
-    address constant EXISTING_FORGE      = 0x94d283a21386f1c5b051cE0ac5b9AD878182827c;
-    address constant EXISTING_ESCROW     = 0x1e21c3536f3AE5590aA89A19DF599e7A6D50E985;
-    address constant EXISTING_MIGRATION  = 0xfD44677e950a77972a46FAe024e587dcD1Bd9eD5;
-
-    // Old Token address (for VRF consumer removal reference)
-    address constant OLD_TOKEN = 0x669aa2605E66565EFe874dBb8cAB9450c75E7A00;
-
-    // Testnet countdown duration (5 minutes instead of 7 days)
-    uint256 constant TESTNET_COUNTDOWN = 300;
+    // Old addresses (for VRF consumer removal reference)
+    address constant OLD_TOKEN = 0x48F0853BDECBDb137dE5091ef9Fe94DC0924BF5e;
+    address constant OLD_FORGE = 0x94d283a21386f1c5b051cE0ac5b9AD878182827c;
 
     // ── Run ───────────────────────────────────────────────────────────────────
 
@@ -93,127 +75,149 @@ contract Deploy is Script {
         require(creatorWallet != address(0), "Deploy: CREATOR_WALLET not set");
 
         console.log("=================================================");
-        console.log("  Block Hunt -- Phase 6 (Keeper + Fixes)");
+        console.log("  Block Hunt -- Full Fresh Deploy (Season 1)");
         console.log("=================================================");
         console.log("  Deployer:        ", deployer);
         console.log("  Creator wallet:  ", creatorWallet);
         console.log("-------------------------------------------------");
-        console.log("  EXISTING (kept): Treasury, Forge, Escrow, Migration");
-        console.log("  DEPLOYING:       Token, MintWindow, Countdown, Rewards");
-        console.log("-------------------------------------------------");
 
         vm.startBroadcast(deployerKey);
 
-        // ── Step 1: Deploy 4 new contracts ───────────────────────────────────
+        // ── Step 1: Deploy all 9 contracts ─────────────────────────────────
 
-        // 1. Token — settable countdownDuration, ERC-1155 core
+        // 1. Treasury
+        BlockHuntTreasury treasury = new BlockHuntTreasury(creatorWallet);
+        console.log("1. Treasury deployed:    ", address(treasury));
+
+        // 2. MintWindow
+        BlockHuntMintWindow mintWindow = new BlockHuntMintWindow();
+        console.log("2. MintWindow deployed:  ", address(mintWindow));
+
+        // 3. Countdown
+        BlockHuntCountdown countdown = new BlockHuntCountdown();
+        console.log("3. Countdown deployed:   ", address(countdown));
+
+        // 4. Forge
+        BlockHuntForge forge = new BlockHuntForge(VRF_COORDINATOR);
+        console.log("4. Forge deployed:       ", address(forge));
+
+        // 5. Token
         BlockHuntToken token = new BlockHuntToken(
             METADATA_URI,
             creatorWallet,
             ROYALTY_FEE_BPS,
             VRF_COORDINATOR
         );
-        console.log("1. Token deployed:       ", address(token));
+        console.log("5. Token deployed:       ", address(token));
 
-        // 2. MintWindow — keeper role, new 25% growth batch configs
-        BlockHuntMintWindow mintWindow = new BlockHuntMintWindow();
-        console.log("2. MintWindow deployed:  ", address(mintWindow));
+        // 6. Escrow (keeper = deployer for now)
+        BlockHuntEscrow escrow = new BlockHuntEscrow(deployer);
+        console.log("6. Escrow deployed:      ", address(escrow));
 
-        // 3. Countdown — keeper role, settable durations
-        BlockHuntCountdown countdown = new BlockHuntCountdown();
-        console.log("3. Countdown deployed:   ", address(countdown));
+        // 7. Migration
+        BlockHuntMigration migration = new BlockHuntMigration(address(token));
+        console.log("7. Migration deployed:   ", address(migration));
 
-        // 4. Rewards — MAX_BATCHES=10, keeper role
+        // 8. SeasonRegistry
+        BlockHuntSeasonRegistry registry = new BlockHuntSeasonRegistry();
+        console.log("8. Registry deployed:    ", address(registry));
+
+        // 9. Rewards
         BlockHuntRewards rewards = new BlockHuntRewards();
-        console.log("4. Rewards deployed:     ", address(rewards));
+        console.log("9. Rewards deployed:     ", address(rewards));
 
         console.log("-------------------------------------------------");
 
-        // ── Step 2: Wire new Token → all peripherals ─────────────────────────
+        // ── Step 2: Wire Token → all peripherals ───────────────────────────
 
-        token.setTreasuryContract(EXISTING_TREASURY);
+        token.setTreasuryContract(address(treasury));
         token.setMintWindowContract(address(mintWindow));
-        token.setForgeContract(EXISTING_FORGE);
+        token.setForgeContract(address(forge));
         token.setCountdownContract(address(countdown));
-        token.setEscrowContract(EXISTING_ESCROW);
-        token.setMigrationContract(EXISTING_MIGRATION);
+        token.setEscrowContract(address(escrow));
+        token.setMigrationContract(address(migration));
         console.log("Token wired to all peripherals.");
 
-        // ── Step 3: Wire peripherals → new Token ─────────────────────────────
+        // ── Step 3: Wire peripherals → Token ───────────────────────────────
 
-        // Existing contracts: re-point to new Token
-        // Treasury.setTokenContract has testModeEnabled guard — must still be true
-        BlockHuntTreasury(payable(EXISTING_TREASURY)).setTokenContract(address(token));
-        console.log("Treasury re-wired to new Token.");
+        treasury.setTokenContract(address(token));
+        treasury.setEscrowContract(address(escrow));
+        console.log("Treasury wired to Token + Escrow.");
 
-        // Escrow.setTokenContract has testModeEnabled guard
-        BlockHuntEscrow(payable(EXISTING_ESCROW)).setTokenContract(address(token));
-        console.log("Escrow re-wired to new Token.");
+        escrow.setTokenContract(address(token));
+        console.log("Escrow wired to Token.");
 
-        // Forge.setTokenContract has no guard — always re-callable
-        BlockHuntForge(payable(EXISTING_FORGE)).setTokenContract(address(token));
-        console.log("Forge re-wired to new Token.");
+        forge.setTokenContract(address(token));
+        console.log("Forge wired to Token.");
 
-        // Migration.setTokenV1 has no guard
-        BlockHuntMigration(EXISTING_MIGRATION).setTokenV1(address(token));
-        console.log("Migration re-wired to new Token (as V1).");
-
-        // New contracts → new Token
         mintWindow.setTokenContract(address(token));
-        countdown.setTokenContract(address(token));
-        console.log("MintWindow + Countdown wired to new Token.");
+        console.log("MintWindow wired to Token.");
 
-        // ── Step 4: Configure VRF ────────────────────────────────────────────
+        countdown.setTokenContract(address(token));
+        console.log("Countdown wired to Token.");
+
+        // ── Step 4: Configure VRF ──────────────────────────────────────────
 
         token.setVrfConfig(VRF_SUB_ID, VRF_KEY_HASH, TOKEN_VRF_GAS);
-        token.setVrfEnabled(true);
+        // VRF disabled by default — enable after adding consumer on VRF dashboard
+        // token.setVrfEnabled(true);
 
-        // Re-configure Forge VRF to ensure correct subscription
-        BlockHuntForge(payable(EXISTING_FORGE)).setVrfConfig(VRF_SUB_ID, VRF_KEY_HASH, FORGE_VRF_GAS);
-        BlockHuntForge(payable(EXISTING_FORGE)).setVrfEnabled(true);
-        console.log("VRF configured: Token (2.5M), Forge (300k).");
+        forge.setVrfConfig(VRF_SUB_ID, VRF_KEY_HASH, FORGE_VRF_GAS);
+        // forge.setVrfEnabled(true);
+        console.log("VRF configured (disabled until consumers added on dashboard).");
 
-        // ── Step 5: Open first mint window ───────────────────────────────────
+        // ── Step 5: Open first mint window ─────────────────────────────────
 
         mintWindow.forceOpenWindow();
         console.log("First mint window opened.");
 
-        // ── Step 6: Set testnet countdown duration (5 minutes) ───────────────
+        // ── Step 6: Register Season 1 ──────────────────────────────────────
 
-        token.setCountdownDuration(TESTNET_COUNTDOWN);
-        countdown.setCountdownDuration(TESTNET_COUNTDOWN);
-        console.log("Countdown duration set to 5 minutes (testnet).");
+        registry.registerSeason(
+            1,
+            address(treasury),
+            address(token),
+            address(mintWindow),
+            address(forge)
+        );
+        registry.markSeasonLaunched(1);
+        console.log("Season 1 registered and launched.");
 
         vm.stopBroadcast();
 
-        // ── Summary ───────────────────────────────────────────────────────────
+        // ── Summary ─────────────────────────────────────────────────────────
         console.log("");
         console.log("=================================================");
         console.log("  Deployment complete!");
         console.log("=================================================");
         console.log("");
-        console.log("  NEW CONTRACTS (update wagmi.js):");
+        console.log("  ALL CONTRACTS (update wagmi.js):");
         console.log("  TOKEN:     ", address(token));
+        console.log("  TREASURY:  ", address(treasury));
         console.log("  WINDOW:    ", address(mintWindow));
         console.log("  COUNTDOWN: ", address(countdown));
+        console.log("  FORGE:     ", address(forge));
+        console.log("  ESCROW:    ", address(escrow));
+        console.log("  MIGRATION: ", address(migration));
+        console.log("  REGISTRY:  ", address(registry));
         console.log("  REWARDS:   ", address(rewards));
         console.log("");
-        console.log("  EXISTING (unchanged):");
-        console.log("  TREASURY:  ", EXISTING_TREASURY);
-        console.log("  FORGE:     ", EXISTING_FORGE);
-        console.log("  ESCROW:    ", EXISTING_ESCROW);
-        console.log("  MIGRATION: ", EXISTING_MIGRATION);
+        console.log("  SETTINGS:");
+        console.log("  Countdown:   7 days (default)");
+        console.log("  Safe period: 24 hours (default)");
+        console.log("  VRF:         disabled (enable after adding consumers)");
         console.log("");
         console.log("=================================================");
         console.log("  MANUAL STEPS:");
         console.log("=================================================");
-        console.log("  1. VRF: Add new Token as consumer at https://vrf.chain.link");
+        console.log("  1. VRF: Add Token + Forge as consumers at https://vrf.chain.link");
         console.log("     Sub ID:", VRF_SUB_ID);
-        console.log("     Remove old Token:", OLD_TOKEN);
+        console.log("     Then call token.setVrfEnabled(true) and forge.setVrfEnabled(true)");
+        console.log("     Remove old consumers:", OLD_TOKEN, OLD_FORGE);
         console.log("");
-        console.log("  2. Update frontend/src/config/wagmi.js with new addresses");
+        console.log("  2. Update frontend/src/config/wagmi.js with ALL new addresses");
         console.log("");
-        console.log("  3. Update subgraph/subgraph.yaml with new Token address");
+        console.log("  3. Update subgraph/subgraph.yaml with new Token address + startBlock");
         console.log("");
         console.log("  4. Fund Rewards: call rewards.deposit() with ETH for batch 1");
         console.log("");
