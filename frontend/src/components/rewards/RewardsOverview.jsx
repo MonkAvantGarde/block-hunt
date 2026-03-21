@@ -24,47 +24,47 @@ function useCountdown(closeAt) {
   return display
 }
 
+const cardBase = {
+  background: 'rgba(0,0,0,0.25)',
+  border: '1px solid rgba(78,205,196,0.08)',
+  padding: 16,
+  cursor: 'pointer',
+  transition: 'all 0.2s',
+  position: 'relative',
+}
+
+function Card({ children, onClick, style, delay = 0 }) {
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        ...cardBase,
+        animation: `fadeInUp 0.3s ease-out ${delay}s both`,
+        ...style,
+      }}
+      onMouseEnter={e => {
+        e.currentTarget.style.borderColor = 'rgba(78,205,196,0.25)'
+        e.currentTarget.style.background = 'rgba(78,205,196,0.03)'
+        e.currentTarget.style.transform = 'translateY(-1px)'
+        const arrow = e.currentTarget.querySelector('.card-arrow')
+        if (arrow) arrow.style.opacity = '1'
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.borderColor = 'rgba(78,205,196,0.08)'
+        e.currentTarget.style.background = 'rgba(0,0,0,0.25)'
+        e.currentTarget.style.transform = 'translateY(0)'
+        const arrow = e.currentTarget.querySelector('.card-arrow')
+        if (arrow) arrow.style.opacity = '0'
+      }}
+    >
+      {children}
+    </div>
+  )
+}
+
 export default function RewardsOverview({ rewards, onNavigate }) {
   const { streak, currentStreakTier, nextStreakTier, milestones, totalEarned, totalInProgress, lottery, bounty, hallOfFame } = rewards
   const drawCountdown = useCountdown(lottery.windowCloseAt)
-
-  const cardBase = {
-    background: 'rgba(0,0,0,0.25)',
-    border: '1px solid rgba(78,205,196,0.08)',
-    padding: 16,
-    cursor: 'pointer',
-    transition: 'all 0.2s',
-    position: 'relative',
-  }
-
-  function Card({ children, onClick, style, delay = 0 }) {
-    return (
-      <div
-        onClick={onClick}
-        style={{
-          ...cardBase,
-          animation: `fadeInUp 0.3s ease-out ${delay}s both`,
-          ...style,
-        }}
-        onMouseEnter={e => {
-          e.currentTarget.style.borderColor = 'rgba(78,205,196,0.25)'
-          e.currentTarget.style.background = 'rgba(78,205,196,0.03)'
-          e.currentTarget.style.transform = 'translateY(-1px)'
-          const arrow = e.currentTarget.querySelector('.card-arrow')
-          if (arrow) arrow.style.opacity = '1'
-        }}
-        onMouseLeave={e => {
-          e.currentTarget.style.borderColor = 'rgba(78,205,196,0.08)'
-          e.currentTarget.style.background = 'rgba(0,0,0,0.25)'
-          e.currentTarget.style.transform = 'translateY(0)'
-          const arrow = e.currentTarget.querySelector('.card-arrow')
-          if (arrow) arrow.style.opacity = '0'
-        }}
-      >
-        {children}
-      </div>
-    )
-  }
 
   // Earned milestone badges for display
   const earnedBadges = []
