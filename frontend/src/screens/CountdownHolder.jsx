@@ -435,12 +435,11 @@ export default function CountdownHolder({ onBack }) {
   const claimVotes = countdownInfo ? Number(countdownInfo[6]) : 0;
 
   // ── Calculate seconds remaining ───────────────────────────
-  const SEVEN_DAYS = 7 * 24 * 60 * 60;
+  const countdownEndTime = countdownInfo ? Number(countdownInfo[3]) : 0;
   const secondsRemaining = (() => {
-    if (!countdownStartTime) return SEVEN_DAYS;
-    const endTime = Number(countdownStartTime) + SEVEN_DAYS;
+    if (!countdownEndTime) return 0;
     const now = Math.floor(Date.now() / 1000);
-    return Math.max(0, endTime - now);
+    return Math.max(0, countdownEndTime - now);
   })();
 
   const urgent = secondsRemaining < 3600;
