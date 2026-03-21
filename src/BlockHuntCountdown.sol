@@ -27,6 +27,12 @@ contract BlockHuntCountdown is Ownable {
     uint256 public safePeriod = 1 days;
 
     address public tokenContract;
+    address public keeper;
+
+    modifier onlyOwnerOrKeeper() {
+        require(msg.sender == owner() || msg.sender == keeper, "Not authorized");
+        _;
+    }
 
     uint256 public countdownStartTime;
     address public currentHolder;
@@ -81,6 +87,13 @@ contract BlockHuntCountdown is Ownable {
     }
 
     function setTokenContract(address addr) external onlyOwner { tokenContract = addr; }
+
+    event KeeperUpdated(address indexed keeper);
+
+    function setKeeper(address _keeper) external onlyOwner {
+        keeper = _keeper;
+        emit KeeperUpdated(_keeper);
+    }
 
     // ── Test-mode setters ─────────────────────────────────────────────────
 

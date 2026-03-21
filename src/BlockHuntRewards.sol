@@ -22,10 +22,25 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
 contract BlockHuntRewards is Ownable, ReentrancyGuard, Pausable {
 
     // ── Constants ──────────────────────────────────────────────────────────
-    uint256 public constant MAX_BATCHES          = 6;
+    uint256 public constant MAX_BATCHES          = 10;
     uint256 public constant BATCH_FIRSTS_COUNT   = 13;
     uint256 public constant CLAIM_WINDOW         = 30 days;
     uint256 public constant BPS_DENOMINATOR      = 10000;
+
+    // ── Keeper role ──────────────────────────────────────────────────────
+    address public keeper;
+
+    modifier onlyOwnerOrKeeper() {
+        require(msg.sender == owner() || msg.sender == keeper, "Not authorized");
+        _;
+    }
+
+    event KeeperUpdated(address indexed keeper);
+
+    function setKeeper(address _keeper) external onlyOwner {
+        keeper = _keeper;
+        emit KeeperUpdated(_keeper);
+    }
 
     // ── Batch budget configuration ─────────────────────────────────────────
     //
@@ -293,7 +308,7 @@ contract BlockHuntRewards is Ownable, ReentrancyGuard, Pausable {
         uint256 batch,
         address[] calldata wallets,
         uint256 randomSeed
-    ) external onlyOwner whenNotPaused {
+    ) external onlyOwnerOrKeeper whenNotPaused {
         require(batchConfigs[batch].active, "Batch not funded");
         require(dailyDraws[day].resolvedAt == 0, "Day already resolved");
         require(wallets.length > 0, "No eligible wallets");
@@ -353,7 +368,7 @@ contract BlockHuntRewards is Ownable, ReentrancyGuard, Pausable {
         uint256 batch,
         uint256 achievementId,
         address winner
-    ) external onlyOwner whenNotPaused {
+    ) external onlyOwnerOrKeeper whenNotPaused {
         require(batchConfigs[batch].active, "Batch not funded");
         require(achievementId < BATCH_FIRSTS_COUNT, "Invalid achievement");
         require(batchFirsts[batch][achievementId].winner == address(0), "Already awarded");
@@ -405,7 +420,7 @@ contract BlockHuntRewards is Ownable, ReentrancyGuard, Pausable {
     function addBatchBountyRecipients(
         uint256 batch,
         address[] calldata wallets
-    ) external onlyOwner whenNotPaused {
+    ) external onlyOwnerOrKeeper whenNotPaused {
         require(batchConfigs[batch].active, "Batch not funded");
         require(!batchBounties[batch].distributed, "Already finalized");
         require(wallets.length > 0, "No recipients");
@@ -422,7 +437,7 @@ contract BlockHuntRewards is Ownable, ReentrancyGuard, Pausable {
      * @notice Finalize the batch bounty after all recipients are added.
      *         Computes equal share and locks the distribution.
      */
-    function finalizeBatchBounty(uint256 batch) external onlyOwner whenNotPaused {
+    function finalizeBatchBounty(uint256 batch) external onlyOwnerOrKeeper whenNotPaused {
         require(batchConfigs[batch].active, "Batch not funded");
         require(!batchBounties[batch].distributed, "Already finalized");
         require(batchBounties[batch].totalRecipients > 0, "No recipients added");

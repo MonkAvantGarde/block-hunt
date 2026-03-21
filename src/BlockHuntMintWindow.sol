@@ -24,6 +24,22 @@ contract BlockHuntMintWindow is Ownable {
 
     event BatchConfigUpdated(uint256 indexed batchIndex, uint256 supply, uint256 price, uint256 windowCap);
     event AllBatchConfigsUpdated(uint256 batchCount);
+    event KeeperUpdated(address indexed keeper);
+    event WindowCapReset();
+
+    // ── Keeper role ─────────────────────────────────────────────────────
+
+    address public keeper;
+
+    modifier onlyOwnerOrKeeper() {
+        require(msg.sender == owner() || msg.sender == keeper, "Not authorized");
+        _;
+    }
+
+    function setKeeper(address _keeper) external onlyOwner {
+        keeper = _keeper;
+        emit KeeperUpdated(_keeper);
+    }
 
     // ── Existing state ────────────────────────────────────────────────────
 
@@ -63,17 +79,18 @@ contract BlockHuntMintWindow is Ownable {
         currentBatch = 1;
         batches[1] = Batch({ id: 1, startDay: 1, totalMinted: 0 });
 
-        // Initialize 10 batches
-        batchConfigs.push(BatchConfig(100_000,  0.00008 ether, 25_000));   // B1
-        batchConfigs.push(BatchConfig(100_000,  0.00012 ether, 25_000));   // B2
-        batchConfigs.push(BatchConfig(150_000,  0.00020 ether, 25_000));   // B3
-        batchConfigs.push(BatchConfig(200_000,  0.00032 ether, 50_000));   // B4
-        batchConfigs.push(BatchConfig(250_000,  0.00056 ether, 50_000));   // B5
-        batchConfigs.push(BatchConfig(300_000,  0.00100 ether, 50_000));   // B6
-        batchConfigs.push(BatchConfig(400_000,  0.00180 ether, 100_000));  // B7
-        batchConfigs.push(BatchConfig(500_000,  0.00320 ether, 100_000));  // B8
-        batchConfigs.push(BatchConfig(500_000,  0.00520 ether, 200_000));  // B9
-        batchConfigs.push(BatchConfig(400_000,  0.00800 ether, 200_000));  // B10
+        // Initialize 10 batches — 25% geometric growth, total 3,324,000
+        // Window cap = batchSupply / 3 (three windows per day), rounded to nearest 1K
+        batchConfigs.push(BatchConfig(100_000,  0.00008 ether,  33_000));  // B1
+        batchConfigs.push(BatchConfig(125_000,  0.00012 ether,  42_000));  // B2
+        batchConfigs.push(BatchConfig(156_000,  0.00020 ether,  52_000));  // B3
+        batchConfigs.push(BatchConfig(195_000,  0.00032 ether,  65_000));  // B4
+        batchConfigs.push(BatchConfig(244_000,  0.00056 ether,  81_000));  // B5
+        batchConfigs.push(BatchConfig(305_000,  0.00100 ether, 102_000));  // B6
+        batchConfigs.push(BatchConfig(381_000,  0.00180 ether, 127_000));  // B7
+        batchConfigs.push(BatchConfig(477_000,  0.00320 ether, 159_000));  // B8
+        batchConfigs.push(BatchConfig(596_000,  0.00520 ether, 199_000));  // B9
+        batchConfigs.push(BatchConfig(745_000,  0.00800 ether, 248_000));  // B10
     }
 
     // ── Config read functions (replace old hardcoded functions) ────────────
@@ -128,9 +145,14 @@ contract BlockHuntMintWindow is Ownable {
     function setPerUserDayCap(uint256 cap) external onlyOwner { perUserDayCap = cap; }
     function disableTestMode() external onlyOwner { testModeEnabled = false; }
 
+    function resetWindowCap() external onlyOwner {
+        rolloverSupply = 0;
+        emit WindowCapReset();
+    }
+
     // ── Window management ─────────────────────────────────────────────────
 
-    function openWindow() external {
+    function openWindow() external onlyOwnerOrKeeper {
         if (currentDay > 0) {
             require(
                 block.timestamp >= windows[currentDay].openAt + MIN_WINDOW_GAP,

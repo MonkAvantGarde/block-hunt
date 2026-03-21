@@ -1,0 +1,24 @@
+{
+  "web3FunctionVersion": "2.0.0",
+  "runtime": "js-1.0",
+  "memory": 128,
+  "timeout": 30,
+  "userArgs": {
+    "rewardsAddress": {
+      "type": "string",
+      "description": "BlockHuntRewards contract address"
+    },
+    "mintWindowAddress": {
+      "type": "string",
+      "description": "BlockHuntMintWindow contract address"
+    },
+    "subgraphUrl": {
+      "type": "string",
+      "description": "The Graph subgraph query URL"
+    },
+    "chainId": {
+      "type": "number",
+      "description": "Chain ID (84532 for Base Sepolia, 8453 for Base)"
+    }
+  }
+}

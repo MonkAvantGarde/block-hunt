@@ -321,6 +321,192 @@ function VoteSection({ burnVotes = 0, claimVotes = 0 }) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// CHALLENGE SECTION — spectator can challenge if they hold all 6 tiers
+// ═══════════════════════════════════════════════════════════════
+function ChallengeSection({ holderAddress }) {
+  const { address } = useAccount();
+  const [challengeError, setChallengeError] = useState(null);
+  const [showConfirm, setShowConfirm] = useState(false);
+
+  // Check if spectator holds all 6 tiers
+  const { data: hasAll } = useReadContract({
+    address: CONTRACTS.TOKEN,
+    abi: TOKEN_ABI,
+    functionName: "hasAllTiers",
+    args: address ? [address] : undefined,
+    query: { enabled: !!address, refetchInterval: 10000 },
+  });
+
+  // Read scores for display
+  const { data: myScore } = useReadContract({
+    address: CONTRACTS.COUNTDOWN,
+    abi: COUNTDOWN_ABI,
+    functionName: "calculateScore",
+    args: address ? [address] : undefined,
+    query: { enabled: !!address && !!hasAll, refetchInterval: 10000 },
+  });
+
+  const { data: holderScore } = useReadContract({
+    address: CONTRACTS.COUNTDOWN,
+    abi: COUNTDOWN_ABI,
+    functionName: "calculateScore",
+    args: holderAddress ? [holderAddress] : undefined,
+    query: { enabled: !!holderAddress, refetchInterval: 10000 },
+  });
+
+  // Read safe period status
+  const { data: lastChallengeTime } = useReadContract({
+    address: CONTRACTS.COUNTDOWN,
+    abi: COUNTDOWN_ABI,
+    functionName: "lastChallengeTime",
+    query: { refetchInterval: 10000 },
+  });
+
+  const { data: safePeriod } = useReadContract({
+    address: CONTRACTS.COUNTDOWN,
+    abi: COUNTDOWN_ABI,
+    functionName: "safePeriod",
+    query: { refetchInterval: 60000 },
+  });
+
+  const { writeContract, data: txHash, isPending } = useWriteContract();
+  const { isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
+
+  useEffect(() => {
+    if (isSuccess) { setShowConfirm(false); setChallengeError(null); }
+  }, [isSuccess]);
+
+  if (!address || !hasAll) return null;
+  if (address.toLowerCase() === holderAddress?.toLowerCase()) return null;
+
+  const myScoreNum = myScore ? Number(myScore) : 0;
+  const holderScoreNum = holderScore ? Number(holderScore) : 0;
+  const ranksAbove = myScoreNum > holderScoreNum;
+
+  const now = Math.floor(Date.now() / 1000);
+  const safeEnd = lastChallengeTime ? Number(lastChallengeTime) + (safePeriod ? Number(safePeriod) : 86400) : 0;
+  const inSafePeriod = now < safeEnd;
+  const safeRemaining = Math.max(0, safeEnd - now);
+  const safeHours = Math.floor(safeRemaining / 3600);
+  const safeMins = Math.floor((safeRemaining % 3600) / 60);
+
+  const canChallenge = hasAll && ranksAbove && !inSafePeriod;
+
+  function doChallenge() {
+    setChallengeError(null);
+    writeContract({
+      address: CONTRACTS.COUNTDOWN,
+      abi: COUNTDOWN_ABI,
+      functionName: "challengeCountdown",
+      gas: BigInt(800_000),
+    }, {
+      onError: (e) => setChallengeError(e.shortMessage || "Challenge failed"),
+    });
+  }
+
+  return (
+    <div style={{
+      border: `2px solid ${canChallenge ? '#cc66ff' : 'rgba(204,102,255,0.2)'}`,
+      background: canChallenge ? 'rgba(184,107,255,0.08)' : 'rgba(0,0,0,0.2)',
+      padding: '20px 24px', marginBottom: 24,
+      boxShadow: canChallenge ? '0 0 20px rgba(184,107,255,0.15)' : 'none',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
+        <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 8, color: '#cc66ff', letterSpacing: 2 }}>
+          ⚔ CHALLENGE COUNTDOWN
+        </div>
+        <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: 'rgba(255,255,255,0.4)', letterSpacing: 1 }}>
+          YOU HOLD ALL 6 TIERS
+        </div>
+      </div>
+
+      {/* Score comparison */}
+      <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
+        <div style={{ flex: 1, background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(204,102,255,0.2)', padding: '10px 14px', textAlign: 'center' }}>
+          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: 'rgba(255,255,255,0.4)', letterSpacing: 1, marginBottom: 4 }}>YOUR RANK</div>
+          <div style={{ fontFamily: "'VT323', monospace", fontSize: 28, color: ranksAbove ? '#6eff8a' : '#ff8888' }}>
+            {myScoreNum.toLocaleString()}
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <span style={{ fontFamily: "'VT323', monospace", fontSize: 24, color: 'rgba(255,255,255,0.3)' }}>vs</span>
+        </div>
+        <div style={{ flex: 1, background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(204,51,34,0.2)', padding: '10px 14px', textAlign: 'center' }}>
+          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: 'rgba(255,255,255,0.4)', letterSpacing: 1, marginBottom: 4 }}>HOLDER</div>
+          <div style={{ fontFamily: "'VT323', monospace", fontSize: 28, color: EMBER_LT }}>
+            {holderScoreNum.toLocaleString()}
+          </div>
+        </div>
+      </div>
+
+      {/* Status messages */}
+      {inSafePeriod && (
+        <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: '#ffcc33', marginBottom: 10, lineHeight: 1.8 }}>
+          ⏳ 24-HOUR SAFE PERIOD — challenge opens in {safeHours}h {safeMins}m
+        </div>
+      )}
+      {!ranksAbove && !inSafePeriod && (
+        <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: '#ff8888', marginBottom: 10, lineHeight: 1.8 }}>
+          Your score must exceed the holder's to challenge.
+        </div>
+      )}
+
+      {challengeError && (
+        <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: '#ff8888', marginBottom: 10, background: 'rgba(255,50,30,0.08)', border: '1px solid rgba(255,50,30,0.2)', padding: '8px 12px' }}>
+          {challengeError}
+        </div>
+      )}
+
+      {isSuccess && (
+        <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 8, color: '#6eff8a', marginBottom: 10, textAlign: 'center', padding: '12px', background: 'rgba(110,255,138,0.08)', border: '1px solid rgba(110,255,138,0.2)' }}>
+          ⚔ TAKEOVER SUCCESSFUL — YOU ARE NOW THE COUNTDOWN HOLDER
+        </div>
+      )}
+
+      {!showConfirm ? (
+        <button
+          onClick={() => canChallenge && setShowConfirm(true)}
+          disabled={!canChallenge || isPending}
+          style={{
+            width: '100%', padding: '14px 0',
+            fontFamily: "'Press Start 2P', monospace", fontSize: 9, letterSpacing: 2,
+            color: canChallenge ? '#0a0705' : 'rgba(255,255,255,0.2)',
+            background: canChallenge ? 'linear-gradient(135deg,#9933cc,#cc66ff)' : 'rgba(255,255,255,0.05)',
+            border: canChallenge ? '2px solid #6600aa' : '2px solid rgba(255,255,255,0.08)',
+            boxShadow: canChallenge ? '3px 3px 0 #0a0705' : 'none',
+            cursor: canChallenge ? 'pointer' : 'not-allowed',
+          }}
+        >
+          {isPending ? '⏳ CONFIRMING...' : '⚔ CHALLENGE HOLDER'}
+        </button>
+      ) : (
+        <div style={{ background: 'rgba(204,51,34,0.08)', border: '1px solid rgba(204,51,34,0.3)', padding: '16px', textAlign: 'center' }}>
+          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 8, color: EMBER_LT, marginBottom: 10 }}>
+            ⚠ CONFIRM TAKEOVER
+          </div>
+          <div style={{ fontFamily: "'Courier Prime', monospace", fontSize: 12, color: 'rgba(255,255,255,0.5)', marginBottom: 14, lineHeight: 1.6 }}>
+            This will reset the 7-day countdown and make you the new holder. You must maintain all 6 tiers for the entire duration.
+          </div>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+            <button onClick={() => setShowConfirm(false)} style={{
+              fontFamily: "'Press Start 2P', monospace", fontSize: 8, letterSpacing: 1,
+              background: 'transparent', color: 'rgba(255,255,255,0.4)',
+              border: '1px solid rgba(255,255,255,0.2)', padding: '10px 20px', cursor: 'pointer',
+            }}>CANCEL</button>
+            <button onClick={doChallenge} disabled={isPending} style={{
+              fontFamily: "'Press Start 2P', monospace", fontSize: 8, letterSpacing: 1,
+              background: '#cc3322', color: CREAM, border: '2px solid #0a0705',
+              boxShadow: '3px 3px 0 #0a0705', padding: '10px 20px',
+              cursor: isPending ? 'not-allowed' : 'pointer', opacity: isPending ? 0.6 : 1,
+            }}>{isPending ? 'CONFIRMING...' : 'CONFIRM CHALLENGE'}</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
 // TICKER — live data
 // ═══════════════════════════════════════════════════════════════
 function Ticker({ holderShort, eth, claimPct, secondsRemaining = 999999 }) {
@@ -341,7 +527,7 @@ function Ticker({ holderShort, eth, claimPct, secondsRemaining = 999999 }) {
         `PRIZE POOL: Ξ ${eth.toFixed(4)}`,
         `COMMUNITY VOTE: ${claimPct}% CLAIM`,
         "SEASON 1",
-        "MINTING SUSPENDED",
+        "MINTING CONTINUES",
         "TRADING STILL OPEN",
       ];
   const doubled = [...items, ...items];
@@ -614,6 +800,8 @@ export default function CountdownSpectator({ onBack }) {
         </div>
         <HolderCard holderAddress={countdownHolder} startTime={countdownStartTime} />
 
+        <ChallengeSection holderAddress={countdownHolder} />
+
         <VoteSection burnVotes={burnVotes} claimVotes={claimVotes} />
 
         <Leaderboard holderAddress={countdownHolder} />
@@ -622,21 +810,21 @@ export default function CountdownSpectator({ onBack }) {
           textAlign: "center", padding: "24px",
           border: `1px solid ${GOLD_DK}44`, background: "rgba(0,0,0,.2)",
         }}>
-          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: CREAM, opacity: .7, letterSpacing: 2, marginBottom: 10 }}>
-            MINTING SUSPENDED
+          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 8, color: CREAM, opacity: .7, letterSpacing: 2, marginBottom: 10 }}>
+            MINTING CONTINUES
           </div>
-          <div style={{ fontFamily: "'VT323', monospace", fontSize: 22, color: CREAM, opacity: .8, marginBottom: 8 }}>
-            The countdown has begun. No new blocks can be minted.
+          <div style={{ fontFamily: "'VT323', monospace", fontSize: 24, color: CREAM, opacity: .8, marginBottom: 8 }}>
+            The countdown is active — but minting, combining, forging, and trading remain open.
           </div>
-          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 6, color: CREAM, opacity: .6, lineHeight: 2.4, letterSpacing: .5, marginBottom: 20 }}>
-            Trading is still open. The countdown only resets if the holder<br/>
-            trades away a required tier and loses their qualifying position.
+          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: CREAM, opacity: .6, lineHeight: 2.4, letterSpacing: .5, marginBottom: 20 }}>
+            Build your collection. If you hold all 6 tiers and rank above<br/>
+            the holder, you can challenge and take over the countdown.
           </div>
           <button onClick={onBack} style={{
             fontFamily: "'Press Start 2P', monospace", fontSize: 9, letterSpacing: 2,
             background: GOLD, color: INK, border: `3px solid ${INK}`,
             boxShadow: `4px 4px 0 ${INK}`, padding: "12px 32px", cursor: "pointer",
-          }}>▶ GO TO MARKET</button>
+          }}>▶ BACK TO GAME</button>
         </div>
 
       </div>

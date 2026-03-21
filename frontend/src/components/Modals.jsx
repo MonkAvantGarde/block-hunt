@@ -1,5 +1,9 @@
 import { useState, useEffect } from "react";
+import { useReadContract, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
 import { useGameState } from '../hooks/useGameState';
+import { CONTRACTS } from '../config/wagmi';
+import { ESCROW_ABI } from '../abis';
+import { formatEther } from 'viem';
 import {
   WOOD_LIGHT as WOOD, GOLD, GOLD_DK, GOLD_LT,
   EMBER, CREAM, INK_DEEP as INK, GREEN, PURPLE, ORANGE,
@@ -759,7 +763,169 @@ export function ProfileModal({ onClose, connectedAddress }) {
           </div>
         )}
       </div>
+
+      {/* Escrow Claims — shows after sacrifice */}
+      {addr && <EscrowClaimsSection address={addr} />}
     </ModalShell>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ESCROW CLAIMS — post-sacrifice payouts (winner 50%, leaderboard 40%)
+// ═══════════════════════════════════════════════════════════════
+function EscrowClaimsSection({ address }) {
+  // Read escrow state
+  const { data: escrowInfo } = useReadContract({
+    address: CONTRACTS.ESCROW,
+    abi: ESCROW_ABI,
+    functionName: "getEscrowInfo",
+    query: { refetchInterval: 15000 },
+  });
+
+  // Read winner pending withdrawal
+  const { data: pendingRaw } = useReadContract({
+    address: CONTRACTS.ESCROW,
+    abi: ESCROW_ABI,
+    functionName: "pendingWithdrawal",
+    args: [address],
+    query: { refetchInterval: 15000 },
+  });
+
+  // Read leaderboard entitlement
+  const { data: entitlementRaw } = useReadContract({
+    address: CONTRACTS.ESCROW,
+    abi: ESCROW_ABI,
+    functionName: "leaderboardEntitlement",
+    args: [address],
+    query: { refetchInterval: 15000 },
+  });
+
+  // Read claimed status
+  const { data: hasClaimed } = useReadContract({
+    address: CONTRACTS.ESCROW,
+    abi: ESCROW_ABI,
+    functionName: "hasClaimed",
+    args: [address],
+    query: { refetchInterval: 15000 },
+  });
+
+  const { writeContract, data: txHash, isPending } = useWriteContract();
+  const { isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
+  const [claimType, setClaimType] = useState(null); // 'winner' | 'leaderboard'
+  const [claimError, setClaimError] = useState(null);
+
+  const sacrificeExecuted = escrowInfo ? escrowInfo[0] : false;
+  const entitlementsSet = escrowInfo ? escrowInfo[1] : false;
+  const pendingEth = pendingRaw ? Number(formatEther(pendingRaw)) : 0;
+  const entitlementEth = entitlementRaw ? Number(formatEther(entitlementRaw)) : 0;
+  const claimed = hasClaimed || false;
+
+  const hasWinnerShare = pendingEth > 0;
+  const hasLeaderboardShare = entitlementEth > 0 && !claimed && entitlementsSet;
+
+  // Nothing to show if no sacrifice or no claims
+  if (!sacrificeExecuted || (!hasWinnerShare && !hasLeaderboardShare)) return null;
+
+  function claimWinner() {
+    setClaimType('winner');
+    setClaimError(null);
+    writeContract({
+      address: CONTRACTS.ESCROW,
+      abi: ESCROW_ABI,
+      functionName: "withdrawWinnerShare",
+      gas: BigInt(300_000),
+    }, {
+      onError: (e) => setClaimError(e.shortMessage || "Withdrawal failed"),
+    });
+  }
+
+  function claimLeaderboard() {
+    setClaimType('leaderboard');
+    setClaimError(null);
+    writeContract({
+      address: CONTRACTS.ESCROW,
+      abi: ESCROW_ABI,
+      functionName: "claimLeaderboardReward",
+      gas: BigInt(300_000),
+    }, {
+      onError: (e) => setClaimError(e.shortMessage || "Claim failed"),
+    });
+  }
+
+  return (
+    <div style={{ padding: "18px 28px 24px", borderTop: "1px solid rgba(255,255,255,.05)" }}>
+      <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 8, color: GOLD, opacity: .8, letterSpacing: 2, marginBottom: 14 }}>
+        ENDGAME PAYOUTS
+      </div>
+
+      {isSuccess && (
+        <div style={{
+          background: "rgba(110,255,138,0.08)", border: "1px solid rgba(110,255,138,0.25)",
+          padding: "12px 16px", marginBottom: 12, textAlign: "center",
+          fontFamily: "'Press Start 2P', monospace", fontSize: 8, color: GREEN, letterSpacing: 1,
+        }}>
+          ✓ {claimType === 'winner' ? 'WINNER SHARE WITHDRAWN' : 'LEADERBOARD REWARD CLAIMED'}
+        </div>
+      )}
+
+      {claimError && (
+        <div style={{
+          background: "rgba(255,50,30,0.08)", border: "1px solid rgba(255,50,30,0.2)",
+          padding: "8px 12px", marginBottom: 12,
+          fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: "#ff8888",
+        }}>{claimError}</div>
+      )}
+
+      {/* Winner's 50% share */}
+      {hasWinnerShare && (
+        <div style={{
+          background: "rgba(200,168,75,0.06)", border: `1px solid ${GOLD_DK}`,
+          padding: "16px 20px", marginBottom: 10,
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+        }}>
+          <div>
+            <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: GOLD, letterSpacing: 1, marginBottom: 4 }}>WINNER'S SHARE (50%)</div>
+            <div style={{ fontFamily: "'VT323', monospace", fontSize: 28, color: GOLD_LT }}>{pendingEth.toFixed(4)} Ξ</div>
+          </div>
+          <button
+            onClick={claimWinner}
+            disabled={isPending}
+            style={{
+              fontFamily: "'Press Start 2P', monospace", fontSize: 8, letterSpacing: 1,
+              color: INK, background: `linear-gradient(135deg,${GOLD_DK},${GOLD})`,
+              border: `2px solid ${INK}`, boxShadow: `3px 3px 0 ${INK}`,
+              padding: "10px 20px", cursor: isPending ? "not-allowed" : "pointer",
+              opacity: isPending ? 0.6 : 1,
+            }}
+          >{isPending && claimType === 'winner' ? '⏳ ...' : 'WITHDRAW'}</button>
+        </div>
+      )}
+
+      {/* Leaderboard 40% share */}
+      {hasLeaderboardShare && (
+        <div style={{
+          background: "rgba(78,205,196,0.06)", border: "1px solid rgba(78,205,196,0.2)",
+          padding: "16px 20px",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+        }}>
+          <div>
+            <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: "#4ecdc4", letterSpacing: 1, marginBottom: 4 }}>LEADERBOARD REWARD</div>
+            <div style={{ fontFamily: "'VT323', monospace", fontSize: 28, color: "#4ecdc4" }}>{entitlementEth.toFixed(4)} Ξ</div>
+          </div>
+          <button
+            onClick={claimLeaderboard}
+            disabled={isPending}
+            style={{
+              fontFamily: "'Press Start 2P', monospace", fontSize: 8, letterSpacing: 1,
+              color: INK, background: "linear-gradient(135deg,#2a9a92,#4ecdc4)",
+              border: `2px solid ${INK}`, boxShadow: `3px 3px 0 ${INK}`,
+              padding: "10px 20px", cursor: isPending ? "not-allowed" : "pointer",
+              opacity: isPending ? 0.6 : 1,
+            }}
+          >{isPending && claimType === 'leaderboard' ? '⏳ ...' : 'CLAIM'}</button>
+        </div>
+      )}
+    </div>
   );
 }
 

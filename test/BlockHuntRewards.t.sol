@@ -51,7 +51,7 @@ contract BlockHuntRewardsTest is Test {
         rewards.deposit{value: 0.5 ether}(0, 6000, 2600, 1400);
 
         vm.expectRevert("Invalid batch");
-        rewards.deposit{value: 0.5 ether}(7, 6000, 2600, 1400);
+        rewards.deposit{value: 0.5 ether}(11, 6000, 2600, 1400);
     }
 
     function test_deposit_reverts_from_non_owner() public {
@@ -720,6 +720,60 @@ contract BlockHuntRewardsTest is Test {
 
         (uint256 totalRecipients,,,) = rewards.batchBounties(1);
         assertEq(totalRecipients, 2); // alice + bob, not 3
+    }
+
+    // ── Keeper role tests ──────────────────────────────────────────────────
+
+    function test_setKeeper() public {
+        address keeperAddr = makeAddr("keeper");
+        rewards.setKeeper(keeperAddr);
+        assertEq(rewards.keeper(), keeperAddr);
+    }
+
+    function test_keeper_can_resolveDailyDraw() public {
+        address keeperAddr = makeAddr("keeper");
+        rewards.setKeeper(keeperAddr);
+
+        rewards.deposit{value: 1 ether}(1, 6000, 2600, 1400);
+        rewards.setDailyPrize(1, 0.01 ether);
+
+        address[] memory wallets = new address[](1);
+        wallets[0] = alice;
+
+        vm.prank(keeperAddr);
+        rewards.resolveDailyDraw(1, 1, wallets, 42);
+
+        (,,address winner,,) = rewards.dailyDraws(1);
+        assertEq(winner, alice);
+    }
+
+    function test_keeper_can_setBatchFirstWinner() public {
+        address keeperAddr = makeAddr("keeper");
+        rewards.setKeeper(keeperAddr);
+
+        rewards.deposit{value: 1 ether}(1, 6000, 2600, 1400);
+
+        vm.prank(keeperAddr);
+        rewards.setBatchFirstWinner(1, 0, alice);
+
+        (address winner,,,) = rewards.batchFirsts(1, 0);
+        assertEq(winner, alice);
+    }
+
+    function test_unauthorized_cannot_call_keeper_functions() public {
+        rewards.deposit{value: 1 ether}(1, 6000, 2600, 1400);
+        rewards.setDailyPrize(1, 0.01 ether);
+
+        address[] memory wallets = new address[](1);
+        wallets[0] = alice;
+
+        vm.prank(alice);
+        vm.expectRevert("Not authorized");
+        rewards.resolveDailyDraw(1, 1, wallets, 42);
+    }
+
+    function test_MAX_BATCHES_is_10() public view {
+        assertEq(rewards.MAX_BATCHES(), 10);
     }
 
     receive() external payable {}

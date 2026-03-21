@@ -72,7 +72,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         return price > 0 ? price : mintPriceForBatch[batch];
     }
 
-    uint256 public constant COUNTDOWN_DURATION = 7 days;
+    uint256 public countdownDuration = 7 days;
     uint256 public constant MINT_REQUEST_TTL   = 1 hours;
 
     mapping(uint256 => uint256) public combineRatio;
@@ -230,6 +230,11 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     }
     function pause()   external onlyOwner { _pause(); }
     function unpause() external onlyOwner { _unpause(); }
+
+    function setCountdownDuration(uint256 _duration) external onlyOwner {
+        require(testMintEnabled, "Test mode disabled");
+        countdownDuration = _duration;
+    }
 
     function setVrfConfig(
         uint256 subId,
@@ -522,7 +527,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         require(countdownActive, "No countdown active");
         require(msg.sender == countdownHolder, "Not the countdown holder");
         require(
-            block.timestamp >= countdownStartTime + COUNTDOWN_DURATION,
+            block.timestamp >= countdownStartTime + countdownDuration,
             "Countdown still running"
         );
         _verifyHoldsAllTiers(msg.sender);
@@ -554,7 +559,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         require(countdownActive, "No countdown active");
         require(msg.sender == countdownHolder, "Not the countdown holder");
         require(
-            block.timestamp >= countdownStartTime + COUNTDOWN_DURATION,
+            block.timestamp >= countdownStartTime + countdownDuration,
             "Countdown still running"
         );
         _verifyHoldsAllTiers(msg.sender);
@@ -587,7 +592,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     function executeDefaultOnExpiry() external nonReentrant {
         require(countdownActive, "No countdown active");
         require(
-            block.timestamp >= countdownStartTime + COUNTDOWN_DURATION,
+            block.timestamp >= countdownStartTime + countdownDuration,
             "Countdown still running"
         );
 

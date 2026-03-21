@@ -1289,12 +1289,13 @@ contract BlockHuntTest is Test {
         vm.warp(block.timestamp + 3 hours + 1);
         mintWindow.closeWindow();
 
-        // [PHASE 2] openWindow is permissionless with MIN_WINDOW_GAP time guard
+        // openWindow requires owner or keeper
         vm.warp(block.timestamp + 4 hours);
+        vm.prank(owner);
         mintWindow.openWindow();
 
         (, , , , uint256 allocated, , , ) = mintWindow.getWindowInfo();
-        assertEq(allocated, 50_000, "2x windowCapForBatch(1) (25,000 each) should accumulate");
+        assertEq(allocated, 66_000, "2x windowCapForBatch(1) (33,000 each) should accumulate");
     }
 
     function test_WindowInfoReturnsCorrectData() public {
@@ -1312,7 +1313,7 @@ contract BlockHuntTest is Test {
         assertEq(day,       1,      "Should be day 1");
         assertGt(openAt,    0,      "Open timestamp should be set");
         assertGt(closeAt,   openAt, "Close should be after open");
-        assertEq(allocated, 25_000, "Batch 1 window cap should be 25,000");
+        assertEq(allocated, 33_000, "Batch 1 window cap should be 33,000");
     }
 
     function test_WindowExpiresByTime() public {
@@ -1343,23 +1344,35 @@ contract BlockHuntTest is Test {
     }
 
     // [PHASE 2] Permissionless openWindow with MIN_WINDOW_GAP time guard
-    function test_OpenWindowPermissionless() public {
+    function test_OpenWindowByKeeper() public {
         // Fast-forward past window + gap
         vm.warp(block.timestamp + 4 hours + 1);
 
-        // Anyone can call openWindow (not just owner)
+        // Set alice as keeper
+        vm.prank(owner);
+        mintWindow.setKeeper(alice);
+
+        // Keeper can call openWindow
         vm.prank(alice);
         mintWindow.openWindow();
 
-        assertEq(mintWindow.isWindowOpen(), true, "Window should be open after permissionless call");
+        assertEq(mintWindow.isWindowOpen(), true, "Window should be open after keeper call");
         assertEq(mintWindow.currentDay(), 2, "Day should advance to 2");
+    }
+
+    function test_OpenWindowUnauthorizedReverts() public {
+        // Non-owner/non-keeper cannot call openWindow
+        vm.warp(block.timestamp + 4 hours + 1);
+        vm.prank(alice);
+        vm.expectRevert("Not authorized");
+        mintWindow.openWindow();
     }
 
     function test_OpenWindowTooEarlyReverts() public {
         // Try to open a new window too soon (< MIN_WINDOW_GAP = 4 hours)
         vm.warp(block.timestamp + 3 hours);
 
-        vm.prank(alice);
+        vm.prank(owner);
         vm.expectRevert("Too early for next window");
         mintWindow.openWindow();
     }
@@ -1491,13 +1504,13 @@ contract BlockHuntTest is Test {
 
         // Try normal openWindow too soon — should revert
         vm.warp(block.timestamp + 3 hours + 1);
-        vm.prank(alice);
+        vm.prank(owner);
         vm.expectRevert("Too early for next window");
         mintWindow.openWindow();
 
         // After MIN_WINDOW_GAP it should work
         vm.warp(block.timestamp + 4 hours);
-        vm.prank(alice);
+        vm.prank(owner);
         mintWindow.openWindow();
         assertEq(mintWindow.isWindowOpen(), true);
     }
@@ -4026,11 +4039,16 @@ contract BlockHuntTest is Test {
     function test_10BatchesInitialized() public view {
         assertEq(mintWindow.batchCount(), 10, "Should have 10 batches");
         assertEq(mintWindow.batchSupply(1), 100_000);
-        assertEq(mintWindow.batchSupply(10), 400_000);
+        assertEq(mintWindow.batchSupply(10), 745_000);
         assertEq(mintWindow.batchPrice(1), 0.00008 ether);
         assertEq(mintWindow.batchPrice(10), 0.00800 ether);
-        assertEq(mintWindow.windowCapForBatch(1), 25_000);
-        assertEq(mintWindow.windowCapForBatch(10), 200_000);
+        assertEq(mintWindow.windowCapForBatch(1), 33_000);
+        assertEq(mintWindow.windowCapForBatch(10), 248_000);
+
+        // Verify total supply = 3,324,000
+        uint256 total;
+        for (uint256 i = 1; i <= 10; i++) { total += mintWindow.batchSupply(i); }
+        assertEq(total, 3_324_000, "Total supply should be 3,324,000");
     }
 
     function test_SetBatchConfig() public {
@@ -4039,6 +4057,36 @@ contract BlockHuntTest is Test {
         assertEq(mintWindow.batchSupply(1), 50_000);
         assertEq(mintWindow.batchPrice(1), 0.00004 ether);
         assertEq(mintWindow.windowCapForBatch(1), 10_000);
+    }
+
+    // ── Keeper role tests ──────────────────────────────────────────────────
+
+    function test_MintWindow_SetKeeper() public {
+        vm.prank(owner);
+        mintWindow.setKeeper(alice);
+        assertEq(mintWindow.keeper(), alice);
+    }
+
+    function test_MintWindow_KeeperCanOpenWindow() public {
+        vm.prank(owner);
+        mintWindow.setKeeper(alice);
+
+        vm.warp(block.timestamp + 4 hours + 1);
+        vm.prank(alice);
+        mintWindow.openWindow();
+        assertEq(mintWindow.isWindowOpen(), true);
+    }
+
+    function test_MintWindow_ResetWindowCap() public {
+        // Close window so rollover accumulates
+        vm.warp(block.timestamp + 3 hours + 1);
+        mintWindow.closeWindow();
+        assertGt(mintWindow.rolloverSupply(), 0, "Rollover should be > 0");
+
+        // Reset
+        vm.prank(owner);
+        mintWindow.resetWindowCap();
+        assertEq(mintWindow.rolloverSupply(), 0, "Rollover should be 0 after reset");
     }
 
     // ── 7. Test mode gate ─────────────────────────────────────────────────
