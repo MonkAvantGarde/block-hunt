@@ -384,7 +384,7 @@ function ChallengeSection({ holderAddress }) {
   const ranksAbove = myScoreNum > holderScoreNum;
 
   const now = Math.floor(Date.now() / 1000);
-  const safeEnd = lastChallengeTime ? Number(lastChallengeTime) + (safePeriod ? Number(safePeriod) : 86400) : 0;
+  const safeEnd = lastChallengeTime ? Number(lastChallengeTime) + (safePeriod != null ? Number(safePeriod) : 86400) : 0;
   const inSafePeriod = now < safeEnd;
   const safeRemaining = Math.max(0, safeEnd - now);
   const safeHours = Math.floor(safeRemaining / 3600);
