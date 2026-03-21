@@ -5,7 +5,7 @@ import { formatEther } from 'viem'
 import { CONTRACTS } from '../config/wagmi'
 import { REWARDS_ABI, WINDOW_ABI } from '../abis'
 
-const SUBGRAPH_URL = "https://api.studio.thegraph.com/query/1744131/blok-hunt/v2.1.0"
+const SUBGRAPH_URL = "https://api.studio.thegraph.com/query/1744131/blok-hunt/version/latest"
 
 // ── Achievement ID mapping (0-12) per batch ─────────────────────────────────
 // IDs 0-3: general firsts, 4-8: tier discoveries, 9-12: advanced firsts

@@ -586,7 +586,7 @@ const TIER_META = [
   { t: 1, name: "THE ORIGIN",     col: "#4466ff" },
 ];
 
-const PROFILE_SUBGRAPH_URL = "https://api.studio.thegraph.com/query/1744131/blok-hunt/v2.1.0";
+const PROFILE_SUBGRAPH_URL = "https://api.studio.thegraph.com/query/1744131/blok-hunt/version/latest";
 
 export function ProfileModal({ onClose, connectedAddress }) {
   const { balances, isConnected } = useGameState();
