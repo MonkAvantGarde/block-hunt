@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useWriteContract, useWaitForTransactionReceipt, useWatchContractEvent, useReadContract } from 'wagmi'
 import { useGameState } from '../hooks/useGameState'
 import { CONTRACTS } from '../config/wagmi'
@@ -127,10 +127,10 @@ export default function GameScreen({ onOpenModal, onNavigate, dismissedSpectator
     isLoading,
   } = useGameState()
 
-  const blocks = {
+  const blocks = useMemo(() => ({
     1: balances[1], 2: balances[2], 3: balances[3], 4: balances[4],
     5: balances[5], 6: balances[6], 7: balances[7],
-  }
+  }), [balances[1], balances[2], balances[3], balances[4], balances[5], balances[6], balances[7]])
   // ── COUNTDOWN STATE FROM CHAIN ──────────────────────────────
 const { data: countdownActive } = useReadContract({
   address: CONTRACTS.TOKEN,
