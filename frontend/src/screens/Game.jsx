@@ -119,6 +119,7 @@ export default function GameScreen({ onOpenModal, onNavigate, dismissedSpectator
     currentBatch,
     mintPrice,
     mintPriceWei,
+    mintStatus,
     userCapReached,
     userMintsRemaining,
     userMintedThisWindow,
@@ -145,7 +146,7 @@ const { data: countdownHolder } = useReadContract({
   watch: true,
 })
 
-  const windowOpen = windowInfo?.isOpen ?? false
+  const windowOpen = mintStatus?.canMint ?? true
   const slots      = windowInfo?.remaining ? Number(windowInfo.remaining) : 0
 
   // ── UI STATE ────────────────────────────────────────────────
@@ -660,6 +661,7 @@ const { data: countdownHolder } = useReadContract({
           <GameStatusBar
             prizePool={prizePool}
             windowInfo={windowInfo}
+            mintStatus={mintStatus}
             currentBatch={currentBatch}
             mintPrice={mintPrice}
           />
@@ -713,7 +715,7 @@ const { data: countdownHolder } = useReadContract({
                 display:"flex", flexDirection:"column",
               }}>
                 <div style={{ flex:1, display:"flex", flexDirection:"column", minHeight:0 }}>
-                  {p.id==="mint"  && <VRFMintPanel onMint={handleMint} windowOpen={windowOpen} windowInfo={windowInfo} slots={slots} prizePool={prizePool} address={address} refetchAll={refetchAll} blocks={blocks} mintPrice={mintPrice} mintPriceWei={mintPriceWei} currentBatch={currentBatch} userCapReached={userCapReached} userMintsRemaining={userMintsRemaining} userMintedThisWindow={userMintedThisWindow} perUserCap={perUserCap} />}
+                  {p.id==="mint"  && <VRFMintPanel onMint={handleMint} windowOpen={windowOpen} windowInfo={windowInfo} mintStatus={mintStatus} slots={slots} prizePool={prizePool} address={address} refetchAll={refetchAll} blocks={blocks} mintPrice={mintPrice} mintPriceWei={mintPriceWei} currentBatch={currentBatch} userCapReached={userCapReached} userMintsRemaining={userMintsRemaining} userMintedThisWindow={userMintedThisWindow} perUserCap={perUserCap} />}
                   {p.id==="forge" && <ForgePanel blocks={blocks} onForge={handleForge} address={address} />}
                   {p.id==="trade" && <TradePanel />}
                   {p.id==="rewards" && <RewardsPanel address={address} blocks={blocks} currentBatch={currentBatch} />}

@@ -83,9 +83,8 @@ contract RedeployToken is Script {
         token.setVrfEnabled(true);
         console.log("VRF configured (2.5M gas).");
 
-        // ── Step 5: Open first mint window on new Token ─────────────────────
-        BlockHuntMintWindow(MINT_WINDOW).forceOpenWindow();
-        console.log("Mint window opened.");
+        // ── Step 5: Minting is always open ────────────────────────────────
+        console.log("Minting is always open (per-player cooldown model).");
 
         vm.stopBroadcast();
 

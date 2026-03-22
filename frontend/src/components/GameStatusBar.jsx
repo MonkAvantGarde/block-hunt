@@ -28,7 +28,7 @@ const PREP_TIPS = [
   "Forge while you wait — improve your odds",
 ]
 
-export default function GameStatusBar({ prizePool, windowInfo, currentBatch, mintPrice }) {
+export default function GameStatusBar({ prizePool, windowInfo, mintStatus, currentBatch, mintPrice }) {
   const [now, setNow] = useState(Math.floor(Date.now() / 1000))
   const [showBanner, setShowBanner] = useState(false)
   const prevOpenRef = useRef(null)
@@ -38,56 +38,31 @@ export default function GameStatusBar({ prizePool, windowInfo, currentBatch, min
     return () => clearInterval(id)
   }, [])
 
-  // ── Fix H: Detect window opening transition ──
-  const windowOpen = windowInfo?.isOpen ?? false
-  useEffect(() => {
-    if (prevOpenRef.current === false && windowOpen === true) {
-      setShowBanner(true)
-      const t = setTimeout(() => setShowBanner(false), 5000)
-      return () => clearTimeout(t)
-    }
-    prevOpenRef.current = windowOpen
-  }, [windowOpen])
+  // ── Per-player cooldown status ──
+  const canMint = mintStatus?.canMint ?? true
+  const onCooldown = mintStatus?.cooldownUntil > 0 && mintStatus.cooldownUntil > now
+  const dailyCapHit = mintStatus && mintStatus.dailyMints >= mintStatus.dailyCap && mintStatus.dailyResetsAt > now
 
-  // ── Window timer ──
-  let timerLabel = "Not yet scheduled"
-  let remainingSecs = null
-  if (windowInfo) {
-    if (windowOpen && windowInfo.closeAt) {
-      const secs = Math.max(0, Number(windowInfo.closeAt) - now)
-      remainingSecs = secs
-      if (secs > 0) timerLabel = formatTime(secs)
-      else timerLabel = "Closing…"
-    } else if (!windowOpen && windowInfo.openAt && Number(windowInfo.openAt) > now) {
-      const secs = Number(windowInfo.openAt) - now
-      remainingSecs = secs
-      timerLabel = formatTime(secs)
-    }
+  // Cooldown timer
+  let statusLabel = "● OPEN"
+  let statusColor = "#6eff8a"
+  let statusDetail = ""
+  if (onCooldown) {
+    const secs = Math.max(0, mintStatus.cooldownUntil - now)
+    statusLabel = "⏳ COOLDOWN"
+    statusColor = "#ffaa33"
+    statusDetail = `ends in ${formatTime(secs)}`
+  } else if (dailyCapHit) {
+    const secs = Math.max(0, mintStatus.dailyResetsAt - now)
+    statusLabel = "⏳ DAILY CAP"
+    statusColor = "#ff4444"
+    statusDetail = `resets in ${formatTime(secs)}`
   }
 
-  // ── Fix F: Urgency colors for open window ──
-  let urgencyColor = "#6eff8a" // green (default when open)
-  let urgencyPulse = "none"
-  if (windowOpen && remainingSecs !== null) {
-    if (remainingSecs <= 900) {
-      // <15 min: red + fast pulse
-      urgencyColor = "#ff4444"
-      urgencyPulse = "urgencyPulse 0.6s ease-in-out infinite"
-    } else if (remainingSecs <= 3600) {
-      // <60 min: amber + moderate pulse
-      urgencyColor = "#ffaa33"
-      urgencyPulse = "urgencyPulse 1.2s ease-in-out infinite"
-    }
-  }
-
-  // ── Fix G: Preparation tip (between windows) ──
-  const tipIndex = Math.floor(now / 30) % PREP_TIPS.length
-  const prepTip = PREP_TIPS[tipIndex]
-
-  // ── Minted bar ──
-  const allocated = windowInfo?.allocated || 0
-  const minted = windowInfo?.minted || 0
-  const mintedPct = allocated > 0 ? Math.min((minted / allocated) * 100, 100) : 0
+  // Cycle progress
+  const cycleMinted = mintStatus?.mintedThisCycle || 0
+  const cycleCap = mintStatus?.cycleCap || 500
+  const cyclePct = cycleCap > 0 ? Math.min((cycleMinted / cycleCap) * 100, 100) : 0
 
   const usd = prizePool ? (parseFloat(prizePool) * ETH_USD).toFixed(0) : "0"
 
@@ -112,24 +87,7 @@ export default function GameStatusBar({ prizePool, windowInfo, currentBatch, min
         }
       `}</style>
 
-      {/* Fix H: Window opening banner */}
-      {showBanner && (
-        <div style={{
-          position: "fixed", top: 0, left: 0, right: 0, zIndex: 9000,
-          background: `linear-gradient(90deg, ${GOLD_DK}, ${GOLD}, ${GOLD_DK})`,
-          padding: "10px 0",
-          textAlign: "center",
-          fontFamily: "'Press Start 2P', monospace",
-          fontSize: 10,
-          color: INK,
-          letterSpacing: 2,
-          textShadow: `0 0 8px ${GOLD}66`,
-          animation: "bannerSlide 0.3s ease-out",
-          boxShadow: `0 2px 12px ${GOLD}44`,
-        }}>
-          ⬡ MINT WINDOW IS NOW OPEN ⬡
-        </div>
-      )}
+      {/* Banner removed — minting is always open */}
 
       <div style={{
         height: 64,
@@ -149,55 +107,32 @@ export default function GameStatusBar({ prizePool, windowInfo, currentBatch, min
 
         <div style={dividerStyle} />
 
-        {/* Col 2: Mint Window */}
+        {/* Col 2: Mint Status */}
         <div style={colStyle}>
-          <div style={labelStyle}>MINT WINDOW</div>
+          <div style={labelStyle}>MINTING</div>
           <div style={{
             ...valueStyle,
-            color: windowOpen ? urgencyColor : "#ff8888",
+            color: statusColor,
             fontSize: 24,
-            animation: windowOpen ? urgencyPulse : "none",
           }}>
-            {windowOpen ? "● OPEN" : "○ CLOSED"}
+            {statusLabel}
           </div>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={{
-                ...detailStyle,
-                color: windowOpen && remainingSecs !== null && remainingSecs <= 3600 ? urgencyColor : undefined,
-                opacity: windowOpen && remainingSecs !== null && remainingSecs <= 3600 ? 0.9 : undefined,
-              }}>
-                {windowOpen
-                  ? `closes ${timerLabel}`
-                  : timerLabel === "Not yet scheduled"
-                    ? timerLabel
-                    : `Next window in ${timerLabel}`
-                }
+              <div style={detailStyle}>
+                {statusDetail || `${cycleMinted}/${cycleCap} this cycle`}
               </div>
-              {allocated > 0 && (
+              <div style={{
+                width: 60, height: 4, background: "rgba(0,0,0,0.4)",
+                borderRadius: 2, overflow: "hidden",
+              }}>
                 <div style={{
-                  width: 60, height: 4, background: "rgba(0,0,0,0.4)",
-                  borderRadius: 2, overflow: "hidden",
-                }}>
-                  <div style={{
-                    height: "100%", width: `${mintedPct}%`,
-                    background: mintedPct > 80 ? "#ff6644" : "#6eff8a",
-                    transition: "width 0.5s",
-                  }} />
-                </div>
-              )}
-            </div>
-            {/* Fix G: Preparation tip when window is closed */}
-            {!windowOpen && timerLabel !== "Not yet scheduled" && (
-              <div style={{
-                fontFamily: "'Courier Prime', monospace",
-                fontSize: 9,
-                color: "rgba(255,255,255,0.3)",
-                fontStyle: "italic",
-              }}>
-                {prepTip}
+                  height: "100%", width: `${cyclePct}%`,
+                  background: cyclePct >= 80 ? "#ff6644" : "#6eff8a",
+                  transition: "width 0.5s",
+                }} />
               </div>
-            )}
+            </div>
           </div>
         </div>
 

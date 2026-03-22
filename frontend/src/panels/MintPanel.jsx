@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { useWriteContract, useWaitForTransactionReceipt, useChainId, useSwitchChain } from 'wagmi';
 import { parseEther, decodeEventLog } from 'viem';
 import { CONTRACTS } from '../config/wagmi';
 import { TOKEN_ABI } from '../abis';
@@ -134,7 +134,12 @@ function savePending(items) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(items)) } catch {}
 }
 
-export default function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, prizePool, address, refetchAll, blocks, mintPrice, mintPriceWei, currentBatch, userCapReached, userMintsRemaining, userMintedThisWindow, perUserCap }) {
+const TARGET_CHAIN_ID = 84532 // Base Sepolia
+
+export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatus, slots, prizePool, address, refetchAll, blocks, mintPrice, mintPriceWei, currentBatch, userCapReached, userMintsRemaining, userMintedThisWindow, perUserCap }) {
+  const chainId = useChainId()
+  const { switchChain } = useSwitchChain()
+  const wrongNetwork = chainId !== TARGET_CHAIN_ID
   const maxMintable = userMintsRemaining != null ? Math.min(500, userMintsRemaining) : 500
   const [qty, setQty] = useState(Math.min(10, maxMintable))
   const [pendingMints, setPendingMints] = useState(() => loadPending())
@@ -280,24 +285,20 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, pr
   }
 
   const now = Math.floor(Date.now() / 1000)
-  let timerLabel = "Not yet scheduled"
+  let timerLabel = ""
   let timerSub = ""
-  if (windowInfo) {
-    if (windowInfo.isOpen && windowInfo.closeAt) {
-      const secs = Math.max(0, Number(windowInfo.closeAt) - now)
-      if (secs > 0) {
-        const h = Math.floor(secs/3600), m = Math.floor((secs%3600)/60), s = secs%60
-        timerLabel = `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`
-      } else {
-        timerLabel = "Closing..."
-      }
-      timerSub = "WINDOW CLOSES"
-    } else if (!windowInfo.isOpen && windowInfo.openAt && Number(windowInfo.openAt) > now) {
-      const secs = Number(windowInfo.openAt) - now
-      const h = Math.floor(secs/3600), m = Math.floor((secs%3600)/60), s = secs%60
-      timerLabel = `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`
-      timerSub = "NEXT WINDOW OPENS"
-    }
+  const onCooldown = mintStatus?.cooldownUntil > 0 && mintStatus.cooldownUntil > now
+  const dailyCapHit = mintStatus && mintStatus.dailyMints >= mintStatus.dailyCap && mintStatus.dailyResetsAt > now
+  if (onCooldown) {
+    const secs = Math.max(0, mintStatus.cooldownUntil - now)
+    const h = Math.floor(secs/3600), m = Math.floor((secs%3600)/60), s = secs%60
+    timerLabel = `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`
+    timerSub = "COOLDOWN ENDS"
+  } else if (dailyCapHit) {
+    const secs = Math.max(0, mintStatus.dailyResetsAt - now)
+    const h = Math.floor(secs/3600), m = Math.floor((secs%3600)/60), s = secs%60
+    timerLabel = `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`
+    timerSub = "DAILY CAP RESETS"
   }
 
   return (
@@ -324,7 +325,7 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, pr
         {mintError && (
           <TxErrorPanel error={mintError} context="mint" onRetry={() => setMintError(null)} />
         )}
-        {/* Window status */}
+        {/* Mint status */}
         <div style={{
           display:"flex", justifyContent:"space-between", alignItems:"center",
           background: windowOpen ? "rgba(110,255,138,0.08)" : "rgba(255,80,80,0.08)",
@@ -336,10 +337,10 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, pr
             color: windowOpen ? "#6eff8a" : "#ff8888",
             animation: windowOpen ? "badgePulse 2s infinite" : "none",
           }}>
-            {windowOpen ? "● WINDOW OPEN" : "○ WINDOW CLOSED"}
+            {windowOpen ? "● MINTING OPEN" : onCooldown ? "⏳ COOLDOWN" : "⏳ DAILY CAP REACHED"}
           </span>
           <span style={{ fontFamily:"'Courier Prime', monospace", fontSize:12, color:"rgba(255,255,255,0.4)" }}>
-            {timerLabel !== "Not yet scheduled" ? (windowOpen ? `closes in ${timerLabel}` : `opens in ${timerLabel}`) : ""}
+            {timerLabel ? `${timerSub.toLowerCase()} in ${timerLabel}` : ""}
           </span>
         </div>
 
@@ -400,19 +401,27 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, pr
             fontFamily:"'Press Start 2P', monospace", fontSize:8,
             color:"#ff8888", textAlign:"center", lineHeight:1.8,
           }}>
-            MINT CAP REACHED ({perUserCap}/{perUserCap})<br/>
-            Wait for next window to open
+            {onCooldown
+              ? <>CYCLE CAP REACHED ({mintStatus?.cycleCap}/{mintStatus?.cycleCap})<br/>Cooldown ends in {timerLabel}</>
+              : <>DAILY CAP REACHED ({mintStatus?.dailyCap}/{mintStatus?.dailyCap})<br/>Resets in {timerLabel}</>
+            }
           </div>
         )}
 
-        <Btn onClick={doMint} disabled={!windowOpen || userCapReached || qty < 1}>
-          {!windowOpen ? "✕  WINDOW CLOSED" : userCapReached ? "✕  WINDOW CAP REACHED" : "▶  MINT NOW"}
-        </Btn>
+        {wrongNetwork ? (
+          <Btn onClick={() => switchChain({ chainId: TARGET_CHAIN_ID })}>
+            ⚠  SWITCH TO BASE
+          </Btn>
+        ) : (
+          <Btn onClick={doMint} disabled={!windowOpen || userCapReached || qty < 1}>
+            {userCapReached ? (onCooldown ? "⏳  ON COOLDOWN" : "⏳  DAILY CAP REACHED") : "▶  MINT NOW"}
+          </Btn>
+        )}
 
         <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:"rgba(255,255,255,0.45)", textAlign:"center" }}>
           Current price: {mintPrice} Ξ (Batch {currentBatch})
-          {windowOpen && !userCapReached && userMintedThisWindow > 0 && (
-            <span style={{ color:"#ffcc33" }}> — {userMintsRemaining} mints left this window</span>
+          {windowOpen && !userCapReached && mintStatus?.mintedThisCycle > 0 && (
+            <span style={{ color:"#ffcc33" }}> — {userMintsRemaining} left this cycle · {mintStatus?.dailyMints}/{mintStatus?.dailyCap} today</span>
           )}
         </div>
         </>)}
@@ -445,31 +454,33 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, slots, pr
           </div>
         </div>
 
-        {/* Mint remaining bar */}
-        {windowInfo && windowInfo.allocated > 0 && (
+        {/* Cycle progress bar */}
+        {mintStatus && (
           <div style={{ background:"rgba(0,0,0,0.25)", border:"1px solid rgba(255,255,255,0.06)", padding:"8px 10px" }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:4 }}>
               <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:"rgba(255,255,255,0.45)", letterSpacing:0.5 }}>
-                {(() => {
-                  const pct = Math.round((windowInfo.minted / windowInfo.allocated) * 100);
-                  return pct >= 100 ? "WINDOW SOLD OUT" : pct >= 80 ? "FILLING FAST" : "MINTED THIS WINDOW";
-                })()}
+                {mintStatus.mintedThisCycle >= mintStatus.cycleCap ? "CYCLE COMPLETE" : "MINTED THIS CYCLE"}
               </span>
               <span style={{ fontFamily:"'VT323', monospace", fontSize:16, color:"rgba(255,255,255,0.5)" }}>
-                {windowInfo.minted.toLocaleString()} / {windowInfo.allocated.toLocaleString()}
+                {mintStatus.mintedThisCycle.toLocaleString()} / {mintStatus.cycleCap.toLocaleString()}
               </span>
             </div>
             <div style={{ height:8, background:"rgba(0,0,0,0.45)", border:"1px solid rgba(255,255,255,0.06)", overflow:"hidden" }}>
               <div style={{
                 height:"100%",
-                width:`${Math.min((windowInfo.minted / windowInfo.allocated) * 100, 100)}%`,
+                width:`${Math.min((mintStatus.mintedThisCycle / mintStatus.cycleCap) * 100, 100)}%`,
                 background: (() => {
-                  const pct = (windowInfo.minted / windowInfo.allocated) * 100;
+                  const pct = (mintStatus.mintedThisCycle / mintStatus.cycleCap) * 100;
                   return pct >= 80 ? "#ff4433" : pct >= 50 ? "#ffcc33" : "#6eff8a";
                 })(),
                 transition:"width 0.5s, background 0.5s",
               }} />
             </div>
+            {mintStatus.dailyMints > 0 && (
+              <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:"rgba(255,255,255,0.3)", marginTop:4 }}>
+                TODAY: {mintStatus.dailyMints.toLocaleString()} / {mintStatus.dailyCap.toLocaleString()}
+              </div>
+            )}
           </div>
         )}
 

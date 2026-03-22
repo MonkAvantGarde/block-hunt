@@ -166,10 +166,8 @@ contract Deploy is Script {
         // forge.setVrfEnabled(true);
         console.log("VRF configured (disabled until consumers added on dashboard).");
 
-        // ── Step 5: Open first mint window ─────────────────────────────────
-
-        mintWindow.forceOpenWindow();
-        console.log("First mint window opened.");
+        // ── Step 5: Minting is always open (no window to open) ────────────
+        console.log("Minting is always open (per-player cooldown model).");
 
         // ── Step 6: Register Season 1 ──────────────────────────────────────
 

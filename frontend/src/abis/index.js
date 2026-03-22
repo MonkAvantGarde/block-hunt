@@ -134,6 +134,28 @@ export const WINDOW_ABI = [
   { name: 'batchPrice', type: 'function', stateMutability: 'view',
     inputs: [{ name: 'batch', type: 'uint256' }],
     outputs: [{ name: '', type: 'uint256' }] },
+  // Always-open mint: per-player cooldown reads
+  { name: 'playerMintInfo', type: 'function', stateMutability: 'view',
+    inputs: [{ name: 'player', type: 'address' }],
+    outputs: [
+      { name: 'canMint', type: 'bool' },
+      { name: 'mintedThisCycle', type: 'uint256' },
+      { name: 'cycleCap', type: 'uint256' },
+      { name: 'cooldownUntil', type: 'uint256' },
+      { name: 'mintsRemaining', type: 'uint256' },
+      { name: 'playerDailyMints', type: 'uint256' },
+      { name: 'dailyCapValue', type: 'uint256' },
+      { name: 'dailyResetsAt', type: 'uint256' },
+    ] },
+  { name: 'canPlayerMint', type: 'function', stateMutability: 'view',
+    inputs: [{ name: 'player', type: 'address' }],
+    outputs: [{ name: '', type: 'bool' }] },
+  { name: 'cooldownDuration', type: 'function', stateMutability: 'view',
+    inputs: [], outputs: [{ name: '', type: 'uint256' }] },
+  { name: 'perCycleCap', type: 'function', stateMutability: 'view',
+    inputs: [], outputs: [{ name: '', type: 'uint256' }] },
+  { name: 'dailyCap', type: 'function', stateMutability: 'view',
+    inputs: [], outputs: [{ name: '', type: 'uint256' }] },
 ];
 
 

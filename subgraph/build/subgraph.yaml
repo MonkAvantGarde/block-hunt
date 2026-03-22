@@ -6,9 +6,9 @@ dataSources:
     name: BlockHuntToken
     network: base-sepolia
     source:
-      address: "0x669aa2605E66565EFe874dBb8cAB9450c75E7A00"
+      address: "0x541a85733d98F720A3b7C15f2fdc2f157599B9dc"
       abi: BlockHuntToken
-      startBlock: 39031734
+      startBlock: 39171240
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -19,7 +19,7 @@ dataSources:
         - SeasonStat
       abis:
         - name: BlockHuntToken
-          file: BlockHuntToken/abis/BlockHuntToken.json
+          file: BlockHuntToken/BlockHuntToken.json
       eventHandlers:
         - event: TransferSingle(indexed address,indexed address,indexed address,uint256,uint256)
           handler: handleTransferSingle
@@ -36,9 +36,9 @@ dataSources:
     name: BlockHuntForge
     network: base-sepolia
     source:
-      address: "0x94d283a21386f1c5b051cE0ac5b9AD878182827c"
+      address: "0xCCFcadA80ba90fe305DD60A1b6374F8b53e86c55"
       abi: BlockHuntForge
-      startBlock: 39031734
+      startBlock: 39171240
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -48,7 +48,7 @@ dataSources:
         - Player
       abis:
         - name: BlockHuntForge
-          file: BlockHuntForge/abis/BlockHuntForge.json
+          file: BlockHuntForge/BlockHuntForge.json
       eventHandlers:
         - event: ForgeRequested(indexed uint256,indexed address,uint256,uint256)
           handler: handleForgeRequested
@@ -59,9 +59,9 @@ dataSources:
     name: BlockHuntRewards
     network: base-sepolia
     source:
-      address: "0xEfD6e50be55b8eA31019eCFd44b72D77C5bd840d"
+      address: "0x834CEf549b311233b99D1a1fc46CDa2C87C0317B"
       abi: BlockHuntRewards
-      startBlock: 39031734
+      startBlock: 39171240
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -74,7 +74,7 @@ dataSources:
         - Player
       abis:
         - name: BlockHuntRewards
-          file: BlockHuntRewards/abis/BlockHuntRewards.json
+          file: BlockHuntRewards/BlockHuntRewards.json
       eventHandlers:
         - event: DailyDrawResolved(indexed uint256,indexed address,uint256)
           handler: handleDailyDrawResolved

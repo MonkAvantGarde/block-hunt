@@ -1,4 +1,4 @@
-type Player @entity {
+type Player @entity(immutable: false) {
   id: ID!          # lowercase wallet address
   address: Bytes!
 
@@ -29,7 +29,7 @@ type Player @entity {
 }
 
 # One entity per player per UTC day — used for streak calculation
-type PlayerActivity @entity {
+type PlayerActivity @entity(immutable: false) {
   id: ID!                  # "{playerAddress}-{YYYY-MM-DD}"
   player: Player!
   date: String!            # "YYYY-MM-DD" UTC
@@ -40,7 +40,7 @@ type PlayerActivity @entity {
 }
 
 # Singleton — always id = "season-1"
-type SeasonStat @entity {
+type SeasonStat @entity(immutable: false) {
   id: ID!
   totalMinted: BigInt!
   totalBurned: BigInt!
@@ -49,7 +49,7 @@ type SeasonStat @entity {
 
 # ── Forge tracking ─────────────────────────────────────────────────────────
 
-type ForgeRequest @entity {
+type ForgeRequest @entity(immutable: false) {
   id: ID!                    # "{requestId}"
   requestId: BigInt!
   player: Player!
@@ -63,7 +63,7 @@ type ForgeRequest @entity {
 
 # ── Rewards tracking ──────────────────────────────────────────────────────
 
-type DailyDraw @entity {
+type DailyDraw @entity(immutable: false) {
   id: ID!                    # "draw-{day}"
   day: BigInt!
   winner: Player!
@@ -73,7 +73,7 @@ type DailyDraw @entity {
   claimedAmount: BigInt
 }
 
-type BatchFirst @entity {
+type BatchFirst @entity(immutable: false) {
   id: ID!                    # "{batch}-{achievementId}"
   batch: Int!
   achievementId: Int!
@@ -84,7 +84,7 @@ type BatchFirst @entity {
   claimedAmount: BigInt
 }
 
-type BatchBounty @entity {
+type BatchBounty @entity(immutable: false) {
   id: ID!                    # "bounty-{batch}"
   batch: Int!
   totalRecipients: BigInt!
@@ -93,7 +93,7 @@ type BatchBounty @entity {
   distributed: Boolean!
 }
 
-type BatchRewardConfig @entity {
+type BatchRewardConfig @entity(immutable: false) {
   id: ID!                    # "config-{batch}"
   batch: Int!
   totalDeposit: BigInt!

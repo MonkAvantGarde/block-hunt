@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { useWriteContract, useWaitForTransactionReceipt, useChainId, useSwitchChain } from 'wagmi';
 import { CONTRACTS } from '../config/wagmi';
 import { FORGE_ABI } from '../abis';
 import { GOLD, INK, CREAM, TMAP, COMBINE_RATIOS } from '../config/design-tokens';
@@ -7,7 +7,12 @@ import { CARD_IMAGES } from '../components/TierCard';
 import { VRF, Btn, TxErrorPanel, VRFStatusHeader } from '../components/GameUI';
 import ForgeNumberReveal from '../components/ForgeNumberReveal';
 
+const TARGET_CHAIN_ID = 84532 // Base Sepolia
+
 export default function ForgePanel({ blocks, onForge, address }) {
+  const chainId = useChainId()
+  const { switchChain } = useSwitchChain()
+  const wrongNetwork = chainId !== TARGET_CHAIN_ID
   const [selTier,   setSelTier]     = useState(null)
   const [burnCount, setBurn]        = useState(10)
   const [vrfState,  setVrfState]    = useState(VRF.IDLE)
@@ -493,6 +498,10 @@ export default function ForgePanel({ blocks, onForge, address }) {
                         <Btn onClick={() => { setShowConfirm(false); doForge(); }} color="#cc3322" sm>CONFIRM FORGE</Btn>
                       </div>
                     </div>
+                  ) : wrongNetwork ? (
+                    <Btn onClick={() => switchChain({ chainId: TARGET_CHAIN_ID })}>
+                      ⚠  SWITCH TO BASE
+                    </Btn>
                   ) : (
                     <Btn onClick={() => {
                       const holdings = blocks[selTier] || 0;
@@ -647,9 +656,15 @@ export default function ForgePanel({ blocks, onForge, address }) {
           <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:11, color:'rgba(255,255,255,0.3)' }}>
             Total burn: {batchAttempts.reduce((s, a) => s + a.burnCount, 0)} blocks across {batchAttempts.length} attempt{batchAttempts.length !== 1 ? 's' : ''}
           </div>
-          <Btn onClick={doBatchForge} color="#9933cc">
-            ⚡ FORGE ALL  ({batchAttempts.length} attempt{batchAttempts.length !== 1 ? 's' : ''})
-          </Btn>
+          {wrongNetwork ? (
+            <Btn onClick={() => switchChain({ chainId: TARGET_CHAIN_ID })}>
+              ⚠  SWITCH TO BASE
+            </Btn>
+          ) : (
+            <Btn onClick={doBatchForge} color="#9933cc">
+              ⚡ FORGE ALL  ({batchAttempts.length} attempt{batchAttempts.length !== 1 ? 's' : ''})
+            </Btn>
+          )}
         </div>
       )}
     </div>

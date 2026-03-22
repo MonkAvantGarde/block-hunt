@@ -102,10 +102,8 @@ contract DeployV2_1 is Script {
         token.setVrfEnabled(true);
         console.log("VRF configured on new Token.");
 
-        // ── Open first mint window ─────────────────────────────────────────
-
-        mintWindow.forceOpenWindow();
-        console.log("First mint window opened.");
+        // ── Minting is always open (no window to open) ──────────────────
+        console.log("Minting is always open (per-player cooldown model).");
 
         vm.stopBroadcast();
 

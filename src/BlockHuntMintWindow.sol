@@ -3,56 +3,34 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-interface IBlockHuntTokenMint {
-    function resetDailyWindow(uint256 newDay) external;
-}
-
+/**
+ * ╔══════════════════════════════════════════════════════════════╗
+ * ║      THE BLOCK HUNT — MINT WINDOW (Always-Open + Cooldown) ║
+ * ║                                                              ║
+ * ║  Minting is always open. Per-player rate limiting via:       ║
+ * ║    - Cycle cap (500): 3h cooldown after hitting cap          ║
+ * ║    - Daily cap (5000): hard stop until 24h period expires    ║
+ * ║                                                              ║
+ * ║  All values configurable for testnet tuning.                 ║
+ * ╚══════════════════════════════════════════════════════════════╝
+ */
 contract BlockHuntMintWindow is Ownable {
 
-    uint256 public constant WINDOW_DURATION = 3 hours;
-    uint256 public constant MIN_WINDOW_GAP = 4 hours;
+    // ── Configurable rate limits ──────────────────────────────────────────
+    uint256 public cooldownDuration = 3 hours;
+    uint256 public perCycleCap = 500;
+    uint256 public dailyCap = 5000;
+    uint256 public dailyPeriod = 24 hours;
 
-    // ── Configurable batch structure ──────────────────────────────────────
+    // ── Batch structure (unchanged from previous version) ─────────────────
     struct BatchConfig {
         uint256 supply;
         uint256 price;      // in wei
-        uint256 windowCap;
+        uint256 windowCap;  // legacy field, kept for storage compat
     }
 
     uint256 public batchCount = 10;
     BatchConfig[] public batchConfigs;
-
-    event BatchConfigUpdated(uint256 indexed batchIndex, uint256 supply, uint256 price, uint256 windowCap);
-    event AllBatchConfigsUpdated(uint256 batchCount);
-    event KeeperUpdated(address indexed keeper);
-    event WindowCapReset();
-
-    // ── Keeper role ─────────────────────────────────────────────────────
-
-    address public keeper;
-
-    modifier onlyOwnerOrKeeper() {
-        require(msg.sender == owner() || msg.sender == keeper, "Not authorized");
-        _;
-    }
-
-    function setKeeper(address _keeper) external onlyOwner {
-        keeper = _keeper;
-        emit KeeperUpdated(_keeper);
-    }
-
-    // ── Existing state ────────────────────────────────────────────────────
-
-    address public tokenContract;
-
-    struct Window {
-        uint256 day;
-        uint256 openAt;
-        uint256 closeAt;
-        uint256 allocated;
-        uint256 minted;
-        bool settled;
-    }
 
     struct Batch {
         uint256 id;
@@ -60,49 +38,92 @@ contract BlockHuntMintWindow is Ownable {
         uint256 totalMinted;
     }
 
-    mapping(uint256 => Window) public windows;
     mapping(uint256 => Batch) public batches;
-    mapping(uint256 => mapping(address => uint256)) public userDayMints;
-
-    uint256 public currentDay;
-    uint256 public rolloverSupply;
     uint256 public currentBatch;
-    uint256 public perUserDayCap = 500;
 
+    // ── Per-player cooldown state ─────────────────────────────────────────
+    struct PlayerMintState {
+        uint256 cycleMints;       // mints in current cycle (resets after cooldown)
+        uint256 cooldownUntil;    // timestamp when cooldown expires (0 = none)
+        uint256 dailyMints;       // mints in current 24h period
+        uint256 dailyPeriodStart; // timestamp when current 24h period began
+    }
+
+    mapping(address => PlayerMintState) public playerState;
+
+    // ── Linked contracts ──────────────────────────────────────────────────
+    address public tokenContract;
+    address public keeper;
     bool public testModeEnabled = true;
 
-    event WindowOpened(uint256 indexed day, uint256 openAt, uint256 closeAt, uint256 allocated);
-    event WindowClosed(uint256 indexed day, uint256 minted, uint256 rollover);
-    event BatchAdvanced(uint256 indexed newBatch, uint256 day);
+    // ── Events ────────────────────────────────────────────────────────────
+    event BatchAdvanced(uint256 indexed newBatch, uint256 timestamp);
+    event BatchConfigUpdated(uint256 indexed batchIndex, uint256 supply, uint256 price, uint256 windowCap);
+    event AllBatchConfigsUpdated(uint256 batchCount);
+    event KeeperUpdated(address indexed keeper);
+    event CooldownStarted(address indexed player, uint256 until);
+    event DailyCapReached(address indexed player, uint256 resetsAt);
 
+    // ── Modifiers ─────────────────────────────────────────────────────────
+    modifier onlyOwnerOrKeeper() {
+        require(msg.sender == owner() || msg.sender == keeper, "Not authorized");
+        _;
+    }
+
+    // ── Constructor ───────────────────────────────────────────────────────
     constructor() Ownable(msg.sender) {
         currentBatch = 1;
         batches[1] = Batch({ id: 1, startDay: 1, totalMinted: 0 });
 
-        // Initialize 10 batches — 25% geometric growth, total 3,324,000
-        // Window cap = batchSupply / 3 (three windows per day), rounded to nearest 1K
-        batchConfigs.push(BatchConfig(100_000,  0.00008 ether,  33_000));  // B1
-        batchConfigs.push(BatchConfig(125_000,  0.00012 ether,  42_000));  // B2
-        batchConfigs.push(BatchConfig(156_000,  0.00020 ether,  52_000));  // B3
-        batchConfigs.push(BatchConfig(195_000,  0.00032 ether,  65_000));  // B4
-        batchConfigs.push(BatchConfig(244_000,  0.00056 ether,  81_000));  // B5
-        batchConfigs.push(BatchConfig(305_000,  0.00100 ether, 102_000));  // B6
-        batchConfigs.push(BatchConfig(381_000,  0.00180 ether, 127_000));  // B7
-        batchConfigs.push(BatchConfig(477_000,  0.00320 ether, 159_000));  // B8
-        batchConfigs.push(BatchConfig(596_000,  0.00520 ether, 199_000));  // B9
-        batchConfigs.push(BatchConfig(745_000,  0.00800 ether, 248_000));  // B10
+        // 10 batches — 25% geometric growth
+        batchConfigs.push(BatchConfig(100_000,  0.00008 ether,  0));  // B1
+        batchConfigs.push(BatchConfig(125_000,  0.00012 ether,  0));  // B2
+        batchConfigs.push(BatchConfig(156_000,  0.00020 ether,  0));  // B3
+        batchConfigs.push(BatchConfig(195_000,  0.00032 ether,  0));  // B4
+        batchConfigs.push(BatchConfig(244_000,  0.00056 ether,  0));  // B5
+        batchConfigs.push(BatchConfig(305_000,  0.00100 ether,  0));  // B6
+        batchConfigs.push(BatchConfig(381_000,  0.00180 ether,  0));  // B7
+        batchConfigs.push(BatchConfig(477_000,  0.00320 ether,  0));  // B8
+        batchConfigs.push(BatchConfig(596_000,  0.00520 ether,  0));  // B9
+        batchConfigs.push(BatchConfig(745_000,  0.00800 ether,  0));  // B10
     }
 
-    // ── Config read functions (replace old hardcoded functions) ────────────
+    // ── Admin setters ─────────────────────────────────────────────────────
+
+    function setTokenContract(address addr) external onlyOwner {
+        tokenContract = addr;
+    }
+
+    function setKeeper(address _keeper) external onlyOwner {
+        keeper = _keeper;
+        emit KeeperUpdated(_keeper);
+    }
+
+    function setCooldownDuration(uint256 _duration) external onlyOwner {
+        cooldownDuration = _duration;
+    }
+
+    function setPerCycleCap(uint256 _cap) external onlyOwner {
+        perCycleCap = _cap;
+    }
+
+    function setDailyCap(uint256 _cap) external onlyOwner {
+        dailyCap = _cap;
+    }
+
+    function setDailyPeriod(uint256 _period) external onlyOwner {
+        dailyPeriod = _period;
+    }
+
+    function disableTestMode() external onlyOwner {
+        testModeEnabled = false;
+    }
+
+    // ── Batch config reads ────────────────────────────────────────────────
 
     function batchSupply(uint256 batch) public view returns (uint256) {
         require(batch >= 1 && batch <= batchCount, "Invalid batch");
         return batchConfigs[batch - 1].supply;
-    }
-
-    function windowCapForBatch(uint256 batch) public view returns (uint256) {
-        require(batch >= 1 && batch <= batchCount, "Invalid batch");
-        return batchConfigs[batch - 1].windowCap;
     }
 
     function batchPrice(uint256 batch) public view returns (uint256) {
@@ -110,7 +131,14 @@ contract BlockHuntMintWindow is Ownable {
         return batchConfigs[batch - 1].price;
     }
 
-    // ── Config setters (test mode only) ───────────────────────────────────
+    /// @notice Returns max uint256 — disables Token's internal window cap check.
+    ///         Per-player rate limiting is handled by recordMint() instead.
+    function windowCapForBatch(uint256 batch) public view returns (uint256) {
+        require(batch >= 1 && batch <= batchCount, "Invalid batch");
+        return type(uint256).max;
+    }
+
+    // ── Batch config setters (test mode) ──────────────────────────────────
 
     function setBatchConfig(
         uint256 batchIndex, uint256 supply, uint256 price, uint256 windowCap
@@ -139,97 +167,124 @@ contract BlockHuntMintWindow is Ownable {
         emit AllBatchConfigsUpdated(batchCount);
     }
 
-    // ── Admin ─────────────────────────────────────────────────────────────
+    // ── Always-open mint gate (Token compat) ──────────────────────────────
 
-    function setTokenContract(address addr) external onlyOwner { tokenContract = addr; }
-    function setPerUserDayCap(uint256 cap) external onlyOwner { perUserDayCap = cap; }
-    function disableTestMode() external onlyOwner { testModeEnabled = false; }
-
-    function resetWindowCap() external onlyOwner {
-        rolloverSupply = 0;
-        emit WindowCapReset();
+    /// @notice Always returns true. Minting is always open.
+    ///         Per-player rate limiting happens in recordMint().
+    function isWindowOpen() external pure returns (bool) {
+        return true;
     }
 
-    // ── Window management ─────────────────────────────────────────────────
+    // ── Per-player mint info (frontend reads this) ────────────────────────
 
-    function openWindow() external onlyOwnerOrKeeper {
-        if (currentDay > 0) {
-            require(
-                block.timestamp >= windows[currentDay].openAt + MIN_WINDOW_GAP,
-                "Too early for next window"
-            );
+    function canPlayerMint(address player) external view returns (bool) {
+        PlayerMintState storage s = playerState[player];
+
+        // Check cycle cooldown (skip if cooldown expired)
+        if (s.cooldownUntil > 0 && block.timestamp < s.cooldownUntil) return false;
+
+        // Check daily cap (skip if period expired)
+        if (s.dailyPeriodStart > 0 && block.timestamp < s.dailyPeriodStart + dailyPeriod) {
+            if (s.dailyMints >= dailyCap) return false;
         }
 
-        Window storage prev = windows[currentDay];
-        if (prev.openAt > 0 && !prev.settled) {
-            _closeWindow(currentDay);
+        return true;
+    }
+
+    function playerMintInfo(address player) external view returns (
+        bool    canMint,
+        uint256 mintedThisCycle,
+        uint256 cycleCap,
+        uint256 cooldownUntil,
+        uint256 mintsRemaining,
+        uint256 playerDailyMints,
+        uint256 dailyCapValue,
+        uint256 dailyResetsAt
+    ) {
+        PlayerMintState storage s = playerState[player];
+
+        bool onCooldown = s.cooldownUntil > 0 && block.timestamp < s.cooldownUntil;
+        bool dailyExpired = s.dailyPeriodStart == 0 || block.timestamp >= s.dailyPeriodStart + dailyPeriod;
+        bool cooldownExpired = s.cooldownUntil > 0 && block.timestamp >= s.cooldownUntil;
+
+        // Effective cycle mints (0 if cooldown expired)
+        uint256 effectiveCycleMints = (cooldownExpired || s.cooldownUntil == 0) && !onCooldown
+            ? 0  // cycle resets when cooldown expires
+            : s.cycleMints;
+        // But if never been on cooldown and has mints, show actual
+        if (s.cooldownUntil == 0) effectiveCycleMints = s.cycleMints;
+
+        uint256 effectiveDailyMints = dailyExpired ? 0 : s.dailyMints;
+        bool dailyCapHit = !dailyExpired && effectiveDailyMints >= dailyCap;
+
+        canMint = !onCooldown && !dailyCapHit;
+        mintedThisCycle = effectiveCycleMints;
+        cycleCap = perCycleCap;
+        cooldownUntil = onCooldown ? s.cooldownUntil : 0;
+
+        uint256 cycleRemaining = perCycleCap > effectiveCycleMints ? perCycleCap - effectiveCycleMints : 0;
+        uint256 dailyRemaining = dailyCap > effectiveDailyMints ? dailyCap - effectiveDailyMints : 0;
+        mintsRemaining = cycleRemaining < dailyRemaining ? cycleRemaining : dailyRemaining;
+        if (onCooldown || dailyCapHit) mintsRemaining = 0;
+
+        playerDailyMints = effectiveDailyMints;
+        dailyCapValue = dailyCap;
+        dailyResetsAt = (!dailyExpired && s.dailyPeriodStart > 0)
+            ? s.dailyPeriodStart + dailyPeriod
+            : 0;
+    }
+
+    // ── Record mint (called by Token contract) ────────────────────────────
+
+    function recordMint(address player, uint256 quantity) external {
+        require(msg.sender == tokenContract, "Only token contract");
+
+        PlayerMintState storage s = playerState[player];
+
+        // 1. Reset daily period if expired (or first mint ever)
+        if (s.dailyPeriodStart == 0 || block.timestamp >= s.dailyPeriodStart + dailyPeriod) {
+            s.dailyPeriodStart = block.timestamp;
+            s.dailyMints = 0;
+            s.cycleMints = 0;
+            s.cooldownUntil = 0;
         }
 
-        currentDay++;
-        uint256 allocated = windowCapForBatch(currentBatch) + rolloverSupply;
-        rolloverSupply = 0;
-
-        windows[currentDay] = Window({
-            day: currentDay,
-            openAt: block.timestamp,
-            closeAt: block.timestamp + WINDOW_DURATION,
-            allocated: allocated,
-            minted: 0,
-            settled: false
-        });
-
-        if (tokenContract != address(0)) {
-            IBlockHuntTokenMint(tokenContract).resetDailyWindow(currentDay);
+        // 2. Reset cycle if cooldown has expired
+        if (s.cooldownUntil > 0 && block.timestamp >= s.cooldownUntil) {
+            s.cycleMints = 0;
+            s.cooldownUntil = 0;
         }
 
+        // 3. Reject if still on cooldown
+        require(s.cooldownUntil == 0, "Player on cooldown");
+
+        // 4. Enforce daily cap
+        require(s.dailyMints + quantity <= dailyCap, "Daily mint cap reached");
+
+        // 5. Enforce cycle cap
+        require(s.cycleMints + quantity <= perCycleCap, "Cycle mint cap reached");
+
+        // 6. Update counters
+        s.cycleMints += quantity;
+        s.dailyMints += quantity;
+        batches[currentBatch].totalMinted += quantity;
+
+        // 7. Trigger cooldown if cycle cap reached
+        if (s.cycleMints >= perCycleCap) {
+            s.cooldownUntil = block.timestamp + cooldownDuration;
+            emit CooldownStarted(player, s.cooldownUntil);
+        }
+
+        // 8. Check daily cap
+        if (s.dailyMints >= dailyCap) {
+            emit DailyCapReached(player, s.dailyPeriodStart + dailyPeriod);
+        }
+
+        // 9. Batch advancement
         _checkBatchAdvancement();
-        emit WindowOpened(currentDay, block.timestamp, block.timestamp + WINDOW_DURATION, allocated);
     }
 
-    function forceOpenWindow() external onlyOwner {
-        require(testModeEnabled, "Test mode disabled");
-
-        Window storage prev = windows[currentDay];
-        if (prev.openAt > 0 && !prev.settled) {
-            _closeWindow(currentDay);
-        }
-
-        currentDay++;
-        uint256 allocated = windowCapForBatch(currentBatch) + rolloverSupply;
-        rolloverSupply = 0;
-
-        windows[currentDay] = Window({
-            day: currentDay,
-            openAt: block.timestamp,
-            closeAt: block.timestamp + WINDOW_DURATION,
-            allocated: allocated,
-            minted: 0,
-            settled: false
-        });
-
-        if (tokenContract != address(0)) {
-            IBlockHuntTokenMint(tokenContract).resetDailyWindow(currentDay);
-        }
-
-        _checkBatchAdvancement();
-        emit WindowOpened(currentDay, block.timestamp, block.timestamp + WINDOW_DURATION, allocated);
-    }
-
-    function closeWindow() external {
-        Window storage w = windows[currentDay];
-        require(w.openAt > 0, "No window exists");
-        require(block.timestamp > w.closeAt, "Window still active");
-        _closeWindow(currentDay);
-    }
-
-    function _closeWindow(uint256 day) internal {
-        Window storage w = windows[day];
-        require(!w.settled, "Already settled");
-        w.settled = true;
-        uint256 unused = w.allocated > w.minted ? w.allocated - w.minted : 0;
-        rolloverSupply += unused;
-        emit WindowClosed(day, w.minted, unused);
-    }
+    // ── Batch advancement ─────────────────────────────────────────────────
 
     function _checkBatchAdvancement() internal {
         if (currentBatch >= batchCount) return;
@@ -238,37 +293,14 @@ contract BlockHuntMintWindow is Ownable {
             currentBatch++;
             batches[currentBatch] = Batch({
                 id:          currentBatch,
-                startDay:    currentDay,
+                startDay:    0,
                 totalMinted: 0
             });
-            emit BatchAdvanced(currentBatch, currentDay);
+            emit BatchAdvanced(currentBatch, block.timestamp);
         }
     }
 
-    function isWindowOpen() external view returns (bool) {
-        Window storage w = windows[currentDay];
-        return (
-            w.openAt > 0 &&
-            block.timestamp >= w.openAt &&
-            block.timestamp <= w.closeAt &&
-            !w.settled &&
-            w.minted < w.allocated
-        );
-    }
-
-    function recordMint(address player, uint256 quantity) external {
-        require(msg.sender == tokenContract, "Only token contract");
-        require(
-            userDayMints[currentDay][player] + quantity <= perUserDayCap,
-            "Per-user window cap reached"
-        );
-
-        Window storage w = windows[currentDay];
-        w.minted += quantity;
-        batches[currentBatch].totalMinted += quantity;
-        userDayMints[currentDay][player] += quantity;
-        _checkBatchAdvancement();
-    }
+    // ── Legacy compat: getWindowInfo (Token/frontend may still call) ──────
 
     function getWindowInfo() external view returns (
         bool isOpen,
@@ -280,14 +312,35 @@ contract BlockHuntMintWindow is Ownable {
         uint256 remaining,
         uint256 rollover
     ) {
-        Window storage w = windows[currentDay];
-        isOpen = this.isWindowOpen();
-        day = currentDay;
-        openAt = w.openAt;
-        closeAt = w.closeAt;
-        allocated = w.allocated;
-        minted = w.minted;
-        remaining = allocated > minted ? allocated - minted : 0;
-        rollover = rolloverSupply;
+        isOpen = true;
+        day = 0;
+        openAt = 0;
+        closeAt = 0;
+        allocated = 0;
+        minted = batches[currentBatch].totalMinted;
+        remaining = 0;
+        rollover = 0;
+    }
+
+    // ── Legacy compat: perUserDayCap (returns dailyCap) ───────────────────
+
+    function perUserDayCap() external view returns (uint256) {
+        return dailyCap;
+    }
+
+    // ── Legacy compat: currentDay (always 1) ──────────────────────────────
+
+    function currentDay() external pure returns (uint256) {
+        return 1;
+    }
+
+    // ── Legacy compat: userDayMints (returns player's daily mints) ────────
+
+    function userDayMints(uint256, address player) external view returns (uint256) {
+        PlayerMintState storage s = playerState[player];
+        if (s.dailyPeriodStart == 0 || block.timestamp >= s.dailyPeriodStart + dailyPeriod) {
+            return 0;
+        }
+        return s.dailyMints;
     }
 }

@@ -103,27 +103,16 @@ export function useGameState() {
     query: { refetchInterval: 60_000 },
   })
 
-  // ── PER-USER WINDOW CAP ────────────────────────────────────────────────────
-  const windowDay = windowRaw ? Number(windowRaw[1]) : 0
-
+  // ── PER-PLAYER MINT STATUS (always-open + cooldown) ────────────────────────
   const {
-    data: perUserCapRaw,
-    refetch: refetchPerUserCap,
+    data: playerMintRaw,
+    refetch: refetchPlayerMint,
   } = useReadContract({
     address: CONTRACTS.WINDOW,
     abi: WINDOW_ABI,
-    functionName: 'perUserDayCap',
-  })
-
-  const {
-    data: userMintsRaw,
-    refetch: refetchUserMints,
-  } = useReadContract({
-    address: CONTRACTS.WINDOW,
-    abi: WINDOW_ABI,
-    functionName: 'userDayMints',
-    args: [BigInt(Math.max(windowDay, 1)), address || '0x0000000000000000000000000000000000000000'],
-    query: { enabled: isConnected && !!address && windowDay > 0 },
+    functionName: 'playerMintInfo',
+    args: [address || '0x0000000000000000000000000000000000000000'],
+    query: { enabled: isConnected && !!address, refetchInterval: 15_000 },
   })
 
   // ── ESCROW INFO (sacrifice distribution state) ─────────────────────────────
@@ -193,11 +182,25 @@ export function useGameState() {
       }
     : null
 
-  // Per-user window cap tracking
-  const perUserCap = perUserCapRaw ? Number(perUserCapRaw) : 500
-  const userMintedThisWindow = userMintsRaw ? Number(userMintsRaw) : 0
-  const userMintsRemaining = Math.max(0, perUserCap - userMintedThisWindow)
-  const userCapReached = userMintedThisWindow >= perUserCap
+  // Per-player mint status (always-open + cooldown)
+  const mintStatus = playerMintRaw
+    ? {
+        canMint:         playerMintRaw[0],
+        mintedThisCycle: Number(playerMintRaw[1]),
+        cycleCap:        Number(playerMintRaw[2]),
+        cooldownUntil:   Number(playerMintRaw[3]),
+        mintsRemaining:  Number(playerMintRaw[4]),
+        dailyMints:      Number(playerMintRaw[5]),
+        dailyCap:        Number(playerMintRaw[6]),
+        dailyResetsAt:   Number(playerMintRaw[7]),
+      }
+    : { canMint: true, mintedThisCycle: 0, cycleCap: 500, cooldownUntil: 0, mintsRemaining: 500, dailyMints: 0, dailyCap: 5000, dailyResetsAt: 0 }
+
+  // Backward compat aliases (used by MintPanel and other components)
+  const perUserCap = mintStatus.cycleCap
+  const userMintedThisWindow = mintStatus.mintedThisCycle
+  const userMintsRemaining = mintStatus.mintsRemaining
+  const userCapReached = !mintStatus.canMint
 
   // How many tiers (2-7) does the connected player hold at least 1 of?
   const tiersHeld = isConnected
@@ -214,8 +217,7 @@ export function useGameState() {
     refetchTreasury()
     refetchBatch()
     refetchMintPrice()
-    refetchPerUserCap()
-    refetchUserMints()
+    refetchPlayerMint()
     refetchEscrow()
   }
 
@@ -235,6 +237,7 @@ export function useGameState() {
     mintPrice,              // number in ETH (e.g. 0.00008)
     mintPriceWei,           // bigint for transaction value
     escrowInfo,
+    mintStatus,
     perUserCap,
     userMintedThisWindow,
     userMintsRemaining,
