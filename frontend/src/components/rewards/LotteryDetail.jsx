@@ -68,21 +68,23 @@ export default function LotteryDetail({ rewards, onClaim }) {
         </div>
       </div>
 
-      {/* Yesterday's winner */}
-      <div style={{ ...fp, fontSize: 8, color: 'rgba(255,255,255,0.5)', letterSpacing: 1, marginBottom: 12 }}>YESTERDAY'S WINNER</div>
-      {lottery.yesterdayWinner ? (
+      {/* Latest winner */}
+      <div style={{ ...fp, fontSize: 8, color: 'rgba(255,255,255,0.5)', letterSpacing: 1, marginBottom: 12 }}>
+        {lottery.todayDrawResolved ? "TODAY'S WINNER" : "YESTERDAY'S WINNER"}
+      </div>
+      {lottery.latestWinner ? (
         <div style={{
           padding: '14px 16px',
           background: 'linear-gradient(135deg,rgba(200,168,75,0.08),rgba(78,205,196,0.05))',
-          border: '1px solid rgba(200,168,75,0.2)',
+          border: `1px solid ${lottery.latestIsYou ? 'rgba(110,255,138,0.4)' : 'rgba(200,168,75,0.2)'}`,
           display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16,
         }}>
           <div style={{ width: 36, height: 36, background: `linear-gradient(135deg,${GOLD_DK},${GOLD})`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <span style={{ ...fv, fontSize: 20, color: INK }}>★</span>
           </div>
           <div style={{ flex: 1 }}>
-            <div style={{ ...fp, fontSize: 8, color: 'rgba(200,168,75,0.6)', letterSpacing: 1, marginBottom: 3 }}>WINNER — {lottery.yesterdayDate}</div>
-            <div style={{ ...fv, fontSize: 20, color: CREAM }}>{lottery.yesterdayWinner}</div>
+            <div style={{ ...fp, fontSize: 8, color: 'rgba(200,168,75,0.6)', letterSpacing: 1, marginBottom: 3 }}>WINNER — {lottery.latestDate}</div>
+            <div style={{ ...fv, fontSize: 20, color: CREAM }}>{lottery.latestWinner}{lottery.latestIsYou ? ' (YOU!)' : ''}</div>
           </div>
           <div style={{ ...fv, fontSize: 24, color: GOLD_LT, textShadow: '0 0 8px rgba(200,168,75,0.3)' }}>+{lottery.prize.toFixed(2)} Ξ</div>
         </div>

@@ -328,10 +328,10 @@ contract BlockHuntMintWindow is Ownable {
         return dailyCap;
     }
 
-    // ── Legacy compat: currentDay (always 1) ──────────────────────────────
+    // ── Legacy compat: currentDay (returns UTC day number) ─────────────────
 
-    function currentDay() external pure returns (uint256) {
-        return 1;
+    function currentDay() external view returns (uint256) {
+        return block.timestamp / 86400;
     }
 
     // ── Legacy compat: userDayMints (returns player's daily mints) ────────

@@ -215,8 +215,16 @@ export function useRewardsData(address, blocks, currentBatch) {
     query: { refetchInterval: 30_000 },
   })
 
-  // ── Contract reads: yesterday's draw + day-before draws ──────────────────
+  // ── Contract reads: today's draw + recent draws ──────────────────────────
   const currentDay = currentDayRaw ? Number(currentDayRaw) : 0
+
+  const { data: todayDrawRaw } = useReadContract({
+    address: CONTRACTS.REWARDS,
+    abi: REWARDS_ABI,
+    functionName: 'dailyDraws',
+    args: [BigInt(Math.max(currentDay, 0))],
+    query: { enabled: currentDay > 0, refetchInterval: 120_000 },
+  })
 
   const { data: yesterdayDrawRaw } = useReadContract({
     address: CONTRACTS.REWARDS,
@@ -395,9 +403,12 @@ export function useRewardsData(address, blocks, currentBatch) {
       return { date: dateStr, winner: shortAddr(winner), wallets: uniquePlayers, prize: prizeEth, isYou, claimed, day: dayNum }
     }
 
+    const todayDraw = parseDraw(todayDrawRaw, currentDay, address)
     const yesterdayDraw = parseDraw(yesterdayDrawRaw, currentDay - 1, address)
+    const latestDraw = todayDraw || yesterdayDraw
     const recentDraws = [
-      parseDraw(yesterdayDrawRaw, currentDay - 1, address),
+      todayDraw,
+      yesterdayDraw,
       parseDraw(draw2Raw, currentDay - 2, address),
       parseDraw(draw3Raw, currentDay - 3, address),
     ].filter(Boolean)
@@ -408,6 +419,10 @@ export function useRewardsData(address, blocks, currentBatch) {
       wallets: uniquePlayers || 0,
       eligible: mintedToday,
       windowCloseAt,
+      todayDrawResolved: !!todayDraw,
+      latestWinner: latestDraw ? latestDraw.winner : null,
+      latestDate: latestDraw ? latestDraw.date : null,
+      latestIsYou: latestDraw ? latestDraw.isYou : false,
       yesterdayWinner: yesterdayDraw ? yesterdayDraw.winner : null,
       yesterdayDate: yesterdayDraw ? yesterdayDraw.date : null,
       recentDraws,
@@ -618,7 +633,7 @@ export function useRewardsData(address, blocks, currentBatch) {
     }
   }, [subgraphData, blocks, dailyPrizeRaw, lotteryPoolRaw, batchConfigRaw, bountyPoolRaw,
       batchBountiesRaw, firstsPoolRaw, currentDayRaw, windowInfoRaw,
-      yesterdayDrawRaw, draw2Raw, draw3Raw, address, currentDay, batch,
+      todayDrawRaw, yesterdayDrawRaw, draw2Raw, draw3Raw, address, currentDay, batch,
       batchFirstsRaw, claimableRaw])
 
   return { rewards, loading, refetchClaimable }
