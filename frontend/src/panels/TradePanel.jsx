@@ -81,7 +81,7 @@ const stepBtnStyle = {
   color: 'rgba(255,255,255,0.6)', fontFamily: "'Press Start 2P', monospace", fontSize: 8, cursor: 'pointer',
 }
 
-export default function TradePanel() {
+export default function TradePanel({ refetchAll, onRevealTier }) {
   const [tab, setTab] = useState('listings')
   const [createTier, setCreateTier] = useState(7)
   const [createQty, setCreateQty] = useState(10)
@@ -89,6 +89,7 @@ export default function TradePanel() {
   const createDays = 7
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(null)
+  const [lastBoughtTier, setLastBoughtTier] = useState(null)
 
   const chainId = useChainId()
   const { switchChain } = useSwitchChain()
@@ -105,6 +106,11 @@ export default function TradePanel() {
       setSuccess('Transaction confirmed!')
       refetchListings()
       refetchApproval()
+      if (refetchAll) refetchAll()
+      if (lastBoughtTier && onRevealTier) {
+        setTimeout(() => onRevealTier(lastBoughtTier), 500)
+      }
+      setLastBoughtTier(null)
       setTimeout(() => setSuccess(null), 3000)
     }
   }, [txConfirmed])
@@ -137,6 +143,7 @@ export default function TradePanel() {
 
   function doBuy(listing, qty) {
     setError(null)
+    setLastBoughtTier(listing.tier)
     const totalWei = listing.pricePerBlockWei * BigInt(qty)
     writeContract({
       address: CONTRACTS.MARKETPLACE,

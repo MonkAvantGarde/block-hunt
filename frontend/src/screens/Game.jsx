@@ -717,7 +717,7 @@ const { data: countdownHolder } = useReadContract({
                 <div style={{ flex:1, display:"flex", flexDirection:"column", minHeight:0 }}>
                   {p.id==="mint"  && <VRFMintPanel onMint={handleMint} windowOpen={windowOpen} windowInfo={windowInfo} mintStatus={mintStatus} slots={slots} prizePool={prizePool} address={address} refetchAll={refetchAll} blocks={blocks} mintPrice={mintPrice} mintPriceWei={mintPriceWei} currentBatch={currentBatch} userCapReached={userCapReached} userMintsRemaining={userMintsRemaining} userMintedThisWindow={userMintedThisWindow} perUserCap={perUserCap} />}
                   {p.id==="forge" && <ForgePanel blocks={blocks} onForge={handleForge} address={address} />}
-                  {p.id==="trade" && <TradePanel />}
+                  {p.id==="trade" && <TradePanel refetchAll={refetchAll} onRevealTier={(tier) => setRevealTier(tier)} />}
                   {p.id==="rewards" && <RewardsPanel address={address} blocks={blocks} currentBatch={currentBatch} />}
                 </div>
               </div>
