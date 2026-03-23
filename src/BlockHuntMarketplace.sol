@@ -7,11 +7,11 @@ import "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 
 /**
  * ╔══════════════════════════════════════════════════════════════╗
- * ║      THE BLOCK HUNT — MARKETPLACE (Fixed-Price Listings)    ║
+ * ║      THE BLOCK HUNT — MARKETPLACE                           ║
  * ║                                                              ║
- * ║  Non-custodial P2P trading of Block Hunt ERC-1155 tokens.   ║
- * ║  Tokens stay in seller's wallet until a buyer fills.        ║
- * ║  10% protocol fee on every sale → creator wallet.           ║
+ * ║  Sell listings: non-custodial, tokens stay in seller wallet  ║
+ * ║  Buy offers: ETH escrowed, any matching seller can fill     ║
+ * ║  10% protocol fee on every trade.                            ║
  * ╚══════════════════════════════════════════════════════════════╝
  */
 contract BlockHuntMarketplace is Ownable, ReentrancyGuard {
@@ -43,10 +43,28 @@ contract BlockHuntMarketplace is Ownable, ReentrancyGuard {
     uint256 public nextListingId = 1;
     mapping(uint256 => Listing) public listings;
 
+    // ── Offer data (buy-side) ───────────────────────────────────────────
+    struct Offer {
+        address buyer;
+        uint256 tier;
+        uint256 quantity;
+        uint256 pricePerBlock;
+        uint256 createdAt;
+        uint256 expiresAt;
+        bool    active;
+    }
+
+    uint256 public nextOfferId = 1;
+    mapping(uint256 => Offer) public offers;
+
     // ── Events ────────────────────────────────────────────────────────────
     event ListingCreated(uint256 indexed listingId, address indexed seller, uint256 tier, uint256 quantity, uint256 pricePerBlock, uint256 expiresAt);
     event ListingFilled(uint256 indexed listingId, address indexed buyer, uint256 quantity, uint256 totalPaid);
     event ListingCancelled(uint256 indexed listingId);
+
+    event OfferCreated(uint256 indexed offerId, address indexed buyer, uint256 tier, uint256 quantity, uint256 pricePerBlock, uint256 expiresAt);
+    event OfferFilled(uint256 indexed offerId, address indexed seller, uint256 quantity, uint256 totalPaid);
+    event OfferCancelled(uint256 indexed offerId, uint256 ethReturned);
 
     // ── Constructor ───────────────────────────────────────────────────────
     constructor(address tokenAddress_, address feeRecipient_) Ownable(msg.sender) {
@@ -192,6 +210,146 @@ contract BlockHuntMarketplace is Ownable, ReentrancyGuard {
                 quantities[idx] = l.quantity;
                 prices[idx] = l.pricePerBlock;
                 expiresAts[idx] = l.expiresAt;
+                idx++;
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  BUY-SIDE OFFERS
+    // ═══════════════════════════════════════════════════════════════════════
+
+    // ── Create offer ─────────────────────────────────────────────────────
+    function createOffer(
+        uint256 tier,
+        uint256 quantity,
+        uint256 pricePerBlock,
+        uint256 duration
+    ) external payable returns (uint256 offerId) {
+        require(tier >= 1 && tier <= 7, "Invalid tier");
+        require(quantity > 0, "Zero quantity");
+        require(pricePerBlock >= MIN_PRICE, "Below min price");
+
+        uint256 totalEscrow = pricePerBlock * quantity;
+        require(msg.value >= totalEscrow, "Insufficient ETH");
+
+        if (duration == 0) duration = DEFAULT_DURATION;
+        require(duration >= MIN_DURATION, "Duration too short");
+        require(duration <= MAX_DURATION, "Duration too long");
+
+        offerId = nextOfferId++;
+        offers[offerId] = Offer({
+            buyer:         msg.sender,
+            tier:           tier,
+            quantity:       quantity,
+            pricePerBlock:  pricePerBlock,
+            createdAt:      block.timestamp,
+            expiresAt:      block.timestamp + duration,
+            active:         true
+        });
+
+        // Refund excess
+        if (msg.value > totalEscrow) {
+            (bool refunded, ) = payable(msg.sender).call{value: msg.value - totalEscrow}("");
+            require(refunded, "Refund failed");
+        }
+
+        emit OfferCreated(offerId, msg.sender, tier, quantity, pricePerBlock, block.timestamp + duration);
+    }
+
+    // ── Fill offer (seller accepts) ──────────────────────────────────────
+    function fillOffer(uint256 offerId, uint256 quantity) external nonReentrant {
+        Offer storage offer = offers[offerId];
+        require(offer.active, "Offer not active");
+        require(block.timestamp <= offer.expiresAt, "Offer expired");
+        require(quantity > 0 && quantity <= offer.quantity, "Invalid quantity");
+        require(token.balanceOf(msg.sender, offer.tier) >= quantity, "Insufficient balance");
+        require(token.isApprovedForAll(msg.sender, address(this)), "Marketplace not approved");
+
+        uint256 totalPrice = offer.pricePerBlock * quantity;
+
+        // Update offer
+        offer.quantity -= quantity;
+        if (offer.quantity == 0) offer.active = false;
+
+        // Fee split
+        uint256 fee = (totalPrice * protocolFeeBps) / 10000;
+        uint256 sellerAmount = totalPrice - fee;
+
+        // Transfer tokens from seller to buyer
+        token.safeTransferFrom(msg.sender, offer.buyer, offer.tier, quantity, "");
+
+        // Transfer ETH from escrow
+        if (fee > 0) {
+            (bool feeSent, ) = payable(feeRecipient).call{value: fee}("");
+            require(feeSent, "Fee transfer failed");
+        }
+        (bool sellerSent, ) = payable(msg.sender).call{value: sellerAmount}("");
+        require(sellerSent, "Seller transfer failed");
+
+        emit OfferFilled(offerId, msg.sender, quantity, totalPrice);
+    }
+
+    // ── Cancel offer ─────────────────────────────────────────────────────
+    function cancelOffer(uint256 offerId) external nonReentrant {
+        Offer storage offer = offers[offerId];
+        require(offer.buyer == msg.sender, "Not buyer");
+        require(offer.active, "Already cancelled");
+
+        offer.active = false;
+        uint256 refundAmount = offer.pricePerBlock * offer.quantity;
+
+        if (refundAmount > 0) {
+            (bool sent, ) = payable(msg.sender).call{value: refundAmount}("");
+            require(sent, "Refund failed");
+        }
+
+        emit OfferCancelled(offerId, refundAmount);
+    }
+
+    // ── Offer view helpers ───────────────────────────────────────────────
+
+    function getOffer(uint256 offerId) external view returns (
+        address buyer, uint256 tier, uint256 quantity,
+        uint256 pricePerBlock, uint256 createdAt, uint256 expiresAt, bool active
+    ) {
+        Offer storage o = offers[offerId];
+        return (o.buyer, o.tier, o.quantity, o.pricePerBlock, o.createdAt, o.expiresAt, o.active);
+    }
+
+    function getActiveOffers(uint256 offset, uint256 limit) external view returns (
+        uint256[] memory ids,
+        address[] memory buyers,
+        uint256[] memory tiers,
+        uint256[] memory quantities,
+        uint256[] memory prices,
+        uint256[] memory expiresAts
+    ) {
+        uint256 count = 0;
+        uint256 end = nextOfferId;
+        uint256 start = offset > 0 ? offset : 1;
+
+        for (uint256 i = start; i < end && count < limit; i++) {
+            if (offers[i].active && block.timestamp <= offers[i].expiresAt) count++;
+        }
+
+        ids = new uint256[](count);
+        buyers = new address[](count);
+        tiers = new uint256[](count);
+        quantities = new uint256[](count);
+        prices = new uint256[](count);
+        expiresAts = new uint256[](count);
+
+        uint256 idx = 0;
+        for (uint256 i = start; i < end && idx < count; i++) {
+            Offer storage o = offers[i];
+            if (o.active && block.timestamp <= o.expiresAt) {
+                ids[idx] = i;
+                buyers[idx] = o.buyer;
+                tiers[idx] = o.tier;
+                quantities[idx] = o.quantity;
+                prices[idx] = o.pricePerBlock;
+                expiresAts[idx] = o.expiresAt;
                 idx++;
             }
         }

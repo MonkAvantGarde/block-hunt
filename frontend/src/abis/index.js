@@ -477,4 +477,51 @@ export const MARKETPLACE_ABI = [
     { name: 'totalPaid', type: 'uint256', indexed: false }] },
   { name: 'ListingCancelled', type: 'event', inputs: [
     { name: 'listingId', type: 'uint256', indexed: true }] },
+
+  // ── Buy-side offers ──
+  { name: 'createOffer', type: 'function', stateMutability: 'payable',
+    inputs: [
+      { name: 'tier', type: 'uint256' }, { name: 'quantity', type: 'uint256' },
+      { name: 'pricePerBlock', type: 'uint256' }, { name: 'duration', type: 'uint256' },
+    ],
+    outputs: [{ name: 'offerId', type: 'uint256' }] },
+  { name: 'fillOffer', type: 'function', stateMutability: 'nonpayable',
+    inputs: [{ name: 'offerId', type: 'uint256' }, { name: 'quantity', type: 'uint256' }],
+    outputs: [] },
+  { name: 'cancelOffer', type: 'function', stateMutability: 'nonpayable',
+    inputs: [{ name: 'offerId', type: 'uint256' }], outputs: [] },
+  { name: 'getOffer', type: 'function', stateMutability: 'view',
+    inputs: [{ name: 'offerId', type: 'uint256' }],
+    outputs: [
+      { name: 'buyer', type: 'address' }, { name: 'tier', type: 'uint256' },
+      { name: 'quantity', type: 'uint256' }, { name: 'pricePerBlock', type: 'uint256' },
+      { name: 'createdAt', type: 'uint256' }, { name: 'expiresAt', type: 'uint256' },
+      { name: 'active', type: 'bool' },
+    ] },
+  { name: 'getActiveOffers', type: 'function', stateMutability: 'view',
+    inputs: [{ name: 'offset', type: 'uint256' }, { name: 'limit', type: 'uint256' }],
+    outputs: [
+      { name: 'ids', type: 'uint256[]' }, { name: 'buyers', type: 'address[]' },
+      { name: 'tiers', type: 'uint256[]' }, { name: 'quantities', type: 'uint256[]' },
+      { name: 'prices', type: 'uint256[]' }, { name: 'expiresAts', type: 'uint256[]' },
+    ] },
+  { name: 'nextOfferId', type: 'function', stateMutability: 'view',
+    inputs: [], outputs: [{ name: '', type: 'uint256' }] },
+
+  // Offer events
+  { name: 'OfferCreated', type: 'event', inputs: [
+    { name: 'offerId', type: 'uint256', indexed: true },
+    { name: 'buyer', type: 'address', indexed: true },
+    { name: 'tier', type: 'uint256', indexed: false },
+    { name: 'quantity', type: 'uint256', indexed: false },
+    { name: 'pricePerBlock', type: 'uint256', indexed: false },
+    { name: 'expiresAt', type: 'uint256', indexed: false }] },
+  { name: 'OfferFilled', type: 'event', inputs: [
+    { name: 'offerId', type: 'uint256', indexed: true },
+    { name: 'seller', type: 'address', indexed: true },
+    { name: 'quantity', type: 'uint256', indexed: false },
+    { name: 'totalPaid', type: 'uint256', indexed: false }] },
+  { name: 'OfferCancelled', type: 'event', inputs: [
+    { name: 'offerId', type: 'uint256', indexed: true },
+    { name: 'ethReturned', type: 'uint256', indexed: false }] },
 ];

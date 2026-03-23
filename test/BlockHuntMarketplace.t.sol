@@ -249,4 +249,130 @@ contract BlockHuntMarketplaceTest is Test {
         vm.expectRevert("Max 20%");
         marketplace.setProtocolFeeBps(2001);
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  BUY-SIDE OFFER TESTS
+    // ═══════════════════════════════════════════════════════════════════
+
+    function test_createOffer() public {
+        vm.prank(buyer);
+        uint256 id = marketplace.createOffer{value: 0.5 ether}(7, 50, 0.01 ether, 7 days);
+        assertEq(id, 1);
+
+        (address b, uint256 tier, uint256 qty, uint256 price, , uint256 exp, bool active) = marketplace.getOffer(1);
+        assertEq(b, buyer);
+        assertEq(tier, 7);
+        assertEq(qty, 50);
+        assertEq(price, 0.01 ether);
+        assertTrue(active);
+        assertEq(exp, block.timestamp + 7 days);
+        assertEq(address(marketplace).balance, 0.5 ether);
+    }
+
+    function test_fillOfferFull() public {
+        // Buyer creates offer: 50 T7 at 0.01 ETH each = 0.5 ETH escrowed
+        vm.prank(buyer);
+        marketplace.createOffer{value: 0.5 ether}(7, 50, 0.01 ether, 7 days);
+
+        uint256 sellerBefore = seller.balance;
+        uint256 feeBefore = fee.balance;
+
+        // Seller fills
+        vm.prank(seller);
+        marketplace.fillOffer(1, 50);
+
+        // Tokens transferred: seller→buyer
+        assertEq(token.balanceOf(buyer, 7), 50);
+        assertEq(token.balanceOf(seller, 7), 50); // had 100
+
+        // ETH: 10% fee, 90% seller
+        assertEq(fee.balance - feeBefore, 0.05 ether);    // 10% of 0.5
+        assertEq(seller.balance - sellerBefore, 0.45 ether); // 90%
+
+        // Offer deactivated
+        (, , , , , , bool active) = marketplace.getOffer(1);
+        assertFalse(active);
+    }
+
+    function test_fillOfferPartial() public {
+        vm.prank(buyer);
+        marketplace.createOffer{value: 0.5 ether}(7, 50, 0.01 ether, 7 days);
+
+        vm.prank(seller);
+        marketplace.fillOffer(1, 10);
+
+        // 10 transferred, 40 remaining
+        assertEq(token.balanceOf(buyer, 7), 10);
+        (, , uint256 qty, , , , bool active) = marketplace.getOffer(1);
+        assertEq(qty, 40);
+        assertTrue(active);
+        // 0.4 ETH still escrowed
+        assertEq(address(marketplace).balance, 0.4 ether);
+    }
+
+    function test_cancelOffer() public {
+        vm.prank(buyer);
+        marketplace.createOffer{value: 0.5 ether}(7, 50, 0.01 ether, 7 days);
+
+        uint256 before = buyer.balance;
+        vm.prank(buyer);
+        marketplace.cancelOffer(1);
+
+        (, , , , , , bool active) = marketplace.getOffer(1);
+        assertFalse(active);
+        assertEq(buyer.balance - before, 0.5 ether); // full refund
+        assertEq(address(marketplace).balance, 0);
+    }
+
+    function test_revert_fillExpiredOffer() public {
+        vm.prank(buyer);
+        marketplace.createOffer{value: 0.1 ether}(7, 10, 0.01 ether, 1 hours);
+
+        vm.warp(block.timestamp + 2 hours);
+
+        vm.prank(seller);
+        vm.expectRevert("Offer expired");
+        marketplace.fillOffer(1, 10);
+    }
+
+    function test_revert_fillInsufficientTokens() public {
+        vm.prank(buyer);
+        marketplace.createOffer{value: 10 ether}(7, 999, 0.01 ether, 7 days);
+
+        vm.prank(seller);
+        vm.expectRevert("Insufficient balance");
+        marketplace.fillOffer(1, 999); // seller only has 100
+    }
+
+    function test_revert_fillNotApproved() public {
+        vm.prank(buyer);
+        marketplace.createOffer{value: 0.1 ether}(7, 10, 0.01 ether, 7 days);
+
+        // Revoke seller approval
+        vm.prank(seller);
+        token.setApprovalForAll(address(marketplace), false);
+
+        vm.prank(seller);
+        vm.expectRevert("Marketplace not approved");
+        marketplace.fillOffer(1, 10);
+    }
+
+    function test_revert_cancelNotBuyer() public {
+        vm.prank(buyer);
+        marketplace.createOffer{value: 0.1 ether}(7, 10, 0.01 ether, 7 days);
+
+        vm.prank(seller);
+        vm.expectRevert("Not buyer");
+        marketplace.cancelOffer(1);
+    }
+
+    function test_excessRefundOnCreate() public {
+        uint256 before = buyer.balance;
+        vm.prank(buyer);
+        marketplace.createOffer{value: 5 ether}(7, 10, 0.01 ether, 7 days);
+
+        // Should escrow 0.1 ETH, refund 4.9 ETH
+        assertEq(before - buyer.balance, 0.1 ether);
+        assertEq(address(marketplace).balance, 0.1 ether);
+    }
 }
