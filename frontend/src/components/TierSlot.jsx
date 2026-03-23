@@ -51,8 +51,15 @@ function useTilt(enabled) {
 export default function TierSlot({ tierId, count, onCombine, combining=false }) {
   const t = TMAP[tierId];
   const ratio = COMBINE_RATIOS[tierId];
-  const canCombine = !!ratio && count >= ratio && tierId > 1;
+  const maxCombines = ratio ? Math.floor(count / ratio) : 0;
+  const canCombine = maxCombines > 0 && tierId > 1;
+  const [combineCount, setCombineCount] = useState(1);
   const progress = ratio ? Math.min((count / ratio) * 100, 100) : 0;
+
+  // Reset combine count if max changes
+  useEffect(() => {
+    if (combineCount > maxCombines && maxCombines > 0) setCombineCount(maxCombines);
+  }, [maxCombines]);
 
   // B1: Hover tilt
   const { ref: tiltRef, tilt, onMove, onLeave } = useTilt(count > 0)
@@ -166,23 +173,51 @@ export default function TierSlot({ tierId, count, onCombine, combining=false }) 
       )}
 
       {tierId > 1 && (
-        <button
-          onClick={() => canCombine && !combining && onCombine(tierId)}
-          style={{
-            width:130, padding:"6px 0",
-            fontFamily:"'Press Start 2P', monospace", fontSize:8, letterSpacing:0.5,
-            background: combining ? "rgba(200,168,75,0.4)" : canCombine ? GOLD : "rgba(0,0,0,0.25)",
-            color: canCombine ? INK : "rgba(255,255,255,0.1)",
-            border: canCombine ? `2px solid ${GOLD_DK}` : "2px solid rgba(255,255,255,0.06)",
-            boxShadow: canCombine ? `3px 3px 0 ${INK}` : "none",
-            cursor: canCombine && !combining ? "pointer" : "not-allowed",
-            animation: combinePopAnim ? "combinePopIn 0.3s ease-out" : canCombine && !combining ? "combineGlow 1.8s infinite" : "none",
-            transition:"all 0.1s",
-          }}
-          title={canCombine ? `Combine ${ratio}× T${tierId} → 1× T${tierId-1}` : `Need ${ratio - count} more`}
-        >
-          {combining ? "⏳ WAIT..." : canCombine ? "▲ COMBINE" : "— — —"}
-        </button>
+        <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3, width:130 }}>
+          {canCombine && maxCombines > 1 && !combining && (
+            <div style={{ display:"flex", alignItems:"center", gap:2, width:"100%" }}>
+              <button onClick={() => setCombineCount(c => Math.max(1, c - 1))} style={{
+                width:24, height:20, background:"rgba(0,0,0,0.4)", border:"1px solid rgba(255,255,255,0.12)",
+                color:"rgba(255,255,255,0.5)", fontFamily:"'Press Start 2P', monospace", fontSize:7, cursor:"pointer",
+              }}>-</button>
+              <input
+                type="text"
+                value={combineCount}
+                onChange={e => { const v = parseInt(e.target.value) || 1; setCombineCount(Math.min(Math.max(1, v), maxCombines)); }}
+                style={{
+                  flex:1, height:20, textAlign:"center", background:"rgba(0,0,0,0.3)",
+                  border:"1px solid rgba(255,255,255,0.12)", color:GOLD,
+                  fontFamily:"'VT323', monospace", fontSize:16, outline:"none", width:0,
+                }}
+              />
+              <button onClick={() => setCombineCount(c => Math.min(maxCombines, c + 1))} style={{
+                width:24, height:20, background:"rgba(0,0,0,0.4)", border:"1px solid rgba(255,255,255,0.12)",
+                color:"rgba(255,255,255,0.5)", fontFamily:"'Press Start 2P', monospace", fontSize:7, cursor:"pointer",
+              }}>+</button>
+              <button onClick={() => setCombineCount(maxCombines)} style={{
+                width:30, height:20, background:"rgba(200,168,75,0.15)", border:`1px solid ${GOLD_DK}`,
+                color:GOLD, fontFamily:"'Press Start 2P', monospace", fontSize:6, cursor:"pointer",
+              }}>MAX</button>
+            </div>
+          )}
+          <button
+            onClick={() => canCombine && !combining && onCombine(tierId, combineCount)}
+            style={{
+              width:"100%", padding:"6px 0",
+              fontFamily:"'Press Start 2P', monospace", fontSize:8, letterSpacing:0.5,
+              background: combining ? "rgba(200,168,75,0.4)" : canCombine ? GOLD : "rgba(0,0,0,0.25)",
+              color: canCombine ? INK : "rgba(255,255,255,0.1)",
+              border: canCombine ? `2px solid ${GOLD_DK}` : "2px solid rgba(255,255,255,0.06)",
+              boxShadow: canCombine ? `3px 3px 0 ${INK}` : "none",
+              cursor: canCombine && !combining ? "pointer" : "not-allowed",
+              animation: combinePopAnim ? "combinePopIn 0.3s ease-out" : canCombine && !combining ? "combineGlow 1.8s infinite" : "none",
+              transition:"all 0.1s",
+            }}
+            title={canCombine ? `Combine ${ratio * combineCount}× T${tierId} → ${combineCount}× T${tierId-1}` : `Need ${ratio - count} more`}
+          >
+            {combining ? "⏳ WAIT..." : canCombine ? (combineCount > 1 ? `▲ COMBINE ×${combineCount}` : "▲ COMBINE") : "— — —"}
+          </button>
+        </div>
       )}
 
       {tierId === 1 && count > 0 && (

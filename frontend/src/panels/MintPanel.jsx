@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from "react";
-import { useWriteContract, useWaitForTransactionReceipt, useChainId, useSwitchChain } from 'wagmi';
+import { useWriteContract, useWaitForTransactionReceipt, useChainId, useSwitchChain, useReadContracts, useAccount, useConnect } from 'wagmi';
 import { parseEther, decodeEventLog } from 'viem';
 import { CONTRACTS } from '../config/wagmi';
-import { TOKEN_ABI } from '../abis';
+import { TOKEN_ABI, WINDOW_ABI } from '../abis';
 import {
   GOLD, GOLD_DK, GOLD_LT, INK, CREAM,
   BATCH_PRICES_ETH, BATCH_SUPPLY,
@@ -170,9 +170,28 @@ function savePending(items) {
 const TARGET_CHAIN_ID = 84532 // Base Sepolia
 
 export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatus, slots, prizePool, address, refetchAll, blocks, mintPrice, mintPriceWei, currentBatch, userCapReached, userMintsRemaining, userMintedThisWindow, perUserCap }) {
+  const { isConnected: walletConnected } = useAccount()
+  const { connectors, connect } = useConnect()
   const chainId = useChainId()
   const { switchChain } = useSwitchChain()
   const wrongNetwork = chainId !== TARGET_CHAIN_ID
+
+  // Read batch totalMinted for all batches up to current
+  const batchContracts = Array.from({ length: Math.min(currentBatch + 1, 10) }, (_, i) => ({
+    address: CONTRACTS.WINDOW, abi: WINDOW_ABI,
+    functionName: 'batches', args: [BigInt(i + 1)],
+  }))
+  const { data: batchDataRaw } = useReadContracts({
+    contracts: batchContracts,
+    query: { refetchInterval: 30_000 },
+  })
+  const batchMinted = {}
+  if (batchDataRaw) {
+    batchDataRaw.forEach((r, i) => {
+      if (r.status === 'success') batchMinted[i + 1] = Number(r.result[2])
+    })
+  }
+
   const maxMintable = userMintsRemaining != null ? Math.min(500, userMintsRemaining) : 500
   const [qty, setQty] = useState(Math.min(10, maxMintable))
   const [pendingMints, setPendingMints] = useState(() => loadPending())
@@ -441,7 +460,11 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatu
           </div>
         )}
 
-        {wrongNetwork ? (
+        {!walletConnected ? (
+          <Btn onClick={() => { const c = connectors[0]; if (c) connect({ connector: c }); }}>
+            CONNECT WALLET TO MINT
+          </Btn>
+        ) : wrongNetwork ? (
           <Btn onClick={() => switchChain({ chainId: TARGET_CHAIN_ID })}>
             ⚠  SWITCH TO BASE
           </Btn>
@@ -468,22 +491,60 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatu
           <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
             {[1,2,3,4,5,6,7,8,9,10].map(b => {
               const isCurrent = b === currentBatch;
+              const isCompleted = b < currentBatch;
+              const isNext = b === currentBatch + 1;
+              const minted = batchMinted[b] || 0;
+              const supply = BATCH_SUPPLY[b] || 0;
+              const pct = supply > 0 ? Math.min(Math.round((minted / supply) * 100), 100) : 0;
+              const priceIncrease = isNext && BATCH_PRICES_ETH[b] && BATCH_PRICES_ETH[currentBatch]
+                ? Math.round(((BATCH_PRICES_ETH[b] - BATCH_PRICES_ETH[currentBatch]) / BATCH_PRICES_ETH[currentBatch]) * 100)
+                : 0;
+              const barColor = pct >= 80 ? "#ff4433" : pct >= 50 ? "#ffcc33" : "#6eff8a";
+
               return (
                 <div key={b} style={{
                   display:"flex", alignItems:"center", gap:6, padding:"3px 6px",
-                  background: isCurrent ? "rgba(200,168,75,0.1)" : "transparent",
+                  background: isCurrent ? "rgba(200,168,75,0.1)" : isNext ? "rgba(255,170,0,0.04)" : "transparent",
                   border: isCurrent ? `1px solid ${GOLD_DK}` : "1px solid transparent",
+                  opacity: isCompleted ? 0.45 : 1,
+                  position:"relative", overflow:"hidden", minHeight: isCurrent ? 28 : 'auto',
                 }}>
-                  <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color: isCurrent ? GOLD : "rgba(255,255,255,0.45)", width:18 }}>B{b}</span>
-                  <span style={{ fontFamily:"'VT323', monospace", fontSize:16, color: isCurrent ? GOLD_LT : "rgba(255,255,255,0.35)", flex:1 }}>{BATCH_PRICES_ETH[b]} Ξ</span>
-                  <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color: isCurrent ? GOLD : "rgba(255,255,255,0.45)" }}>{(BATCH_SUPPLY[b] / 1000).toFixed(0)}K</span>
-                  {isCurrent && <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:GOLD }}>◄</span>}
+                  {/* Progress bar background for current batch */}
+                  {isCurrent && supply > 0 && (
+                    <div style={{
+                      position:"absolute", left:0, top:0, bottom:0,
+                      width:`${pct}%`, background: barColor + "22",
+                      transition:"width 0.5s",
+                    }} />
+                  )}
+                  <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color: isCurrent ? GOLD : isNext ? "#ffaa33" : "rgba(255,255,255,0.45)", width:24, position:"relative", zIndex:1 }}>B{b}</span>
+                  <span style={{ fontFamily:"'VT323', monospace", fontSize:16, color: isCurrent ? GOLD_LT : isCompleted ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.35)", flex:1, position:"relative", zIndex:1 }}>
+                    {BATCH_PRICES_ETH[b]} Ξ
+                  </span>
+                  {/* Center-aligned % for current batch */}
+                  {isCurrent && supply > 0 && (
+                    <span style={{
+                      position:"absolute", left:0, right:0, textAlign:"center",
+                      fontFamily:"'Press Start 2P', monospace", fontSize:7, color: barColor, zIndex:1,
+                    }}>{pct}%</span>
+                  )}
+                  {/* Center-aligned price increase for next batch */}
+                  {isNext && (
+                    <span style={{
+                      position:"absolute", left:0, right:0, textAlign:"center",
+                      fontFamily:"'Press Start 2P', monospace", fontSize:6, color:"#ffaa33", zIndex:1,
+                    }}>↑ PRICE +{priceIncrease}%</span>
+                  )}
+                  {isCompleted ? (
+                    <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:7, color:"#6eff8a", position:"relative", zIndex:1 }}>✓</span>
+                  ) : (isNext || isCurrent) ? null : (
+                    <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:"rgba(255,255,255,0.45)", position:"relative", zIndex:1 }}>{(supply / 1000).toFixed(0)}K</span>
+                  )}
+                  {isNext && <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:"rgba(255,255,255,0.35)", position:"relative", zIndex:1, marginLeft:4 }}>{(supply / 1000).toFixed(0)}K</span>}
+                  {isCurrent && <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:GOLD, position:"relative", zIndex:1, marginLeft:4 }}>{(supply / 1000).toFixed(0)}K ◄</span>}
                 </div>
               );
             })}
-          </div>
-          <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:"rgba(255,255,255,0.45)", marginTop:6, lineHeight:1.6 }}>
-            Batch 1 is the cheapest entry. Prices rise as batches advance.
           </div>
         </div>
 

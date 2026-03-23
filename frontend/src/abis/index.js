@@ -153,6 +153,13 @@ export const WINDOW_ABI = [
       { name: 'dailyCapValue', type: 'uint256' },
       { name: 'dailyResetsAt', type: 'uint256' },
     ] },
+  { name: 'batches', type: 'function', stateMutability: 'view',
+    inputs: [{ name: '', type: 'uint256' }],
+    outputs: [
+      { name: 'id', type: 'uint256' },
+      { name: 'startDay', type: 'uint256' },
+      { name: 'totalMinted', type: 'uint256' },
+    ] },
   { name: 'canPlayerMint', type: 'function', stateMutability: 'view',
     inputs: [{ name: 'player', type: 'address' }],
     outputs: [{ name: '', type: 'bool' }] },

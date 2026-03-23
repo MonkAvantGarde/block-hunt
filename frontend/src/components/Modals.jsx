@@ -396,45 +396,11 @@ function buildLbQuery(skip = 0) {
   }`;
 }
 
-export function LeaderboardModal({ onClose, onOpenProfile, connectedAddress, prizePool }) {
-  const [players,     setPlayers]     = useState([]);
-  const [stats,       setStats]       = useState(null);
-  const [loading,     setLoading]     = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [error,       setError]       = useState(null);
-  const [hasMore,     setHasMore]     = useState(false);
-
-  async function fetchPage(skip, append = false) {
-    try {
-      const res = await fetch(SUBGRAPH_URL, {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ query: buildLbQuery(skip) }),
-      });
-      if (!res.ok) throw new Error(`Subgraph error (${res.status}) — try again in a moment`);
-      const json = await res.json();
-      if (json.errors) throw new Error(json.errors[0].message);
-      const page = json.data.players || [];
-      setPlayers(prev => append ? [...prev, ...page] : page);
-      if (!append) setStats(json.data.seasonStat || null);
-      // If we got a full page, there may be more
-      setHasMore(page.length === PAGE_SIZE);
-    } catch (err) {
-      setError(err.message || "Failed to load leaderboard");
-    }
-  }
-
-  useEffect(() => {
-    setLoading(true);
-    setError(null);
-    fetchPage(0).finally(() => setLoading(false));
-  }, []);
-
-  async function handleLoadMore() {
-    setLoadingMore(true);
-    await fetchPage(players.length, true);
-    setLoadingMore(false);
-  }
+export function LeaderboardModal({ onClose, onOpenProfile, connectedAddress, prizePool, leaderboardCache }) {
+  const players = leaderboardCache?.players || [];
+  const stats = leaderboardCache?.stats || null;
+  const loading = leaderboardCache?.loading || false;
+  const error = leaderboardCache?.error || null;
 
   const connLower = connectedAddress ? connectedAddress.toLowerCase() : null;
 
@@ -442,7 +408,10 @@ export function LeaderboardModal({ onClose, onOpenProfile, connectedAddress, pri
     <ModalShell onClose={onClose} width={720}>
       {/* Header */}
       <div style={{ padding: "22px 28px 16px", borderBottom: "1px solid rgba(255,255,255,.06)", display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-        <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 11, color: GOLD, letterSpacing: 1, textShadow: `2px 2px 0 ${GOLD_DK}` }}>⬡ THE RACE</div>
+        <div>
+          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 11, color: GOLD, letterSpacing: 1, textShadow: `2px 2px 0 ${GOLD_DK}` }}>⬡ THE RACE</div>
+          <div style={{ fontFamily: "'Courier Prime', monospace", fontSize: 10, color: 'rgba(255,255,255,0.25)', marginTop: 4 }}>refreshes every 30 seconds</div>
+        </div>
         <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 8, color: CREAM, opacity: .4, letterSpacing: 1 }}>WHO'S CLOSEST TO WINNING · SEASON 1</div>
       </div>
 
@@ -541,29 +510,10 @@ export function LeaderboardModal({ onClose, onOpenProfile, connectedAddress, pri
                 </tbody>
               </table>
 
-              {/* Load more */}
-              {hasMore && (
-                <div style={{ padding: "16px 24px", textAlign: "center" }}>
-                  <button
-                    onClick={handleLoadMore}
-                    disabled={loadingMore}
-                    style={{
-                      fontFamily: "'Press Start 2P', monospace", fontSize: 8,
-                      padding: "10px 24px", letterSpacing: 1,
-                      background: "transparent", color: GOLD,
-                      border: `1px solid ${GOLD_DK}`, cursor: loadingMore ? "default" : "pointer",
-                      opacity: loadingMore ? .5 : 1,
-                    }}
-                  >
-                    {loadingMore ? "● LOADING..." : `▼ LOAD MORE (showing ${players.length})`}
-                  </button>
-                </div>
-              )}
-
               {/* End of list indicator */}
-              {!hasMore && players.length >= PAGE_SIZE && (
+              {players.length > 0 && (
                 <div style={{ padding: "14px", textAlign: "center", fontFamily: "'Press Start 2P', monospace", fontSize: 8, color: CREAM, opacity: .25, letterSpacing: 1 }}>
-                  ALL {players.length} PLAYERS SHOWN
+                  {players.length} PLAYERS SHOWN
                 </div>
               )}
             </>
@@ -935,12 +885,12 @@ function EscrowClaimsSection({ address }) {
 // EXPORT — MODAL CONTROLLER (convenience wrapper)
 // Usage: <Modals open="rules|leaderboard|profile|null" onClose={fn} />
 // ═══════════════════════════════════════════════════════════════
-export default function Modals({ open, onClose, onOpenProfile, connectedAddress, prizePool }) {
+export default function Modals({ open, onClose, onOpenProfile, connectedAddress, prizePool, leaderboardCache }) {
   return (
     <>
       <style>{MODAL_CSS}</style>
       {open === "rules"       && <GameRulesModal   onClose={onClose} />}
-      {open === "leaderboard" && <LeaderboardModal onClose={onClose} onOpenProfile={onOpenProfile} connectedAddress={connectedAddress} prizePool={prizePool} />}
+      {open === "leaderboard" && <LeaderboardModal onClose={onClose} onOpenProfile={onOpenProfile} connectedAddress={connectedAddress} prizePool={prizePool} leaderboardCache={leaderboardCache} />}
       {open === "profile"     && <ProfileModal     onClose={onClose} connectedAddress={connectedAddress} />}
     </>
   );

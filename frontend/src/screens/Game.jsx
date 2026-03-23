@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { useWriteContract, useWaitForTransactionReceipt, useWatchContractEvent, useReadContract } from 'wagmi'
 import { useGameState } from '../hooks/useGameState'
 import { CONTRACTS } from '../config/wagmi'
-import { TOKEN_ABI } from '../abis'
+import { TOKEN_ABI, MARKETPLACE_ABI } from '../abis'
 import {
   FELT, WOOD, GOLD, GOLD_DK, GOLD_LT, INK, CREAM,
   TMAP, COMBINE_RATIOS, TIER_NAMES,
@@ -154,6 +154,7 @@ const { data: countdownHolder } = useReadContract({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [combineMsg,  setCombineMsg] = useState(null)
   const [resetAlert,  setResetAlert] = useState(false)
+  const [tradeToast,  setTradeToast] = useState(null)
   const [revealTier,  setRevealTier] = useState(null)
   const [ceremonyCombineTier, setCeremonyCombineTier] = useState(null)
   const [mintRevealResults, setMintRevealResults] = useState(null)
@@ -187,6 +188,49 @@ const { data: countdownHolder } = useReadContract({
       }
     },
   })
+
+  // ── Trade notifications (listing filled / offer filled) ─────
+  useWatchContractEvent({
+    address: CONTRACTS.MARKETPLACE,
+    abi: MARKETPLACE_ABI,
+    eventName: 'ListingFilled',
+    poll: true,
+    pollingInterval: 8_000,
+    onLogs(logs) {
+      if (!address) return
+      for (const log of logs) {
+        const buyer = log.args?.buyer?.toLowerCase()
+        // We only notify the seller — buyer already sees the confirm
+        // Seller = listing creator, not directly in the event, but if we see a fill
+        // and we're not the buyer, it might be our listing
+        if (buyer && buyer !== address.toLowerCase()) {
+          setTradeToast('Your listing was filled!')
+          refetchAll()
+          setTimeout(() => setTradeToast(null), 8000)
+        }
+      }
+    },
+  })
+  useWatchContractEvent({
+    address: CONTRACTS.MARKETPLACE,
+    abi: MARKETPLACE_ABI,
+    eventName: 'OfferFilled',
+    poll: true,
+    pollingInterval: 8_000,
+    onLogs(logs) {
+      if (!address) return
+      for (const log of logs) {
+        const seller = log.args?.seller?.toLowerCase()
+        // Notify the buyer — seller already sees the confirm
+        if (seller && seller !== address.toLowerCase()) {
+          setTradeToast('Your buy offer was filled!')
+          refetchAll()
+          setTimeout(() => setTradeToast(null), 8000)
+        }
+      }
+    },
+  })
+
   // ── COMBINE — live transaction ──────────────────────────────
   const { writeContract: writeCombine } = useWriteContract()
   const [combineTxHash,  setCombineTxHash]  = useState(null)
@@ -216,19 +260,22 @@ const { data: countdownHolder } = useReadContract({
     lastCombinedToTierRef.current = null
   }, [combineSuccess])
 
-  function handleCombine(fromTier) {
+  function handleCombine(fromTier, times = 1) {
     const ratio = COMBINE_RATIOS[fromTier]
-    if ((blocks[fromTier] || 0) < ratio) return
+    if ((blocks[fromTier] || 0) < ratio * times) return
     setCombiningTier(fromTier)
     lastCombinedToTierRef.current = fromTier - 1
+    const fnName = times > 1 ? 'combineMany' : 'combine'
+    const args = times > 1 ? [Array(times).fill(BigInt(fromTier))] : [BigInt(fromTier)]
+    const gas = times > 1 ? BigInt(200_000) + BigInt(times) * BigInt(120_000) : undefined
     writeCombine({
       address: CONTRACTS.TOKEN,
       abi: TOKEN_ABI,
-      functionName: 'combine',
-      args: [BigInt(fromTier)],
+      functionName: fnName,
+      args,
+      ...(gas ? { gas } : {}),
     }, {
       onSuccess: (hash) => {
-        // Trigger CombineCollapse animation AFTER wallet approval
         setCombineCollapseData({ fromTier, startCount: blocks[fromTier] || 0, combineRatio: ratio })
         setCombineTxHash(hash)
       },
@@ -423,6 +470,28 @@ const { data: countdownHolder } = useReadContract({
                 : `You dropped from #${rankToast.from} to #${rankToast.to}`
               }
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Trade notification toast */}
+      {tradeToast && (
+        <div
+          onClick={() => setTradeToast(null)}
+          style={{
+            position:"fixed", bottom:32, left:24, zIndex:8000,
+            background:"rgba(20,50,60,0.95)",
+            border:"2px solid #4ecdc4",
+            borderRadius:4, padding:"12px 20px", cursor:"pointer",
+            boxShadow:"0 4px 20px rgba(78,205,196,0.3)",
+            animation:"fadeInDown 0.3s ease-out",
+            display:"flex", alignItems:"center", gap:10,
+          }}
+        >
+          <span style={{ fontFamily:"'VT323', monospace", fontSize:28, color:"#4ecdc4" }}>⇄</span>
+          <div>
+            <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:"#4ecdc4", letterSpacing:1 }}>TRADE COMPLETE</div>
+            <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:12, color:'rgba(255,255,255,0.6)', marginTop:2 }}>{tradeToast}</div>
           </div>
         </div>
       )}

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useWriteContract, useWaitForTransactionReceipt, useChainId, useSwitchChain } from 'wagmi';
+import { useWriteContract, useWaitForTransactionReceipt, useChainId, useSwitchChain, useAccount, useConnect } from 'wagmi';
 import { CONTRACTS } from '../config/wagmi';
 import { FORGE_ABI } from '../abis';
 import { GOLD, INK, CREAM, TMAP, COMBINE_RATIOS } from '../config/design-tokens';
@@ -10,6 +10,8 @@ import ForgeNumberReveal from '../components/ForgeNumberReveal';
 const TARGET_CHAIN_ID = 84532 // Base Sepolia
 
 export default function ForgePanel({ blocks, onForge, address }) {
+  const { isConnected: walletConnected } = useAccount()
+  const { connectors, connect } = useConnect()
   const chainId = useChainId()
   const { switchChain } = useSwitchChain()
   const wrongNetwork = chainId !== TARGET_CHAIN_ID
@@ -498,6 +500,10 @@ export default function ForgePanel({ blocks, onForge, address }) {
                         <Btn onClick={() => { setShowConfirm(false); doForge(); }} color="#cc3322" sm>CONFIRM FORGE</Btn>
                       </div>
                     </div>
+                  ) : !walletConnected ? (
+                    <Btn onClick={() => { const c = connectors[0]; if (c) connect({ connector: c }); }}>
+                      CONNECT WALLET TO FORGE
+                    </Btn>
                   ) : wrongNetwork ? (
                     <Btn onClick={() => switchChain({ chainId: TARGET_CHAIN_ID })}>
                       ⚠  SWITCH TO BASE
@@ -656,7 +662,11 @@ export default function ForgePanel({ blocks, onForge, address }) {
           <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:11, color:'rgba(255,255,255,0.3)' }}>
             Total burn: {batchAttempts.reduce((s, a) => s + a.burnCount, 0)} blocks across {batchAttempts.length} attempt{batchAttempts.length !== 1 ? 's' : ''}
           </div>
-          {wrongNetwork ? (
+          {!walletConnected ? (
+            <Btn onClick={() => { const c = connectors[0]; if (c) connect({ connector: c }); }}>
+              CONNECT WALLET TO FORGE
+            </Btn>
+          ) : wrongNetwork ? (
             <Btn onClick={() => switchChain({ chainId: TARGET_CHAIN_ID })}>
               ⚠  SWITCH TO BASE
             </Btn>

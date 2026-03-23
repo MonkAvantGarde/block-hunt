@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useWriteContract, useWaitForTransactionReceipt, useChainId, useSwitchChain } from 'wagmi'
+import { useWriteContract, useWaitForTransactionReceipt, useChainId, useSwitchChain, useAccount, useConnect } from 'wagmi'
 import { parseEther } from 'viem'
 import { CONTRACTS } from '../config/wagmi'
 import { TOKEN_ABI, MARKETPLACE_ABI } from '../abis'
@@ -68,9 +68,10 @@ function ListingCard({ item, onBuy, onCancel, wrongNetwork, switchChain }) {
       ) : (
         <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
           <button onClick={() => setQty(q => Math.max(1, q - 1))} style={stepBtnStyle}>-</button>
-          <div style={{ ...fv, fontSize: 16, color: CREAM, width: 28, textAlign: 'center' }}>{qty}</div>
+          <input type="text" value={qty} onChange={e => { const v = parseInt(e.target.value) || 0; setQty(Math.min(Math.max(0, v), item.quantity)); }}
+            style={{ ...fv, fontSize: 16, color: CREAM, width: 36, textAlign: 'center', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.12)', outline: 'none' }} />
           <button onClick={() => setQty(q => Math.min(item.quantity, q + 1))} style={stepBtnStyle}>+</button>
-          <button onClick={() => onBuy(item, qty)} style={actionBtnStyle}>BUY · {(item.pricePerBlock * qty).toFixed(4)} Ξ</button>
+          <button onClick={() => onBuy(item, qty)} disabled={qty < 1} style={{ ...actionBtnStyle, opacity: qty < 1 ? 0.4 : 1 }}>BUY · {(item.pricePerBlock * qty).toFixed(4)} Ξ</button>
         </div>
       )}
     </div>
@@ -101,9 +102,10 @@ function OfferCard({ item, onFill, onCancel, wrongNetwork, switchChain, isApprov
       ) : (
         <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
           <button onClick={() => setQty(q => Math.max(1, q - 1))} style={stepBtnStyle}>-</button>
-          <div style={{ ...fv, fontSize: 16, color: CREAM, width: 28, textAlign: 'center' }}>{qty}</div>
+          <input type="text" value={qty} onChange={e => { const v = parseInt(e.target.value) || 0; setQty(Math.min(Math.max(0, v), item.quantity)); }}
+            style={{ ...fv, fontSize: 16, color: CREAM, width: 36, textAlign: 'center', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.12)', outline: 'none' }} />
           <button onClick={() => setQty(q => Math.min(item.quantity, q + 1))} style={stepBtnStyle}>+</button>
-          <button onClick={() => onFill(item, qty)} style={{ ...actionBtnStyle, background: '#4ecdc4' }}>SELL · {(item.pricePerBlock * qty).toFixed(4)} Ξ</button>
+          <button onClick={() => onFill(item, qty)} disabled={qty < 1} style={{ ...actionBtnStyle, background: '#4ecdc4', opacity: qty < 1 ? 0.4 : 1 }}>SELL · {(item.pricePerBlock * qty).toFixed(4)} Ξ</button>
         </div>
       )}
     </div>
@@ -128,6 +130,8 @@ export default function TradePanel({ refetchAll: gameRefetch, onRevealTier }) {
   const [success, setSuccess] = useState(null)
   const [lastBoughtTier, setLastBoughtTier] = useState(null)
 
+  const { isConnected: walletConnected } = useAccount()
+  const { connectors, connect: connectWallet } = useConnect()
   const chainId = useChainId()
   const { switchChain } = useSwitchChain()
   const wrongNetwork = chainId !== TARGET_CHAIN_ID
@@ -424,7 +428,11 @@ export default function TradePanel({ refetchAll: gameRefetch, onRevealTier }) {
           </div>
 
           {/* Action button */}
-          {createMode === 'sell' ? (
+          {!walletConnected ? (
+            <Btn onClick={() => { const c = connectors[0]; if (c) connectWallet({ connector: c }); }}>
+              CONNECT WALLET TO TRADE
+            </Btn>
+          ) : createMode === 'sell' ? (
             !isApproved ? (
               wrongNetwork
                 ? <Btn onClick={() => switchChain({ chainId: TARGET_CHAIN_ID })}>⚠ SWITCH TO BASE</Btn>
