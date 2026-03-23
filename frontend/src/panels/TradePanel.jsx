@@ -118,6 +118,8 @@ function Empty({ text }) {
 // ═══════════════════════════════════════════════════════════════════════════
 export default function TradePanel({ refetchAll: gameRefetch, onRevealTier }) {
   const [tab, setTab] = useState('listings')
+  const [filterTier, setFilterTier] = useState(0) // 0 = all
+  const [sortPrice, setSortPrice] = useState('asc') // 'asc' | 'desc'
   const [createMode, setCreateMode] = useState('sell') // 'sell' | 'buy'
   const [createTier, setCreateTier] = useState(7)
   const [createQty, setCreateQty] = useState(10)
@@ -216,6 +218,16 @@ export default function TradePanel({ refetchAll: gameRefetch, onRevealTier }) {
     }, { onError: (e) => setError(e.shortMessage || 'Cancel failed') })
   }
 
+  // ── Filter + sort ────────────────────────────────────────────────────────
+  function filterAndSort(items) {
+    let filtered = filterTier > 0 ? items.filter(i => i.tier === filterTier) : items
+    filtered = [...filtered].sort((a, b) => sortPrice === 'asc' ? a.pricePerBlock - b.pricePerBlock : b.pricePerBlock - a.pricePerBlock)
+    return filtered
+  }
+
+  const filteredListings = filterAndSort(otherListings)
+  const filteredOffers = filterAndSort(otherOffers)
+
   // ── Tabs ────────────────────────────────────────────────────────────────
 
   const tabs = [
@@ -261,12 +273,40 @@ export default function TradePanel({ refetchAll: gameRefetch, onRevealTier }) {
         </div>
       )}
 
+      {/* ── Filter bar (listings + offers tabs) ──────────────────────── */}
+      {(tab === 'listings' || tab === 'offers') && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <button onClick={() => setFilterTier(0)} style={{
+            ...fp, fontSize: 7, padding: '5px 8px', cursor: 'pointer',
+            color: filterTier === 0 ? INK : 'rgba(255,255,255,0.4)',
+            background: filterTier === 0 ? GOLD : 'rgba(0,0,0,0.3)',
+            border: filterTier === 0 ? `1px solid ${GOLD_DK}` : '1px solid rgba(255,255,255,0.1)',
+          }}>ALL</button>
+          {[7, 6, 5, 4, 3, 2, 1].map(t => {
+            const accent = TMAP[t]?.accent || '#888'
+            return (
+              <button key={t} onClick={() => setFilterTier(t)} style={{
+                ...fp, fontSize: 7, padding: '5px 6px', cursor: 'pointer',
+                color: filterTier === t ? INK : accent,
+                background: filterTier === t ? accent : 'rgba(0,0,0,0.3)',
+                border: `1px solid ${filterTier === t ? accent : 'rgba(255,255,255,0.1)'}`,
+              }}>T{t}</button>
+            )
+          })}
+          <div style={{ flex: 1 }} />
+          <button onClick={() => setSortPrice(s => s === 'asc' ? 'desc' : 'asc')} style={{
+            ...fp, fontSize: 7, padding: '5px 8px', cursor: 'pointer',
+            color: 'rgba(255,255,255,0.5)', background: 'rgba(0,0,0,0.3)',
+            border: '1px solid rgba(255,255,255,0.1)',
+          }}>{sortPrice === 'asc' ? 'PRICE ↑' : 'PRICE ↓'}</button>
+        </div>
+      )}
+
       {/* ── LISTINGS TAB ────────────────────────────────────────────────── */}
       {tab === 'listings' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, overflowY: 'auto', flex: 1 }}>
-          <div style={{ ...fp, fontSize: 7, color: 'rgba(255,255,255,0.3)', letterSpacing: 1, marginBottom: 4 }}>BLOCKS FOR SALE</div>
-          {otherListings.length === 0 ? <Empty text="NO LISTINGS YET" /> :
-            otherListings.map(l => <ListingCard key={l.id} item={l} onBuy={doBuyListing} onCancel={doCancelListing} wrongNetwork={wrongNetwork} switchChain={switchChain} />)
+          {filteredListings.length === 0 ? <Empty text={filterTier > 0 ? `NO T${filterTier} LISTINGS` : "NO LISTINGS YET"} /> :
+            filteredListings.map(l => <ListingCard key={l.id} item={l} onBuy={doBuyListing} onCancel={doCancelListing} wrongNetwork={wrongNetwork} switchChain={switchChain} />)
           }
         </div>
       )}
@@ -274,9 +314,8 @@ export default function TradePanel({ refetchAll: gameRefetch, onRevealTier }) {
       {/* ── OFFERS TAB ──────────────────────────────────────────────────── */}
       {tab === 'offers' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, overflowY: 'auto', flex: 1 }}>
-          <div style={{ ...fp, fontSize: 7, color: 'rgba(255,255,255,0.3)', letterSpacing: 1, marginBottom: 4 }}>PLAYERS LOOKING TO BUY</div>
-          {otherOffers.length === 0 ? <Empty text="NO BUY OFFERS YET" /> :
-            otherOffers.map(o => <OfferCard key={o.id} item={o} onFill={doFillOffer} onCancel={doCancelOffer} wrongNetwork={wrongNetwork} switchChain={switchChain} isApproved={isApproved} onApprove={doApprove} />)
+          {filteredOffers.length === 0 ? <Empty text={filterTier > 0 ? `NO T${filterTier} OFFERS` : "NO BUY OFFERS YET"} /> :
+            filteredOffers.map(o => <OfferCard key={o.id} item={o} onFill={doFillOffer} onCancel={doCancelOffer} wrongNetwork={wrongNetwork} switchChain={switchChain} isApproved={isApproved} onApprove={doApprove} />)
           }
         </div>
       )}

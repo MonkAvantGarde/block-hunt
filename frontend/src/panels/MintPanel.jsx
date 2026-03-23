@@ -38,10 +38,26 @@ function PendingMintItem({ item, onDelivered, onRequestId }) {
         const decoded = decodeEventLog({ abi: TOKEN_ABI, data: log.data, topics: log.topics })
         if (decoded.eventName === "MintRequested") {
           onRequestId(item.id, decoded.args.requestId.toString())
-          break
+          return
         }
       } catch {}
     }
+    // Event decode failed — try reading pending requests from chain
+    async function fallbackRecover() {
+      try {
+        const { createPublicClient, http } = await import('viem')
+        const { baseSepolia } = await import('viem/chains')
+        const client = createPublicClient({ chain: baseSepolia, transport: http() })
+        const reqIds = await client.readContract({
+          address: CONTRACTS.TOKEN, abi: TOKEN_ABI,
+          functionName: 'getPendingRequests', args: [receipt.from],
+        })
+        if (reqIds && reqIds.length > 0) {
+          onRequestId(item.id, reqIds[reqIds.length - 1].toString())
+        }
+      } catch {}
+    }
+    fallbackRecover()
   }, [receipt])
 
   const { writeContract: writeCancel } = useWriteContract()
@@ -69,6 +85,7 @@ function PendingMintItem({ item, onDelivered, onRequestId }) {
   }, [isDelivered])
 
   const canCancel = !isDelivered && elapsed >= 3600 && !!item.requestId
+  const missingRequestId = !isDelivered && elapsed >= 3600 && !item.requestId
   const cancelLabel = cancelling ? "…" : elapsed >= 3600 ? "CANCEL" : fmt(3600 - elapsed)
 
   return (
@@ -106,20 +123,36 @@ function PendingMintItem({ item, onDelivered, onRequestId }) {
       </div>
       {!isDelivered && (
         <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-          <button
-            onClick={doCancel}
-            disabled={!canCancel || cancelling}
-            style={{
-              flex:1,
-              background: canCancel ? "rgba(255,80,80,0.12)" : "rgba(0,0,0,0.2)",
-              border: `1px solid ${canCancel ? "rgba(255,80,80,0.35)" : "rgba(255,255,255,0.08)"}`,
-              color: canCancel ? "#ff6666" : "rgba(255,255,255,0.2)",
-              fontFamily:"'Press Start 2P', monospace", fontSize:8,
-              padding:"4px 8px", cursor: canCancel ? "pointer" : "default",
-            }}
-          >
-            {canCancel ? `✕ ${cancelLabel} — REFUND ETH` : `CANCEL IN ${cancelLabel}`}
-          </button>
+          {missingRequestId ? (
+            <button
+              onClick={() => window.location.reload()}
+              style={{
+                flex:1,
+                background: "rgba(255,170,0,0.12)",
+                border: "1px solid rgba(255,170,0,0.35)",
+                color: "#ffaa00",
+                fontFamily:"'Press Start 2P', monospace", fontSize:8,
+                padding:"4px 8px", cursor: "pointer",
+              }}
+            >
+              REFRESH PAGE TO ENABLE CANCEL
+            </button>
+          ) : (
+            <button
+              onClick={doCancel}
+              disabled={!canCancel || cancelling}
+              style={{
+                flex:1,
+                background: canCancel ? "rgba(255,80,80,0.12)" : "rgba(0,0,0,0.2)",
+                border: `1px solid ${canCancel ? "rgba(255,80,80,0.35)" : "rgba(255,255,255,0.08)"}`,
+                color: canCancel ? "#ff6666" : "rgba(255,255,255,0.2)",
+                fontFamily:"'Press Start 2P', monospace", fontSize:8,
+                padding:"4px 8px", cursor: canCancel ? "pointer" : "default",
+              }}
+            >
+              {canCancel ? `✕ ${cancelLabel} — REFUND ETH` : `CANCEL IN ${cancelLabel}`}
+            </button>
+          )}
         </div>
       )}
     </div>
