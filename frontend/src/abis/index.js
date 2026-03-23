@@ -69,6 +69,12 @@ export const TOKEN_ABI = [
     inputs: [], outputs: [] },
   { name: 'claimHolderStatus', type: 'function', stateMutability: 'nonpayable',
     inputs: [], outputs: [] },
+  // ── ERC-1155 approval (for marketplace) ──
+  { name: 'setApprovalForAll', type: 'function', stateMutability: 'nonpayable',
+    inputs: [{ name: 'operator', type: 'address' }, { name: 'approved', type: 'bool' }], outputs: [] },
+  { name: 'isApprovedForAll', type: 'function', stateMutability: 'view',
+    inputs: [{ name: 'account', type: 'address' }, { name: 'operator', type: 'address' }],
+    outputs: [{ name: '', type: 'bool' }] },
 
   // ── Events ──
   { name: 'MintRequested', type: 'event', inputs: [
@@ -419,4 +425,56 @@ export const REWARDS_ABI = [
     { name: 'batch', type: 'uint256', indexed: true },
     { name: 'addedAmount', type: 'uint256', indexed: false },
     { name: 'newTotal', type: 'uint256', indexed: false }] },
+];
+
+
+// ── MARKETPLACE CONTRACT (BlockHuntMarketplace) ────────────────────────────────
+
+export const MARKETPLACE_ABI = [
+  { name: 'createListing', type: 'function', stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'tier', type: 'uint256' }, { name: 'quantity', type: 'uint256' },
+      { name: 'pricePerBlock', type: 'uint256' }, { name: 'duration', type: 'uint256' },
+    ],
+    outputs: [{ name: 'listingId', type: 'uint256' }] },
+  { name: 'buyListing', type: 'function', stateMutability: 'payable',
+    inputs: [{ name: 'listingId', type: 'uint256' }, { name: 'quantity', type: 'uint256' }],
+    outputs: [] },
+  { name: 'cancelListing', type: 'function', stateMutability: 'nonpayable',
+    inputs: [{ name: 'listingId', type: 'uint256' }], outputs: [] },
+  { name: 'getListing', type: 'function', stateMutability: 'view',
+    inputs: [{ name: 'listingId', type: 'uint256' }],
+    outputs: [
+      { name: 'seller', type: 'address' }, { name: 'tier', type: 'uint256' },
+      { name: 'quantity', type: 'uint256' }, { name: 'pricePerBlock', type: 'uint256' },
+      { name: 'createdAt', type: 'uint256' }, { name: 'expiresAt', type: 'uint256' },
+      { name: 'active', type: 'bool' },
+    ] },
+  { name: 'getActiveListings', type: 'function', stateMutability: 'view',
+    inputs: [{ name: 'offset', type: 'uint256' }, { name: 'limit', type: 'uint256' }],
+    outputs: [
+      { name: 'ids', type: 'uint256[]' }, { name: 'sellers', type: 'address[]' },
+      { name: 'tiers', type: 'uint256[]' }, { name: 'quantities', type: 'uint256[]' },
+      { name: 'prices', type: 'uint256[]' }, { name: 'expiresAts', type: 'uint256[]' },
+    ] },
+  { name: 'nextListingId', type: 'function', stateMutability: 'view',
+    inputs: [], outputs: [{ name: '', type: 'uint256' }] },
+  { name: 'protocolFeeBps', type: 'function', stateMutability: 'view',
+    inputs: [], outputs: [{ name: '', type: 'uint256' }] },
+
+  // Events
+  { name: 'ListingCreated', type: 'event', inputs: [
+    { name: 'listingId', type: 'uint256', indexed: true },
+    { name: 'seller', type: 'address', indexed: true },
+    { name: 'tier', type: 'uint256', indexed: false },
+    { name: 'quantity', type: 'uint256', indexed: false },
+    { name: 'pricePerBlock', type: 'uint256', indexed: false },
+    { name: 'expiresAt', type: 'uint256', indexed: false }] },
+  { name: 'ListingFilled', type: 'event', inputs: [
+    { name: 'listingId', type: 'uint256', indexed: true },
+    { name: 'buyer', type: 'address', indexed: true },
+    { name: 'quantity', type: 'uint256', indexed: false },
+    { name: 'totalPaid', type: 'uint256', indexed: false }] },
+  { name: 'ListingCancelled', type: 'event', inputs: [
+    { name: 'listingId', type: 'uint256', indexed: true }] },
 ];

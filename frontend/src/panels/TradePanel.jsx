@@ -1,208 +1,360 @@
-import { useState } from 'react'
-import { GOLD, GOLD_DK, GOLD_LT, CREAM, INK, TMAP, COMBINE_RATIOS, BATCH_PRICES_ETH, FORGE_RATIOS } from '../config/design-tokens'
+import { useState, useEffect } from 'react'
+import { useWriteContract, useWaitForTransactionReceipt, useChainId, useSwitchChain } from 'wagmi'
+import { parseEther } from 'viem'
+import { CONTRACTS } from '../config/wagmi'
+import { TOKEN_ABI, MARKETPLACE_ABI } from '../abis'
+import { GOLD, GOLD_DK, GOLD_LT, INK, CREAM, TMAP, TIERS, ORANGE } from '../config/design-tokens'
+import { Btn } from '../components/GameUI'
+import { useTradeData } from '../hooks/useTradeData'
+import { useGameState } from '../hooks/useGameState'
 
 const fp = { fontFamily: "'Press Start 2P', monospace" }
 const fv = { fontFamily: "'VT323', monospace" }
-const fc = { fontFamily: "'Courier Prime', monospace" }
+const TARGET_CHAIN_ID = 84532
 
-// ── Compute real combine-path mints recursively from COMBINE_RATIOS ──
-function buildCombineTable() {
-  const rows = []
-  const mintsFor = {}
-  mintsFor[7] = 1
+function shortAddr(a) { return a ? a.slice(0, 6) + '...' + a.slice(-4) : '---' }
 
-  // T6 needs ratio[7] T7s, T5 needs ratio[6] T6s, etc.
-  for (let tier = 6; tier >= 2; tier--) {
-    const sourceTier = tier + 1
-    const ratio = COMBINE_RATIOS[sourceTier]
-    mintsFor[tier] = mintsFor[sourceTier] * ratio
-  }
-
-  for (let tier = 7; tier >= 2; tier--) {
-    const t = TMAP[tier]
-    rows.push({
-      tier,
-      name: t.name,
-      label: t.label,
-      accent: t.accent,
-      mints: mintsFor[tier],
-      ratio: COMBINE_RATIOS[tier] || null,
-    })
-  }
-  return rows
+function Countdown({ expiresAt }) {
+  const [now, setNow] = useState(Math.floor(Date.now() / 1000))
+  useEffect(() => {
+    const id = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000)
+    return () => clearInterval(id)
+  }, [])
+  const secs = Math.max(0, expiresAt - now)
+  if (secs <= 0) return <span style={{ color: '#ff4444' }}>EXPIRED</span>
+  const d = Math.floor(secs / 86400), h = Math.floor((secs % 86400) / 3600)
+  const m = Math.floor((secs % 3600) / 60)
+  if (d > 0) return <span>{d}d {h}h</span>
+  if (h > 0) return <span>{h}h {m}m</span>
+  return <span>{m}m {secs % 60}s</span>
 }
 
-function fmtMints(n) {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M'
-  if (n >= 1_000) return (n / 1_000).toFixed(n >= 10_000 ? 0 : 1) + 'K'
-  return n.toLocaleString()
+function ListingCard({ listing, onBuy, onCancel, wrongNetwork, switchChain }) {
+  const [buyQty, setBuyQty] = useState(1)
+  const accent = listing.tierAccent
+
+  return (
+    <div style={{
+      background: 'rgba(0,0,0,0.25)', border: `1px solid ${accent}33`,
+      padding: 14, display: 'flex', flexDirection: 'column', gap: 8,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <span style={{ ...fp, fontSize: 9, color: accent, letterSpacing: 1 }}>T{listing.tier}</span>
+          <span style={{ ...fv, fontSize: 18, color: CREAM, marginLeft: 8 }}>{listing.tierName}</span>
+          <span style={{ ...fp, fontSize: 7, color: 'rgba(255,255,255,0.3)', marginLeft: 8 }}>{listing.tierLabel}</span>
+        </div>
+        <div style={{ ...fp, fontSize: 7, color: 'rgba(255,255,255,0.35)' }}>
+          <Countdown expiresAt={listing.expiresAt} />
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <div>
+          <span style={{ ...fv, fontSize: 28, color: GOLD_LT }}>{listing.pricePerBlock.toFixed(5)}</span>
+          <span style={{ ...fp, fontSize: 8, color: 'rgba(255,255,255,0.4)', marginLeft: 4 }}>Ξ each</span>
+        </div>
+        <div style={{ ...fv, fontSize: 18, color: 'rgba(255,255,255,0.5)' }}>
+          ×{listing.quantity}
+        </div>
+      </div>
+
+      <div style={{ ...fp, fontSize: 7, color: 'rgba(255,255,255,0.3)' }}>
+        Seller: {listing.sellerShort}
+      </div>
+
+      {listing.isOwn ? (
+        <Btn onClick={() => onCancel(listing.id)} sm danger>CANCEL LISTING</Btn>
+      ) : wrongNetwork ? (
+        <Btn onClick={() => switchChain({ chainId: TARGET_CHAIN_ID })} sm>⚠ SWITCH TO BASE</Btn>
+      ) : (
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: '0 0 auto' }}>
+            <button onClick={() => setBuyQty(q => Math.max(1, q - 1))} style={stepBtnStyle}>-</button>
+            <div style={{ ...fv, fontSize: 20, color: CREAM, width: 40, textAlign: 'center' }}>{buyQty}</div>
+            <button onClick={() => setBuyQty(q => Math.min(listing.quantity, q + 1))} style={stepBtnStyle}>+</button>
+          </div>
+          <Btn onClick={() => onBuy(listing, buyQty)} sm>
+            BUY {buyQty} · {(listing.pricePerBlock * buyQty).toFixed(5)} Ξ
+          </Btn>
+        </div>
+      )}
+    </div>
+  )
 }
 
-function fmtEth(val) {
-  if (val >= 100) return val.toLocaleString(undefined, { maximumFractionDigits: 0 })
-  if (val >= 1) return val.toFixed(2)
-  if (val >= 0.01) return val.toFixed(4)
-  return val.toFixed(5)
+const stepBtnStyle = {
+  width: 28, height: 28, background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.12)',
+  color: 'rgba(255,255,255,0.6)', fontFamily: "'Press Start 2P', monospace", fontSize: 8, cursor: 'pointer',
 }
-
-const TRADE_CSS = `
-  @keyframes trade-fade-in {
-    from { opacity: 0; transform: translateY(6px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-  .trade-row {
-    transition: background 0.12s;
-  }
-  .trade-row:hover {
-    background: rgba(200,168,75,0.04) !important;
-  }
-  .batch-pill {
-    transition: all 0.1s;
-    cursor: pointer;
-  }
-  .batch-pill:hover {
-    border-color: rgba(200,168,75,0.5) !important;
-    background: rgba(200,168,75,0.1) !important;
-  }
-`
 
 export default function TradePanel() {
-  const [selectedBatch, setSelectedBatch] = useState(1)
-  const rows = buildCombineTable()
-  const batchPrice = BATCH_PRICES_ETH[selectedBatch] || BATCH_PRICES_ETH[1]
+  const [tab, setTab] = useState('listings')
+  const [createTier, setCreateTier] = useState(7)
+  const [createQty, setCreateQty] = useState(10)
+  const [createPrice, setCreatePrice] = useState('0.001')
+  const [createDays, setCreateDays] = useState(7)
+  const [error, setError] = useState(null)
+  const [success, setSuccess] = useState(null)
+
+  const chainId = useChainId()
+  const { switchChain } = useSwitchChain()
+  const wrongNetwork = chainId !== TARGET_CHAIN_ID
+
+  const { listings, myListings, otherListings, isApproved, refetchListings, refetchApproval, address } = useTradeData()
+  const { balances } = useGameState()
+
+  const { writeContract, data: txHash, isPending } = useWriteContract()
+  const { isSuccess: txConfirmed } = useWaitForTransactionReceipt({ hash: txHash })
+
+  useEffect(() => {
+    if (txConfirmed) {
+      setSuccess('Transaction confirmed!')
+      refetchListings()
+      refetchApproval()
+      setTimeout(() => setSuccess(null), 3000)
+    }
+  }, [txConfirmed])
+
+  function doApprove() {
+    setError(null)
+    writeContract({
+      address: CONTRACTS.TOKEN,
+      abi: TOKEN_ABI,
+      functionName: 'setApprovalForAll',
+      args: [CONTRACTS.MARKETPLACE, true],
+    }, {
+      onError: (e) => setError(e.shortMessage || 'Approval failed'),
+    })
+  }
+
+  function doCreateListing() {
+    setError(null)
+    const priceWei = parseEther(createPrice)
+    const durationSecs = BigInt(createDays * 86400)
+    writeContract({
+      address: CONTRACTS.MARKETPLACE,
+      abi: MARKETPLACE_ABI,
+      functionName: 'createListing',
+      args: [BigInt(createTier), BigInt(createQty), priceWei, durationSecs],
+    }, {
+      onError: (e) => setError(e.shortMessage || 'Create listing failed'),
+    })
+  }
+
+  function doBuy(listing, qty) {
+    setError(null)
+    const totalWei = listing.pricePerBlockWei * BigInt(qty)
+    writeContract({
+      address: CONTRACTS.MARKETPLACE,
+      abi: MARKETPLACE_ABI,
+      functionName: 'buyListing',
+      args: [BigInt(listing.id), BigInt(qty)],
+      value: totalWei,
+    }, {
+      onError: (e) => setError(e.shortMessage || 'Buy failed'),
+    })
+  }
+
+  function doCancel(listingId) {
+    setError(null)
+    writeContract({
+      address: CONTRACTS.MARKETPLACE,
+      abi: MARKETPLACE_ABI,
+      functionName: 'cancelListing',
+      args: [BigInt(listingId)],
+    }, {
+      onError: (e) => setError(e.shortMessage || 'Cancel failed'),
+    })
+  }
+
+  const tabs = [
+    { id: 'listings', label: 'LISTINGS' },
+    { id: 'my', label: 'MY LISTINGS' },
+    { id: 'create', label: 'CREATE' },
+  ]
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, height: '100%' }}>
-      <style>{TRADE_CSS}</style>
-
-      {/* ── Header: Secondary Market ── */}
-      <div style={{
-        background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,165,75,0.12)',
-        padding: '12px 16px',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        animation: 'trade-fade-in 0.3s ease-out',
-      }}>
-        <div>
-          <div style={{ ...fp, fontSize: 9, color: '#ffa84b', letterSpacing: 1 }}>SECONDARY MARKET</div>
-          <div style={{ ...fc, fontSize: 12, color: CREAM, opacity: 0.5, marginTop: 3 }}>P2P trading at mainnet launch</div>
-        </div>
-        <div style={{
-          ...fp, fontSize: 7, color: 'rgba(255,165,75,0.5)', letterSpacing: 1,
-          border: '1px solid rgba(255,165,75,0.15)', padding: '4px 8px',
-        }}>COMING SOON</div>
+      {/* Tab bar */}
+      <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+        {tabs.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)} style={{
+            ...fp, fontSize: 8, letterSpacing: 1, padding: '10px 16px', cursor: 'pointer',
+            color: tab === t.id ? ORANGE : 'rgba(255,255,255,0.35)',
+            background: tab === t.id ? 'rgba(255,168,75,0.06)' : 'transparent',
+            border: 'none', borderBottom: tab === t.id ? `2px solid ${ORANGE}` : '2px solid transparent',
+          }}>{t.label}</button>
+        ))}
       </div>
 
-      {/* ── Combine-Path Value Table ── */}
-      <div style={{
-        background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(255,255,255,0.06)',
-        padding: '12px 14px', flex: 1,
-        animation: 'trade-fade-in 0.3s ease-out 0.05s both',
-      }}>
-        {/* Section title + batch selector */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <div style={{ ...fp, fontSize: 8, color: 'rgba(255,255,255,0.5)', letterSpacing: 1 }}>COMBINE-PATH VALUE</div>
-          <div style={{ display: 'flex', gap: 3 }}>
-            {[1, 2, 3, 4, 5].map(b => (
-              <div
-                key={b}
-                className="batch-pill"
-                onClick={() => setSelectedBatch(b)}
-                style={{
-                  ...fp, fontSize: 7, letterSpacing: 0.5,
-                  padding: '3px 6px',
-                  color: selectedBatch === b ? INK : 'rgba(255,255,255,0.35)',
-                  background: selectedBatch === b ? GOLD : 'transparent',
-                  border: `1px solid ${selectedBatch === b ? GOLD_DK : 'rgba(255,255,255,0.1)'}`,
-                }}
-              >B{b}</div>
-            ))}
+      {/* Status messages */}
+      {error && (
+        <div style={{ ...fp, fontSize: 8, color: '#ff4444', background: 'rgba(255,68,68,0.08)', border: '1px solid rgba(255,68,68,0.2)', padding: '8px 12px' }}>
+          {error}
+        </div>
+      )}
+      {success && (
+        <div style={{ ...fp, fontSize: 8, color: '#6eff8a', background: 'rgba(110,255,138,0.08)', border: '1px solid rgba(110,255,138,0.2)', padding: '8px 12px' }}>
+          {success}
+        </div>
+      )}
+      {isPending && (
+        <div style={{ ...fp, fontSize: 8, color: GOLD, textAlign: 'center', padding: 8 }}>
+          Confirm in wallet...
+        </div>
+      )}
+
+      {/* Approval banner */}
+      {!isApproved && address && (tab === 'create' || tab === 'listings') && (
+        <div style={{ background: 'rgba(255,168,75,0.08)', border: `1px solid ${ORANGE}44`, padding: 12, textAlign: 'center' }}>
+          <div style={{ ...fp, fontSize: 8, color: ORANGE, marginBottom: 8 }}>MARKETPLACE NOT APPROVED</div>
+          <div style={{ ...fv, fontSize: 14, color: 'rgba(255,255,255,0.5)', marginBottom: 10 }}>
+            One-time approval to let the marketplace transfer your blocks when sold.
           </div>
+          {wrongNetwork ? (
+            <Btn onClick={() => switchChain({ chainId: TARGET_CHAIN_ID })} sm>⚠ SWITCH TO BASE</Btn>
+          ) : (
+            <Btn onClick={doApprove} sm>APPROVE MARKETPLACE</Btn>
+          )}
         </div>
+      )}
 
-        {/* Column headers */}
-        <div style={{
-          display: 'grid', gridTemplateColumns: '28px 1fr 70px 80px',
-          gap: 6, padding: '0 4px 6px',
-          borderBottom: '1px solid rgba(255,255,255,0.08)',
-        }}>
-          <span style={{ ...fp, fontSize: 7, color: 'rgba(255,255,255,0.3)', letterSpacing: 1 }}>TIER</span>
-          <span style={{ ...fp, fontSize: 7, color: 'rgba(255,255,255,0.3)', letterSpacing: 1 }}>NAME</span>
-          <span style={{ ...fp, fontSize: 7, color: 'rgba(255,255,255,0.3)', letterSpacing: 1, textAlign: 'right' }}>T7 MINTS</span>
-          <span style={{ ...fp, fontSize: 7, color: 'rgba(255,255,255,0.3)', letterSpacing: 1, textAlign: 'right' }}>ETH COST</span>
-        </div>
-
-        {/* Data rows */}
-        {rows.map((row, i) => {
-          const ethCost = row.mints * batchPrice
-          return (
-            <div key={row.tier} className="trade-row" style={{
-              display: 'grid', gridTemplateColumns: '28px 1fr 70px 80px',
-              gap: 6, alignItems: 'center',
-              padding: '6px 4px',
-              borderBottom: '1px solid rgba(255,255,255,0.03)',
-              animation: `trade-fade-in 0.25s ease-out ${0.05 * i}s both`,
-            }}>
-              <span style={{ ...fp, fontSize: 8, color: row.accent }}>T{row.tier}</span>
-              <div>
-                <span style={{ ...fc, fontSize: 12, color: 'rgba(255,255,255,0.55)' }}>{row.name}</span>
-                {row.ratio && (
-                  <span style={{ ...fp, fontSize: 7, color: 'rgba(255,255,255,0.2)', marginLeft: 6 }}>{row.ratio}:1</span>
-                )}
-              </div>
-              <span style={{ ...fv, fontSize: 20, color: CREAM, textAlign: 'right' }}>{fmtMints(row.mints)}</span>
-              <span style={{ ...fv, fontSize: 18, textAlign: 'right',
-                color: ethCost >= 5 ? GOLD_LT : ethCost >= 1 ? '#c0c0c0' : ethCost >= 0.1 ? '#cd7f32' : 'rgba(255,255,255,0.45)',
-                textShadow: ethCost >= 5 ? `0 0 8px ${GOLD}44` : ethCost >= 1 ? '0 0 6px rgba(192,192,192,0.25)' : 'none',
-              }}>
-                {fmtEth(ethCost)} Ξ
-              </span>
+      {/* Listings tab */}
+      {tab === 'listings' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, overflowY: 'auto', flex: 1 }}>
+          {otherListings.length === 0 && (
+            <div style={{ ...fp, fontSize: 8, color: 'rgba(255,255,255,0.2)', textAlign: 'center', padding: 40 }}>
+              NO LISTINGS YET
             </div>
-          )
-        })}
-
-        {/* Batch price footer */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, padding: '6px 4px 0', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-          <span style={{ ...fc, fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>
-            Batch {selectedBatch} price: {batchPrice} Ξ per mint
-          </span>
-          <span style={{ ...fp, fontSize: 7, color: 'rgba(255,255,255,0.2)' }}>PURE COMBINE PATH</span>
+          )}
+          {otherListings.map(l => (
+            <ListingCard key={l.id} listing={l} onBuy={doBuy} onCancel={doCancel} wrongNetwork={wrongNetwork} switchChain={switchChain} />
+          ))}
         </div>
-      </div>
+      )}
 
-      {/* ── Forge Shortcut Hint ── */}
-      <div style={{
-        background: 'rgba(184,107,255,0.04)', border: '1px solid rgba(184,107,255,0.12)',
-        padding: '10px 14px',
-        display: 'flex', alignItems: 'center', gap: 10,
-        animation: 'trade-fade-in 0.3s ease-out 0.15s both',
-      }}>
-        <span style={{ fontSize: 16 }}>⚡</span>
-        <div>
-          <div style={{ ...fp, fontSize: 7, color: '#b86bff', letterSpacing: 1, marginBottom: 2 }}>FORGE SHORTCUT</div>
-          <div style={{ ...fc, fontSize: 11, color: 'rgba(255,255,255,0.4)', lineHeight: 1.4 }}>
-            Burn N of {COMBINE_RATIOS[7]} blocks for a (N/{COMBINE_RATIOS[7]} × 100)% upgrade chance. Cheaper than combine — but you can lose everything.
+      {/* My listings tab */}
+      {tab === 'my' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, overflowY: 'auto', flex: 1 }}>
+          {myListings.length === 0 && (
+            <div style={{ ...fp, fontSize: 8, color: 'rgba(255,255,255,0.2)', textAlign: 'center', padding: 40 }}>
+              YOU HAVE NO ACTIVE LISTINGS
+            </div>
+          )}
+          {myListings.map(l => (
+            <ListingCard key={l.id} listing={l} onBuy={doBuy} onCancel={doCancel} wrongNetwork={wrongNetwork} switchChain={switchChain} />
+          ))}
+        </div>
+      )}
+
+      {/* Create listing tab */}
+      {tab === 'create' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/* Tier selector */}
+          <div>
+            <div style={{ ...fp, fontSize: 8, color: 'rgba(255,255,255,0.45)', letterSpacing: 1, marginBottom: 6 }}>TIER</div>
+            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+              {[7, 6, 5, 4, 3, 2, 1].map(t => {
+                const meta = TMAP[t]
+                const bal = balances?.[t] || 0
+                return (
+                  <button key={t} onClick={() => setCreateTier(t)} style={{
+                    ...fp, fontSize: 8, padding: '8px 10px', cursor: 'pointer', flex: 1, minWidth: 60,
+                    color: createTier === t ? INK : meta.accent,
+                    background: createTier === t ? meta.accent : 'rgba(0,0,0,0.3)',
+                    border: `1px solid ${createTier === t ? meta.accent : 'rgba(255,255,255,0.1)'}`,
+                  }}>
+                    T{t} <span style={{ ...fv, fontSize: 14 }}>({bal})</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Quantity */}
+          <div>
+            <div style={{ ...fp, fontSize: 8, color: 'rgba(255,255,255,0.45)', letterSpacing: 1, marginBottom: 6 }}>QUANTITY</div>
+            <div style={{ display: 'flex', gap: 0, alignItems: 'stretch', border: '2px solid rgba(255,255,255,0.12)' }}>
+              {[-10, -1].map(d => (
+                <button key={d} onClick={() => setCreateQty(q => Math.max(1, q + d))} style={{
+                  flex: '0 0 44px', height: 44, background: 'rgba(0,0,0,0.4)',
+                  border: 'none', borderRight: '1px solid rgba(255,255,255,0.1)',
+                  color: 'rgba(255,255,255,0.6)', ...fp, fontSize: 8, cursor: 'pointer',
+                }}>{d}</button>
+              ))}
+              <div style={{
+                flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                ...fv, fontSize: 36, color: CREAM, background: 'rgba(0,0,0,0.2)',
+              }}>{createQty}</div>
+              {[1, 10].map(d => (
+                <button key={d} onClick={() => setCreateQty(q => Math.min(balances?.[createTier] || 0, q + d))} style={{
+                  flex: '0 0 44px', height: 44, background: 'rgba(0,0,0,0.4)',
+                  border: 'none', borderLeft: '1px solid rgba(255,255,255,0.1)',
+                  color: 'rgba(255,255,255,0.6)', ...fp, fontSize: 8, cursor: 'pointer',
+                }}>+{d}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* Price per block */}
+          <div>
+            <div style={{ ...fp, fontSize: 8, color: 'rgba(255,255,255,0.45)', letterSpacing: 1, marginBottom: 6 }}>PRICE PER BLOCK (ETH)</div>
+            <input
+              type="text"
+              value={createPrice}
+              onChange={e => setCreatePrice(e.target.value)}
+              style={{
+                width: '100%', height: 44, padding: '0 12px',
+                ...fv, fontSize: 24, color: CREAM, background: 'rgba(0,0,0,0.3)',
+                border: '2px solid rgba(255,255,255,0.12)', outline: 'none',
+              }}
+            />
+          </div>
+
+          {/* Duration */}
+          <div>
+            <div style={{ ...fp, fontSize: 8, color: 'rgba(255,255,255,0.45)', letterSpacing: 1, marginBottom: 6 }}>LISTING DURATION</div>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {[1, 3, 7, 14, 30].map(d => (
+                <button key={d} onClick={() => setCreateDays(d)} style={{
+                  ...fp, fontSize: 8, flex: 1, padding: '8px 0', cursor: 'pointer',
+                  color: createDays === d ? INK : CREAM,
+                  background: createDays === d ? GOLD : 'rgba(0,0,0,0.35)',
+                  border: createDays === d ? `2px solid ${GOLD_DK}` : '2px solid rgba(255,255,255,0.12)',
+                }}>{d}D</button>
+              ))}
+            </div>
+          </div>
+
+          {/* Summary */}
+          <div style={{
+            ...fp, fontSize: 9, color: ORANGE, textAlign: 'center',
+            padding: '8px 0', borderTop: '1px solid rgba(255,255,255,0.06)', borderBottom: '1px solid rgba(255,255,255,0.06)',
+          }}>
+            TOTAL: {(createQty * parseFloat(createPrice || '0')).toFixed(5)} ETH · {createDays} DAY{createDays !== 1 ? 'S' : ''}
+          </div>
+
+          {/* Create button */}
+          {!isApproved ? (
+            wrongNetwork ? (
+              <Btn onClick={() => switchChain({ chainId: TARGET_CHAIN_ID })}>⚠ SWITCH TO BASE</Btn>
+            ) : (
+              <Btn onClick={doApprove}>APPROVE MARKETPLACE FIRST</Btn>
+            )
+          ) : wrongNetwork ? (
+            <Btn onClick={() => switchChain({ chainId: TARGET_CHAIN_ID })}>⚠ SWITCH TO BASE</Btn>
+          ) : (
+            <Btn onClick={doCreateListing} disabled={!createPrice || createQty < 1}>
+              LIST {createQty} T{createTier} BLOCKS
+            </Btn>
+          )}
+
+          <div style={{ ...fp, fontSize: 7, color: 'rgba(255,255,255,0.25)', textAlign: 'center' }}>
+            10% fee on sale · Blocks stay in your wallet until sold
           </div>
         </div>
-      </div>
-
-      {/* ── OpenSea Link ── */}
-      <a
-        href="https://testnets.opensea.io/collection/the-block-hunt"
-        target="_blank"
-        rel="noreferrer"
-        style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          width: '100%', height: 44,
-          ...fp, fontSize: 8, letterSpacing: 1,
-          background: 'transparent', color: CREAM,
-          border: '2px solid rgba(255,255,255,0.15)',
-          cursor: 'pointer', textDecoration: 'none',
-          transition: 'color 0.12s, border-color 0.12s, background 0.12s',
-          animation: 'trade-fade-in 0.3s ease-out 0.2s both',
-        }}
-        onMouseEnter={e => { e.currentTarget.style.color = GOLD; e.currentTarget.style.borderColor = GOLD_DK; e.currentTarget.style.background = 'rgba(200,168,75,0.04)' }}
-        onMouseLeave={e => { e.currentTarget.style.color = CREAM; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)'; e.currentTarget.style.background = 'transparent' }}
-      >↗ VIEW ON OPENSEA (TESTNET)</a>
+      )}
     </div>
   )
 }

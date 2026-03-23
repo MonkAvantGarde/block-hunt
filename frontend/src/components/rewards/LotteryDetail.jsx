@@ -34,7 +34,7 @@ export default function LotteryDetail({ rewards, onClaim }) {
       <div style={{ animation: 'lotteryGlow 3s infinite', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(78,205,196,0.12)', padding: 20, marginBottom: 16 }}>
         <div style={{ textAlign: 'center', marginBottom: 20, padding: '16px 0' }}>
           <div style={{ ...fp, fontSize: 8, color: 'rgba(78,205,196,0.5)', letterSpacing: 2, marginBottom: 8 }}>TODAY'S PRIZE</div>
-          <div style={{ ...fv, fontSize: 64, color: REWARDS_ACCENT, textShadow: '0 0 30px rgba(78,205,196,0.5)', lineHeight: 1 }}>{lottery.prize.toFixed(2)} Ξ</div>
+          <div style={{ ...fv, fontSize: 64, color: REWARDS_ACCENT, textShadow: '0 0 30px rgba(78,205,196,0.5)', lineHeight: 1 }}>{lottery.prize.toFixed(4)} Ξ</div>
           <div style={{ ...fp, fontSize: 8, color: 'rgba(78,205,196,0.4)', letterSpacing: 2, marginTop: 6 }}>~$50 AT CURRENT RATE</div>
         </div>
 
@@ -86,7 +86,7 @@ export default function LotteryDetail({ rewards, onClaim }) {
             <div style={{ ...fp, fontSize: 8, color: 'rgba(200,168,75,0.6)', letterSpacing: 1, marginBottom: 3 }}>WINNER — {lottery.latestDate}</div>
             <div style={{ ...fv, fontSize: 20, color: CREAM }}>{lottery.latestWinner}{lottery.latestIsYou ? ' (YOU!)' : ''}</div>
           </div>
-          <div style={{ ...fv, fontSize: 24, color: GOLD_LT, textShadow: '0 0 8px rgba(200,168,75,0.3)' }}>+{lottery.prize.toFixed(2)} Ξ</div>
+          <div style={{ ...fv, fontSize: 24, color: GOLD_LT, textShadow: '0 0 8px rgba(200,168,75,0.3)' }}>+{lottery.prize.toFixed(4)} Ξ</div>
         </div>
       ) : (
         <div style={{
