@@ -35,48 +35,41 @@ function ListingCard({ listing, onBuy, onCancel, wrongNetwork, switchChain }) {
 
   return (
     <div style={{
-      background: 'rgba(0,0,0,0.25)', border: `1px solid ${accent}33`,
-      padding: 14, display: 'flex', flexDirection: 'column', gap: 8,
+      background: 'rgba(0,0,0,0.25)', border: `1px solid ${accent}22`,
+      padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 10,
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <span style={{ ...fp, fontSize: 9, color: accent, letterSpacing: 1 }}>T{listing.tier}</span>
-          <span style={{ ...fv, fontSize: 18, color: CREAM, marginLeft: 8 }}>{listing.tierName}</span>
-          <span style={{ ...fp, fontSize: 7, color: 'rgba(255,255,255,0.3)', marginLeft: 8 }}>{listing.tierLabel}</span>
-        </div>
-        <div style={{ ...fp, fontSize: 7, color: 'rgba(255,255,255,0.35)' }}>
-          <Countdown expiresAt={listing.expiresAt} />
+      {/* Tier badge */}
+      <div style={{ ...fp, fontSize: 8, color: accent, width: 28, textAlign: 'center' }}>T{listing.tier}</div>
+
+      {/* Info */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+          <span style={{ ...fv, fontSize: 20, color: GOLD_LT }}>{listing.pricePerBlock.toFixed(5)} Ξ</span>
+          <span style={{ ...fv, fontSize: 14, color: 'rgba(255,255,255,0.4)' }}>×{listing.quantity}</span>
+          <span style={{ ...fp, fontSize: 6, color: 'rgba(255,255,255,0.25)' }}>{listing.sellerShort}</span>
         </div>
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-        <div>
-          <span style={{ ...fv, fontSize: 28, color: GOLD_LT }}>{listing.pricePerBlock.toFixed(5)}</span>
-          <span style={{ ...fp, fontSize: 8, color: 'rgba(255,255,255,0.4)', marginLeft: 4 }}>Ξ each</span>
-        </div>
-        <div style={{ ...fv, fontSize: 18, color: 'rgba(255,255,255,0.5)' }}>
-          ×{listing.quantity}
-        </div>
-      </div>
-
-      <div style={{ ...fp, fontSize: 7, color: 'rgba(255,255,255,0.3)' }}>
-        Seller: {listing.sellerShort}
-      </div>
-
+      {/* Action */}
       {listing.isOwn ? (
-        <Btn onClick={() => onCancel(listing.id)} sm danger>CANCEL LISTING</Btn>
+        <button onClick={() => onCancel(listing.id)} style={{
+          ...fp, fontSize: 7, color: '#ff6644', background: 'rgba(255,68,68,0.08)',
+          border: '1px solid rgba(255,68,68,0.2)', padding: '6px 10px', cursor: 'pointer',
+        }}>CANCEL</button>
       ) : wrongNetwork ? (
-        <Btn onClick={() => switchChain({ chainId: TARGET_CHAIN_ID })} sm>⚠ SWITCH TO BASE</Btn>
+        <button onClick={() => switchChain({ chainId: TARGET_CHAIN_ID })} style={{
+          ...fp, fontSize: 7, color: ORANGE, background: 'rgba(255,168,75,0.08)',
+          border: `1px solid ${ORANGE}44`, padding: '6px 10px', cursor: 'pointer',
+        }}>SWITCH</button>
       ) : (
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: '0 0 auto' }}>
-            <button onClick={() => setBuyQty(q => Math.max(1, q - 1))} style={stepBtnStyle}>-</button>
-            <div style={{ ...fv, fontSize: 20, color: CREAM, width: 40, textAlign: 'center' }}>{buyQty}</div>
-            <button onClick={() => setBuyQty(q => Math.min(listing.quantity, q + 1))} style={stepBtnStyle}>+</button>
-          </div>
-          <Btn onClick={() => onBuy(listing, buyQty)} sm>
-            BUY {buyQty} · {(listing.pricePerBlock * buyQty).toFixed(5)} Ξ
-          </Btn>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+          <button onClick={() => setBuyQty(q => Math.max(1, q - 1))} style={stepBtnStyle}>-</button>
+          <div style={{ ...fv, fontSize: 16, color: CREAM, width: 28, textAlign: 'center' }}>{buyQty}</div>
+          <button onClick={() => setBuyQty(q => Math.min(listing.quantity, q + 1))} style={stepBtnStyle}>+</button>
+          <button onClick={() => onBuy(listing, buyQty)} style={{
+            ...fp, fontSize: 7, color: INK, background: GOLD, border: `1px solid ${GOLD_DK}`,
+            padding: '6px 10px', cursor: 'pointer', marginLeft: 4,
+          }}>BUY · {(listing.pricePerBlock * buyQty).toFixed(4)} Ξ</button>
         </div>
       )}
     </div>
@@ -93,7 +86,7 @@ export default function TradePanel() {
   const [createTier, setCreateTier] = useState(7)
   const [createQty, setCreateQty] = useState(10)
   const [createPrice, setCreatePrice] = useState('0.001')
-  const [createDays, setCreateDays] = useState(7)
+  const createDays = 7
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(null)
 
@@ -207,10 +200,16 @@ export default function TradePanel() {
 
       {/* Approval banner */}
       {!isApproved && address && (tab === 'create' || tab === 'listings') && (
-        <div style={{ background: 'rgba(255,168,75,0.08)', border: `1px solid ${ORANGE}44`, padding: 12, textAlign: 'center' }}>
-          <div style={{ ...fp, fontSize: 8, color: ORANGE, marginBottom: 8 }}>MARKETPLACE NOT APPROVED</div>
-          <div style={{ ...fv, fontSize: 14, color: 'rgba(255,255,255,0.5)', marginBottom: 10 }}>
-            One-time approval to let the marketplace transfer your blocks when sold.
+        <div style={{ background: 'rgba(255,168,75,0.06)', border: `1px solid ${ORANGE}33`, padding: 16 }}>
+          <div style={{ ...fp, fontSize: 9, color: ORANGE, marginBottom: 10, textAlign: 'center' }}>ONE-TIME MARKETPLACE APPROVAL</div>
+          <div style={{ ...fv, fontSize: 16, color: 'rgba(255,255,255,0.6)', lineHeight: 1.5, marginBottom: 6 }}>
+            To list and sell blocks, the marketplace needs permission to transfer them to buyers when your listings are filled.
+          </div>
+          <div style={{ ...fv, fontSize: 15, color: 'rgba(255,255,255,0.45)', lineHeight: 1.5, marginBottom: 12 }}>
+            Your blocks stay in your wallet until someone buys them. This is the same standard approval used by OpenSea, Blur, and all major NFT marketplaces.
+          </div>
+          <div style={{ ...fp, fontSize: 7, color: 'rgba(255,255,255,0.3)', marginBottom: 12, textAlign: 'center' }}>
+            Your wallet will show a permission prompt — this is normal for ERC-1155 token approvals.
           </div>
           {wrongNetwork ? (
             <Btn onClick={() => switchChain({ chainId: TARGET_CHAIN_ID })} sm>⚠ SWITCH TO BASE</Btn>
@@ -312,27 +311,12 @@ export default function TradePanel() {
             />
           </div>
 
-          {/* Duration */}
-          <div>
-            <div style={{ ...fp, fontSize: 8, color: 'rgba(255,255,255,0.45)', letterSpacing: 1, marginBottom: 6 }}>LISTING DURATION</div>
-            <div style={{ display: 'flex', gap: 4 }}>
-              {[1, 3, 7, 14, 30].map(d => (
-                <button key={d} onClick={() => setCreateDays(d)} style={{
-                  ...fp, fontSize: 8, flex: 1, padding: '8px 0', cursor: 'pointer',
-                  color: createDays === d ? INK : CREAM,
-                  background: createDays === d ? GOLD : 'rgba(0,0,0,0.35)',
-                  border: createDays === d ? `2px solid ${GOLD_DK}` : '2px solid rgba(255,255,255,0.12)',
-                }}>{d}D</button>
-              ))}
-            </div>
-          </div>
-
           {/* Summary */}
           <div style={{
             ...fp, fontSize: 9, color: ORANGE, textAlign: 'center',
             padding: '8px 0', borderTop: '1px solid rgba(255,255,255,0.06)', borderBottom: '1px solid rgba(255,255,255,0.06)',
           }}>
-            TOTAL: {(createQty * parseFloat(createPrice || '0')).toFixed(5)} ETH · {createDays} DAY{createDays !== 1 ? 'S' : ''}
+            TOTAL: {(createQty * parseFloat(createPrice || '0')).toFixed(5)} ETH · EXPIRES IN 7 DAYS
           </div>
 
           {/* Create button */}
