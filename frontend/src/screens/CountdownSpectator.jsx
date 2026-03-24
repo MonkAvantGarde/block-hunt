@@ -161,7 +161,7 @@ function PrizeDisplay({ eth = 0 }) {
       <div style={{ display: "flex", gap: 16, justifyContent: "center", marginTop: 20, flexWrap: "wrap" }}>
         {[
           { label: "IF CLAIMED",    value: `Ξ ${eth.toFixed(4)}`,       note: "100% to holder",            col: GOLD },
-          { label: "IF SACRIFICED", value: `Ξ ${(eth/2).toFixed(4)}`,   note: "50% holder · 50% community", col: EMBER_LT },
+          { label: "IF SACRIFICED", value: `Ξ ${(eth/2).toFixed(4)}`,   note: "50% winner + Origin · 40% top 100 · 10% S2", col: EMBER_LT },
         ].map(p => (
           <div key={p.label} style={{
             border: `1px solid ${p.col}33`, padding: "12px 20px",
@@ -617,6 +617,17 @@ function Leaderboard({ holderAddress }) {
         setPlayers(json?.data?.players || []);
       } catch (e) {
         console.warn("Spectator leaderboard fetch failed:", e);
+        // Subgraph down — try localStorage cache, then hardcoded fallback
+        let fallback = null;
+        try {
+          const cached = JSON.parse(localStorage.getItem('blockhunt_lb_cache'));
+          if (cached?.players?.length) fallback = cached.players.slice(0, 5);
+        } catch {}
+        if (!fallback) {
+          const { FALLBACK_PLAYERS } = await import('../config/leaderboard-fallback');
+          fallback = FALLBACK_PLAYERS.slice(0, 5);
+        }
+        setPlayers(fallback);
       }
       setLoading(false);
     }

@@ -165,7 +165,7 @@ function PrizeBlock({ ethAmount }) {
           <div style={{ fontFamily: "'VT323', monospace", fontSize: 22, color: EMBER_LT }}>Ξ {(display / 2).toFixed(4)}</div>
         </div>
         <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 5, color: CREAM, opacity: .85, marginTop: 6, letterSpacing: .5 }}>
-          50% you · 50% community
+          50% you + Origin · 40% top 100 · 10% S2
         </div>
       </div>
     </div>
@@ -292,12 +292,12 @@ function ChoiceSection({ ethAmount, secondsRemaining }) {
           <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 5, color: EMBER_LT, letterSpacing: 2, marginBottom: 8, opacity: .85 }}>OPTION B</div>
           <div style={{ fontFamily: "'VT323', monospace", fontSize: 26, color: EMBER_LT, lineHeight: 1.2, marginBottom: 10 }}>SACRIFICE TO THE HUNT</div>
           <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 6, color: CREAM, opacity: .65, lineHeight: 2.4, marginBottom: 12 }}>
-            Burn Tiers 2–7. Mint The Origin. Split treasury 50/50 with the community.
+            Burn Tiers 2–7. Mint The Origin. Split treasury with the community.
           </div>
           <div style={{ borderTop: "1px solid rgba(255,255,255,.06)", paddingTop: 10 }}>
             <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 5, color: EMBER_LT, opacity: .8, letterSpacing: 1, marginBottom: 4 }}>YOU RECEIVE</div>
             <div style={{ fontFamily: "'VT323', monospace", fontSize: 22, color: EMBER_LT, lineHeight: 1.3 }}>Ξ {(display / 2).toFixed(4)} + The Origin</div>
-            <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 5, color: CREAM, opacity: .75, marginTop: 4, letterSpacing: .5, lineHeight: 1.8 }}>50% treasury · Community gets 50%</div>
+            <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 5, color: CREAM, opacity: .75, marginTop: 4, letterSpacing: .5, lineHeight: 1.8 }}>50% you + Origin · 40% top 100 · 10% S2 seed</div>
           </div>
         </div>
       </div>

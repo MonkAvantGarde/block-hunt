@@ -318,18 +318,31 @@ const { data: countdownHolder } = useReadContract({
   function handleMint()  { refetchAll() }
   function handleForge() { refetchAll() }
 
-  // ── Rank change notifications — poll subgraph every 60s ──
+  // ── Rank change notifications — poll subgraph every 5 min ──
   const SUBGRAPH_URL = "https://api.studio.thegraph.com/query/1744131/blok-hunt/version/latest"
   const BURN_ADDRS = ["0x0000000000000000000000000000000000000000","0x000000000000000000000000000000000000dead"]
   useEffect(() => {
     if (!address) return
     async function checkRank() {
+      let players = []
       try {
         const query = `{ players(orderBy: progressionScore, orderDirection: desc, where: { id_not_in: ${JSON.stringify(BURN_ADDRS)} }) { id } }`
         const res = await fetch(SUBGRAPH_URL, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ query }) })
-        if (!res.ok) return
+        if (!res.ok) throw new Error("Rate limited")
         const json = await res.json()
-        const players = json?.data?.players || []
+        players = json?.data?.players || []
+      } catch {
+        // Subgraph down — try localStorage cache, then hardcoded fallback
+        try {
+          const cached = JSON.parse(localStorage.getItem('blockhunt_lb_cache'))
+          if (cached?.players?.length) { players = cached.players }
+        } catch {}
+        if (!players.length) {
+          const { FALLBACK_PLAYERS } = await import('../config/leaderboard-fallback')
+          players = FALLBACK_PLAYERS.map(p => ({ id: p.id }))
+        }
+      }
+      try {
         const idx = players.findIndex(p => p.id.toLowerCase() === address.toLowerCase())
         if (idx === -1) return
         const rank = idx + 1

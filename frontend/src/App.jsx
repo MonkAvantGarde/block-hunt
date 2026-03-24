@@ -6,9 +6,25 @@ import Modals from "./components/Modals";
 import CountdownHolder from "./screens/CountdownHolder";
 import CountdownSpectator from "./screens/CountdownSpectator";
 import { useGameState } from "./hooks/useGameState";
+import { FALLBACK_PLAYERS, FALLBACK_STATS } from "./config/leaderboard-fallback";
 
 const LB_URL = "https://api.studio.thegraph.com/query/1744131/blok-hunt/version/latest";
 const LB_POLL = 300_000; // 5 minutes — conserve subgraph quota
+const LB_CACHE_KEY = "blockhunt_lb_cache";
+
+function getCachedLeaderboard() {
+  try {
+    const raw = localStorage.getItem(LB_CACHE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch { return null; }
+}
+
+function setCachedLeaderboard(players, stats) {
+  try {
+    localStorage.setItem(LB_CACHE_KEY, JSON.stringify({ players, stats, ts: Date.now() }));
+  } catch {}
+}
 
 function useLeaderboardCache() {
   const [data, setData] = useState({ players: [], stats: null, error: null, loading: true });
@@ -30,9 +46,19 @@ function useLeaderboardCache() {
       if (!res.ok) throw new Error("Rate limited");
       const json = await res.json();
       if (json.errors) throw new Error(json.errors[0].message);
-      setData({ players: json.data?.players || [], stats: json.data?.seasonStat || null, error: null, loading: false });
+      const players = json.data?.players || [];
+      const stats = json.data?.seasonStat || null;
+      setCachedLeaderboard(players, stats);
+      setData({ players, stats, error: null, loading: false });
     } catch (e) {
-      setData(prev => ({ ...prev, error: e.message, loading: false }));
+      // Subgraph unavailable — try localStorage cache, then hardcoded fallback
+      const cached = getCachedLeaderboard();
+      setData(prev => ({
+        players: prev.players.length ? prev.players : (cached?.players || FALLBACK_PLAYERS),
+        stats: prev.stats || cached?.stats || FALLBACK_STATS,
+        error: e.message,
+        loading: false,
+      }));
     }
   }, []);
 

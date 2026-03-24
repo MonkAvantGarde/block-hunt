@@ -109,6 +109,11 @@ function PendingMintItem({ item, onDelivered, onRequestId }) {
         <span style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:"rgba(255,255,255,0.4)" }}>
           x{item.qty}
         </span>
+        {item.ethStuck && (
+          <span style={{ fontFamily:"'VT323', monospace", fontSize:16, color:"#ff6666" }}>
+            Ξ{parseFloat(item.ethStuck).toFixed(4)}
+          </span>
+        )}
         <span style={{ fontFamily:"'VT323', monospace", fontSize:18,
           color: isDelivered ? "#6eff8a" : canCancel ? "#ff6666" : "rgba(255,255,255,0.5)",
           minWidth:44, textAlign:"right",
@@ -151,7 +156,7 @@ function PendingMintItem({ item, onDelivered, onRequestId }) {
                 padding:"4px 8px", cursor: canCancel ? "pointer" : "default",
               }}
             >
-              {canCancel ? `✕ ${cancelLabel} — REFUND ETH` : `CANCEL IN ${cancelLabel}`}
+              {canCancel ? `✕ REFUND${item.ethStuck ? ` Ξ${parseFloat(item.ethStuck).toFixed(4)}` : ' ETH'}` : `CANCEL IN ${cancelLabel}`}
             </button>
           )}
         </div>
@@ -268,6 +273,7 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatu
             functionName: 'vrfMintRequests', args: [rid],
           })
           if (!req || req.player?.toLowerCase() !== address.toLowerCase()) continue
+          const { formatEther } = await import('viem')
           toAdd.push({
             id: 'recovered_' + ridStr,
             txHash: null,
@@ -275,6 +281,7 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatu
             startTime: Number(req.requestedAt) * 1000,
             status: 'pending',
             requestId: ridStr,
+            ethStuck: formatEther(req.amountPaid),
           })
         }
         if (toAdd.length > 0) {
@@ -375,6 +382,27 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatu
 
         {drumRollActive ? null : (<>
         {/* — Normal mint UI below (hidden during drum roll) — */}
+
+        {/* Stuck ETH recovery banner */}
+        {(() => {
+          const stuck = pendingMints.filter(m => m.status === 'pending' && m.ethStuck && (Date.now() - m.startTime) > 3600_000)
+          if (stuck.length === 0) return null
+          const totalEth = stuck.reduce((sum, m) => sum + parseFloat(m.ethStuck || 0), 0)
+          return (
+            <div style={{
+              background:"rgba(255,80,80,0.12)", border:"1px solid rgba(255,80,80,0.4)",
+              padding:"10px 14px", display:"flex", flexDirection:"column", gap:6,
+            }}>
+              <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:9, color:"#ff6666", letterSpacing:1 }}>
+                ⚠ {totalEth.toFixed(4)} ETH STUCK
+              </div>
+              <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:11, color:"rgba(255,255,255,0.5)", lineHeight:1.5 }}>
+                {stuck.length} mint request{stuck.length > 1 ? 's' : ''} failed to complete. Cancel below to reclaim your ETH.
+              </div>
+            </div>
+          )
+        })()}
+
         {mintError && (
           <TxErrorPanel error={mintError} context="mint" onRetry={() => setMintError(null)} />
         )}
