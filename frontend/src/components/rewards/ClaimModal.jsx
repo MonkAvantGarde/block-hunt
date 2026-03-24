@@ -1,3 +1,4 @@
+import { useSafeWrite } from '../../hooks/useSafeWrite'
 // ClaimModal.jsx — Confirmation modal for reward claims with contract writes
 import { useState, useEffect } from 'react'
 import { useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
@@ -14,7 +15,7 @@ export default function ClaimModal({ reward, onClose, onSuccess }) {
   const [claimState, setClaimState] = useState('idle') // idle | confirming | pending | success | error
   const [errorMsg, setErrorMsg] = useState(null)
 
-  const { writeContract, data: txHash, isPending, error: writeError } = useWriteContract()
+  const { writeContract, data: txHash, isPending, error: writeError } = useSafeWrite()
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash })
 
   // Track tx lifecycle
@@ -48,7 +49,7 @@ export default function ClaimModal({ reward, onClose, onSuccess }) {
 
     if (claimType === 'lottery') {
       writeContract({
-        address: CONTRACTS.REWARDS,
+        address: CONTRACTS.REWARDS, chainId: 84532,
         abi: REWARDS_ABI,
         functionName: 'claimDailyPrize',
         args: [BigInt(claimArgs.day)],
@@ -56,7 +57,7 @@ export default function ClaimModal({ reward, onClose, onSuccess }) {
       })
     } else if (claimType === 'batchFirst') {
       writeContract({
-        address: CONTRACTS.REWARDS,
+        address: CONTRACTS.REWARDS, chainId: 84532,
         abi: REWARDS_ABI,
         functionName: 'claimBatchFirst',
         args: [BigInt(claimArgs.batch), BigInt(claimArgs.achievementId)],
@@ -64,7 +65,7 @@ export default function ClaimModal({ reward, onClose, onSuccess }) {
       })
     } else if (claimType === 'bounty') {
       writeContract({
-        address: CONTRACTS.REWARDS,
+        address: CONTRACTS.REWARDS, chainId: 84532,
         abi: REWARDS_ABI,
         functionName: 'claimBatchBounty',
         args: [BigInt(claimArgs.batch)],

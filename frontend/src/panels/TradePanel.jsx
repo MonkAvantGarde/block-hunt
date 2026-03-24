@@ -1,3 +1,4 @@
+import { useSafeWrite } from '../hooks/useSafeWrite'
 import { useState, useEffect } from 'react'
 import { useWriteContract, useWaitForTransactionReceipt, useChainId, useSwitchChain, useAccount, useConnect } from 'wagmi'
 import { parseEther } from 'viem'
@@ -139,7 +140,7 @@ export default function TradePanel({ refetchAll: gameRefetch, onRevealTier }) {
   const { myListings, otherListings, myOffers, otherOffers, isApproved, refetchAll: tradeRefetch, refetchApproval, address } = useTradeData()
   const { balances } = useGameState()
 
-  const { writeContract, data: txHash, isPending } = useWriteContract()
+  const { writeContract, data: txHash, isPending } = useSafeWrite()
   const { isSuccess: txConfirmed } = useWaitForTransactionReceipt({ hash: txHash })
 
   useEffect(() => {
@@ -160,7 +161,7 @@ export default function TradePanel({ refetchAll: gameRefetch, onRevealTier }) {
   function doApprove() {
     setError(null)
     writeContract({
-      address: CONTRACTS.TOKEN, abi: TOKEN_ABI,
+      address: CONTRACTS.TOKEN, chainId: 84532, abi: TOKEN_ABI,
       functionName: 'setApprovalForAll',
       args: [CONTRACTS.MARKETPLACE, true],
     }, { onError: (e) => setError(e.shortMessage || 'Approval failed') })
@@ -169,7 +170,7 @@ export default function TradePanel({ refetchAll: gameRefetch, onRevealTier }) {
   function doCreateListing() {
     setError(null)
     writeContract({
-      address: CONTRACTS.MARKETPLACE, abi: MARKETPLACE_ABI,
+      address: CONTRACTS.MARKETPLACE, chainId: 84532, abi: MARKETPLACE_ABI,
       functionName: 'createListing',
       args: [BigInt(createTier), BigInt(createQty), parseEther(createPrice), BigInt(7 * 86400)],
     }, { onError: (e) => setError(e.shortMessage || 'Create listing failed') })
@@ -179,7 +180,7 @@ export default function TradePanel({ refetchAll: gameRefetch, onRevealTier }) {
     setError(null)
     const totalWei = parseEther(createPrice) * BigInt(createQty)
     writeContract({
-      address: CONTRACTS.MARKETPLACE, abi: MARKETPLACE_ABI,
+      address: CONTRACTS.MARKETPLACE, chainId: 84532, abi: MARKETPLACE_ABI,
       functionName: 'createOffer',
       args: [BigInt(createTier), BigInt(createQty), parseEther(createPrice), BigInt(7 * 86400)],
       value: totalWei,
@@ -190,7 +191,7 @@ export default function TradePanel({ refetchAll: gameRefetch, onRevealTier }) {
     setError(null)
     setLastBoughtTier(item.tier)
     writeContract({
-      address: CONTRACTS.MARKETPLACE, abi: MARKETPLACE_ABI,
+      address: CONTRACTS.MARKETPLACE, chainId: 84532, abi: MARKETPLACE_ABI,
       functionName: 'buyListing',
       args: [BigInt(item.id), BigInt(qty)],
       value: item.pricePerBlockWei * BigInt(qty),
@@ -200,7 +201,7 @@ export default function TradePanel({ refetchAll: gameRefetch, onRevealTier }) {
   function doFillOffer(item, qty) {
     setError(null)
     writeContract({
-      address: CONTRACTS.MARKETPLACE, abi: MARKETPLACE_ABI,
+      address: CONTRACTS.MARKETPLACE, chainId: 84532, abi: MARKETPLACE_ABI,
       functionName: 'fillOffer',
       args: [BigInt(item.id), BigInt(qty)],
     }, { onError: (e) => setError(e.shortMessage || 'Fill offer failed') })
@@ -209,7 +210,7 @@ export default function TradePanel({ refetchAll: gameRefetch, onRevealTier }) {
   function doCancelListing(id) {
     setError(null)
     writeContract({
-      address: CONTRACTS.MARKETPLACE, abi: MARKETPLACE_ABI,
+      address: CONTRACTS.MARKETPLACE, chainId: 84532, abi: MARKETPLACE_ABI,
       functionName: 'cancelListing', args: [BigInt(id)],
     }, { onError: (e) => setError(e.shortMessage || 'Cancel failed') })
   }
@@ -217,7 +218,7 @@ export default function TradePanel({ refetchAll: gameRefetch, onRevealTier }) {
   function doCancelOffer(id) {
     setError(null)
     writeContract({
-      address: CONTRACTS.MARKETPLACE, abi: MARKETPLACE_ABI,
+      address: CONTRACTS.MARKETPLACE, chainId: 84532, abi: MARKETPLACE_ABI,
       functionName: 'cancelOffer', args: [BigInt(id)],
     }, { onError: (e) => setError(e.shortMessage || 'Cancel failed') })
   }

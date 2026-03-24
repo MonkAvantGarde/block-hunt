@@ -1,3 +1,4 @@
+import { useSafeWrite } from '../hooks/useSafeWrite'
 /**
  * AllTiersTrigger.jsx
  * ─────────────────────────────────────────────────────────────────
@@ -57,7 +58,7 @@ export default function AllTiersTrigger({ walletAddress, balances, onTriggered, 
   const cardsRef     = useRef(null);
   const autoFiredRef = useRef(false);
 
-  const { writeContract, data: txHash, isPending: isTxPending, error: writeError } = useWriteContract();
+  const { writeContract, data: txHash, isPending: isTxPending, error: writeError } = useSafeWrite();
   const { isSuccess: txConfirmed } = useWaitForTransactionReceipt({ hash: txHash });
 
   useEffect(() => {
@@ -103,7 +104,7 @@ export default function AllTiersTrigger({ walletAddress, balances, onTriggered, 
     setPhase('TRIGGERING');
     setTxError(null);
     writeContract({
-      address: CONTRACTS.TOKEN,
+      address: CONTRACTS.TOKEN, chainId: 84532,
       abi: TOKEN_ABI,
       functionName: 'claimHolderStatus',
       args: [],

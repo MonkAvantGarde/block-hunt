@@ -1,3 +1,4 @@
+import { useSafeWrite } from '../hooks/useSafeWrite'
 import { useState, useEffect } from "react";
 import { useReadContract, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
 import { useGameState } from '../hooks/useGameState';
@@ -728,7 +729,7 @@ export function ProfileModal({ onClose, connectedAddress }) {
 function EscrowClaimsSection({ address }) {
   // Read escrow state
   const { data: escrowInfo } = useReadContract({
-    address: CONTRACTS.ESCROW,
+    address: CONTRACTS.ESCROW, chainId: 84532,
     abi: ESCROW_ABI,
     functionName: "getEscrowInfo",
     query: { refetchInterval: 15000 },
@@ -736,7 +737,7 @@ function EscrowClaimsSection({ address }) {
 
   // Read winner pending withdrawal
   const { data: pendingRaw } = useReadContract({
-    address: CONTRACTS.ESCROW,
+    address: CONTRACTS.ESCROW, chainId: 84532,
     abi: ESCROW_ABI,
     functionName: "pendingWithdrawal",
     args: [address],
@@ -745,7 +746,7 @@ function EscrowClaimsSection({ address }) {
 
   // Read leaderboard entitlement
   const { data: entitlementRaw } = useReadContract({
-    address: CONTRACTS.ESCROW,
+    address: CONTRACTS.ESCROW, chainId: 84532,
     abi: ESCROW_ABI,
     functionName: "leaderboardEntitlement",
     args: [address],
@@ -754,14 +755,14 @@ function EscrowClaimsSection({ address }) {
 
   // Read claimed status
   const { data: hasClaimed } = useReadContract({
-    address: CONTRACTS.ESCROW,
+    address: CONTRACTS.ESCROW, chainId: 84532,
     abi: ESCROW_ABI,
     functionName: "hasClaimed",
     args: [address],
     query: { refetchInterval: 15000 },
   });
 
-  const { writeContract, data: txHash, isPending } = useWriteContract();
+  const { writeContract, data: txHash, isPending } = useSafeWrite();
   const { isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
   const [claimType, setClaimType] = useState(null); // 'winner' | 'leaderboard'
   const [claimError, setClaimError] = useState(null);
@@ -782,7 +783,7 @@ function EscrowClaimsSection({ address }) {
     setClaimType('winner');
     setClaimError(null);
     writeContract({
-      address: CONTRACTS.ESCROW,
+      address: CONTRACTS.ESCROW, chainId: 84532,
       abi: ESCROW_ABI,
       functionName: "withdrawWinnerShare",
       gas: BigInt(300_000),
@@ -795,7 +796,7 @@ function EscrowClaimsSection({ address }) {
     setClaimType('leaderboard');
     setClaimError(null);
     writeContract({
-      address: CONTRACTS.ESCROW,
+      address: CONTRACTS.ESCROW, chainId: 84532,
       abi: ESCROW_ABI,
       functionName: "claimLeaderboardReward",
       gas: BigInt(300_000),

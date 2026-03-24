@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { useWriteContract, useWaitForTransactionReceipt, useWatchContractEvent, useReadContract } from 'wagmi'
+import { useWaitForTransactionReceipt, useWatchContractEvent, useReadContract } from 'wagmi'
+import { useSafeWrite } from '../hooks/useSafeWrite'
 import { useGameState } from '../hooks/useGameState'
 import { CONTRACTS } from '../config/wagmi'
 import { TOKEN_ABI, MARKETPLACE_ABI } from '../abis'
@@ -134,13 +135,13 @@ export default function GameScreen({ onOpenModal, onNavigate, dismissedSpectator
   }), [balances[1], balances[2], balances[3], balances[4], balances[5], balances[6], balances[7]])
   // ── COUNTDOWN STATE FROM CHAIN ──────────────────────────────
 const { data: countdownActive } = useReadContract({
-  address: CONTRACTS.TOKEN,
+  address: CONTRACTS.TOKEN, chainId: 84532,
   abi: TOKEN_ABI,
   functionName: 'countdownActive',
   watch: true,
 })
 const { data: countdownHolder } = useReadContract({
-  address: CONTRACTS.TOKEN,
+  address: CONTRACTS.TOKEN, chainId: 84532,
   abi: TOKEN_ABI,
   functionName: 'countdownHolder',
   watch: true,
@@ -175,7 +176,7 @@ const { data: countdownHolder } = useReadContract({
 
   // ── CountdownHolderReset WebSocket alert ─────────────────────
   useWatchContractEvent({
-    address: CONTRACTS.TOKEN,
+    address: CONTRACTS.TOKEN, chainId: 84532,
     abi: TOKEN_ABI,
     eventName: 'CountdownHolderReset',
     poll: true,
@@ -191,7 +192,7 @@ const { data: countdownHolder } = useReadContract({
 
   // ── Trade notifications (listing filled / offer filled) ─────
   useWatchContractEvent({
-    address: CONTRACTS.MARKETPLACE,
+    address: CONTRACTS.MARKETPLACE, chainId: 84532,
     abi: MARKETPLACE_ABI,
     eventName: 'ListingFilled',
     poll: true,
@@ -212,7 +213,7 @@ const { data: countdownHolder } = useReadContract({
     },
   })
   useWatchContractEvent({
-    address: CONTRACTS.MARKETPLACE,
+    address: CONTRACTS.MARKETPLACE, chainId: 84532,
     abi: MARKETPLACE_ABI,
     eventName: 'OfferFilled',
     poll: true,
@@ -232,7 +233,7 @@ const { data: countdownHolder } = useReadContract({
   })
 
   // ── COMBINE — live transaction ──────────────────────────────
-  const { writeContract: writeCombine } = useWriteContract()
+  const { writeContract: writeCombine } = useSafeWrite()
   const [combineTxHash,  setCombineTxHash]  = useState(null)
   const [combiningTier,  setCombiningTier]  = useState(null)
   const lastCombinedToTierRef = useRef(null)
@@ -269,7 +270,7 @@ const { data: countdownHolder } = useReadContract({
     const args = times > 1 ? [Array(times).fill(BigInt(fromTier))] : [BigInt(fromTier)]
     const gas = times > 1 ? BigInt(200_000) + BigInt(times) * BigInt(120_000) : undefined
     writeCombine({
-      address: CONTRACTS.TOKEN,
+      address: CONTRACTS.TOKEN, chainId: 84532,
       abi: TOKEN_ABI,
       functionName: fnName,
       args,
@@ -347,7 +348,7 @@ const { data: countdownHolder } = useReadContract({
       } catch {}
     }
     checkRank()
-    const interval = setInterval(checkRank, 60_000)
+    const interval = setInterval(checkRank, 300_000) // 5 min — conserve subgraph quota
     return () => clearInterval(interval)
   }, [address])
 

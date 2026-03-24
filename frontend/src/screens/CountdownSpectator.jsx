@@ -1,3 +1,4 @@
+import { useSafeWrite } from '../hooks/useSafeWrite'
 import { useState, useEffect } from "react";
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt, useDisconnect } from "wagmi";
 import { useBalance } from "wagmi";
@@ -189,7 +190,7 @@ function VoteSection({ burnVotes = 0, claimVotes = 0 }) {
   const [voted, setVoted]       = useState(false);
   const [voteError, setVoteError] = useState(null);
 
-  const { writeContract, data: txHash, isPending } = useWriteContract();
+  const { writeContract, data: txHash, isPending } = useSafeWrite();
   const { isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
 
   useEffect(() => { if (isSuccess) { setVoted(true); setPopup(null); } }, [isSuccess]);
@@ -197,7 +198,7 @@ function VoteSection({ burnVotes = 0, claimVotes = 0 }) {
   function castVote(burnVote) {
     setVoteError(null);
     writeContract({
-      address: CONTRACTS.COUNTDOWN,
+      address: CONTRACTS.COUNTDOWN, chainId: 84532,
       abi: COUNTDOWN_ABI,
       functionName: "castVote",
       args: [burnVote],
@@ -330,7 +331,7 @@ function ChallengeSection({ holderAddress }) {
 
   // Check if spectator holds all 6 tiers
   const { data: hasAll } = useReadContract({
-    address: CONTRACTS.TOKEN,
+    address: CONTRACTS.TOKEN, chainId: 84532,
     abi: TOKEN_ABI,
     functionName: "hasAllTiers",
     args: address ? [address] : undefined,
@@ -339,15 +340,15 @@ function ChallengeSection({ holderAddress }) {
 
   // Read scores for display
   const { data: myScore } = useReadContract({
-    address: CONTRACTS.COUNTDOWN,
+    address: CONTRACTS.COUNTDOWN, chainId: 84532,
     abi: COUNTDOWN_ABI,
     functionName: "calculateScore",
     args: address ? [address] : undefined,
-    query: { enabled: !!address && !!hasAll, refetchInterval: 10000 },
+    query: { enabled: !!address, refetchInterval: 10000 },
   });
 
   const { data: holderScore } = useReadContract({
-    address: CONTRACTS.COUNTDOWN,
+    address: CONTRACTS.COUNTDOWN, chainId: 84532,
     abi: COUNTDOWN_ABI,
     functionName: "calculateScore",
     args: holderAddress ? [holderAddress] : undefined,
@@ -356,32 +357,32 @@ function ChallengeSection({ holderAddress }) {
 
   // Read safe period status
   const { data: lastChallengeTime } = useReadContract({
-    address: CONTRACTS.COUNTDOWN,
+    address: CONTRACTS.COUNTDOWN, chainId: 84532,
     abi: COUNTDOWN_ABI,
     functionName: "lastChallengeTime",
     query: { refetchInterval: 10000 },
   });
 
   const { data: safePeriod } = useReadContract({
-    address: CONTRACTS.COUNTDOWN,
+    address: CONTRACTS.COUNTDOWN, chainId: 84532,
     abi: COUNTDOWN_ABI,
     functionName: "safePeriod",
     query: { refetchInterval: 60000 },
   });
 
-  const { writeContract, data: txHash, isPending } = useWriteContract();
+  const { writeContract, data: txHash, isPending } = useSafeWrite();
   const { isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
 
   useEffect(() => {
     if (isSuccess) { setShowConfirm(false); setChallengeError(null); }
   }, [isSuccess]);
 
-  if (!address || !hasAll) return null;
-  if (address.toLowerCase() === holderAddress?.toLowerCase()) return null;
+  // Don't show if you ARE the holder
+  if (address && holderAddress && address.toLowerCase() === holderAddress.toLowerCase()) return null;
 
   const myScoreNum = myScore ? Number(myScore) : 0;
   const holderScoreNum = holderScore ? Number(holderScore) : 0;
-  const ranksAbove = myScoreNum > holderScoreNum;
+  const ranksAbove = hasAll && myScoreNum > holderScoreNum;
 
   const now = Math.floor(Date.now() / 1000);
   const safeEnd = lastChallengeTime ? Number(lastChallengeTime) + (safePeriod != null ? Number(safePeriod) : 86400) : 0;
@@ -392,10 +393,14 @@ function ChallengeSection({ holderAddress }) {
 
   const canChallenge = hasAll && ranksAbove && !inSafePeriod;
 
+  // Determine what the player needs to do
+  const needsTiers = !hasAll;
+  const needsScore = hasAll && !ranksAbove;
+
   function doChallenge() {
     setChallengeError(null);
     writeContract({
-      address: CONTRACTS.COUNTDOWN,
+      address: CONTRACTS.COUNTDOWN, chainId: 84532,
       abi: COUNTDOWN_ABI,
       functionName: "challengeCountdown",
       gas: BigInt(800_000),
@@ -406,7 +411,7 @@ function ChallengeSection({ holderAddress }) {
 
   return (
     <div style={{
-      border: `2px solid ${canChallenge ? '#cc66ff' : 'rgba(204,102,255,0.2)'}`,
+      border: `2px solid ${canChallenge ? '#cc66ff' : 'rgba(204,102,255,0.15)'}`,
       background: canChallenge ? 'rgba(184,107,255,0.08)' : 'rgba(0,0,0,0.2)',
       padding: '20px 24px', marginBottom: 24,
       boxShadow: canChallenge ? '0 0 20px rgba(184,107,255,0.15)' : 'none',
@@ -415,39 +420,60 @@ function ChallengeSection({ holderAddress }) {
         <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 8, color: '#cc66ff', letterSpacing: 2 }}>
           ⚔ CHALLENGE COUNTDOWN
         </div>
-        <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: 'rgba(255,255,255,0.4)', letterSpacing: 1 }}>
-          YOU HOLD ALL 6 TIERS
-        </div>
+        {hasAll && (
+          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: '#6eff8a', letterSpacing: 1 }}>
+            YOU HOLD ALL 6 TIERS
+          </div>
+        )}
       </div>
 
-      {/* Score comparison */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
-        <div style={{ flex: 1, background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(204,102,255,0.2)', padding: '10px 14px', textAlign: 'center' }}>
-          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: 'rgba(255,255,255,0.4)', letterSpacing: 1, marginBottom: 4 }}>YOUR RANK</div>
-          <div style={{ fontFamily: "'VT323', monospace", fontSize: 28, color: ranksAbove ? '#6eff8a' : '#ff8888' }}>
-            {myScoreNum.toLocaleString()}
+      {/* Educational message when player can't challenge yet */}
+      {needsTiers && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontFamily: "'VT323', monospace", fontSize: 20, color: 'rgba(255,255,255,0.6)', lineHeight: 1.5, marginBottom: 10 }}>
+            Want to take over the countdown and win the prize pool?
+          </div>
+          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: 'rgba(255,255,255,0.35)', lineHeight: 2.2 }}>
+            HOW TO CHALLENGE:
+          </div>
+          <div style={{ fontFamily: "'VT323', monospace", fontSize: 17, color: 'rgba(255,255,255,0.45)', lineHeight: 1.6, paddingLeft: 12 }}>
+            1. Collect all 6 tiers (T2 through T7) — mint, combine, forge, or trade<br/>
+            2. Build a higher progression score than the current holder<br/>
+            3. Challenge the holder to take over the countdown and reset the 7-day clock
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center' }}>
-          <span style={{ fontFamily: "'VT323', monospace", fontSize: 24, color: 'rgba(255,255,255,0.3)' }}>vs</span>
-        </div>
-        <div style={{ flex: 1, background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(204,51,34,0.2)', padding: '10px 14px', textAlign: 'center' }}>
-          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: 'rgba(255,255,255,0.4)', letterSpacing: 1, marginBottom: 4 }}>HOLDER</div>
-          <div style={{ fontFamily: "'VT323', monospace", fontSize: 28, color: EMBER_LT }}>
-            {holderScoreNum.toLocaleString()}
+      )}
+
+      {/* Score comparison — show when player has all tiers */}
+      {hasAll && (
+        <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
+          <div style={{ flex: 1, background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(204,102,255,0.2)', padding: '10px 14px', textAlign: 'center' }}>
+            <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: 'rgba(255,255,255,0.4)', letterSpacing: 1, marginBottom: 4 }}>YOUR SCORE</div>
+            <div style={{ fontFamily: "'VT323', monospace", fontSize: 28, color: ranksAbove ? '#6eff8a' : '#ff8888' }}>
+              {myScoreNum.toLocaleString()}
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <span style={{ fontFamily: "'VT323', monospace", fontSize: 24, color: 'rgba(255,255,255,0.3)' }}>vs</span>
+          </div>
+          <div style={{ flex: 1, background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(204,51,34,0.2)', padding: '10px 14px', textAlign: 'center' }}>
+            <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: 'rgba(255,255,255,0.4)', letterSpacing: 1, marginBottom: 4 }}>HOLDER</div>
+            <div style={{ fontFamily: "'VT323', monospace", fontSize: 28, color: EMBER_LT }}>
+              {holderScoreNum.toLocaleString()}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Status messages */}
-      {inSafePeriod && (
+      {inSafePeriod && hasAll && (
         <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: '#ffcc33', marginBottom: 10, lineHeight: 1.8 }}>
           ⏳ 24-HOUR SAFE PERIOD — challenge opens in {safeHours}h {safeMins}m
         </div>
       )}
-      {!ranksAbove && !inSafePeriod && (
+      {needsScore && !inSafePeriod && (
         <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: '#ff8888', marginBottom: 10, lineHeight: 1.8 }}>
-          Your score must exceed the holder's to challenge.
+          Your score must exceed the holder's to challenge. Mint, combine, and forge to increase your score.
         </div>
       )}
 
@@ -463,6 +489,7 @@ function ChallengeSection({ holderAddress }) {
         </div>
       )}
 
+      {/* Challenge button — always visible but greyed out when not eligible */}
       {!showConfirm ? (
         <button
           onClick={() => canChallenge && setShowConfirm(true)}
@@ -477,7 +504,7 @@ function ChallengeSection({ holderAddress }) {
             cursor: canChallenge ? 'pointer' : 'not-allowed',
           }}
         >
-          {isPending ? '⏳ CONFIRMING...' : '⚔ CHALLENGE HOLDER'}
+          {isPending ? '⏳ CONFIRMING...' : needsTiers ? '⚔ COLLECT ALL 6 TIERS TO CHALLENGE' : needsScore ? '⚔ INCREASE SCORE TO CHALLENGE' : inSafePeriod ? '⚔ SAFE PERIOD ACTIVE' : '⚔ CHALLENGE HOLDER'}
         </button>
       ) : (
         <div style={{ background: 'rgba(204,51,34,0.08)', border: '1px solid rgba(204,51,34,0.3)', padding: '16px', textAlign: 'center' }}>
@@ -594,7 +621,7 @@ function Leaderboard({ holderAddress }) {
       setLoading(false);
     }
     fetchLb();
-    const interval = setInterval(fetchLb, 30_000);
+    const interval = setInterval(fetchLb, 300_000); // 5 min — conserve subgraph quota
     return () => clearInterval(interval);
   }, []);
 
@@ -660,26 +687,26 @@ function Leaderboard({ holderAddress }) {
 export default function CountdownSpectator({ onBack }) {
   // ── Live chain reads ────────────────────────────────────────
   const { data: countdownStartTime } = useReadContract({
-    address: CONTRACTS.TOKEN,
+    address: CONTRACTS.TOKEN, chainId: 84532,
     abi: TOKEN_ABI,
     functionName: "countdownStartTime",
     query: { refetchInterval: 10000 },
   });
 
   const { data: countdownHolder } = useReadContract({
-    address: CONTRACTS.TOKEN,
+    address: CONTRACTS.TOKEN, chainId: 84532,
     abi: TOKEN_ABI,
     functionName: "countdownHolder",
     query: { refetchInterval: 10000 },
   });
   const { disconnect } = useDisconnect();
   const { data: treasuryBalanceData } = useBalance({
-    address: CONTRACTS.TREASURY,
+    address: CONTRACTS.TREASURY, chainId: 84532,
     query: { refetchInterval: 5000 },
   });
 
   const { data: countdownInfo } = useReadContract({
-    address: CONTRACTS.COUNTDOWN,
+    address: CONTRACTS.COUNTDOWN, chainId: 84532,
     abi: COUNTDOWN_ABI,
     functionName: "getCountdownInfo",
     query: { refetchInterval: 8000 },

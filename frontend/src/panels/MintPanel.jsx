@@ -1,3 +1,4 @@
+import { useSafeWrite } from '../hooks/useSafeWrite'
 import { useState, useEffect, useRef } from "react";
 import { useWriteContract, useWaitForTransactionReceipt, useChainId, useSwitchChain, useReadContracts, useAccount, useConnect } from 'wagmi';
 import { parseEther, decodeEventLog } from 'viem';
@@ -49,7 +50,7 @@ function PendingMintItem({ item, onDelivered, onRequestId }) {
         const { baseSepolia } = await import('viem/chains')
         const client = createPublicClient({ chain: baseSepolia, transport: http() })
         const reqIds = await client.readContract({
-          address: CONTRACTS.TOKEN, abi: TOKEN_ABI,
+          address: CONTRACTS.TOKEN, chainId: 84532, abi: TOKEN_ABI,
           functionName: 'getPendingRequests', args: [receipt.from],
         })
         if (reqIds && reqIds.length > 0) {
@@ -60,13 +61,13 @@ function PendingMintItem({ item, onDelivered, onRequestId }) {
     fallbackRecover()
   }, [receipt])
 
-  const { writeContract: writeCancel } = useWriteContract()
+  const { writeContract: writeCancel } = useSafeWrite()
 
   function doCancel() {
     if (!item.requestId || cancelling) return
     setCancelling(true)
     writeCancel({
-      address: CONTRACTS.TOKEN,
+      address: CONTRACTS.TOKEN, chainId: 84532,
       abi: TOKEN_ABI,
       functionName: "cancelMintRequest",
       args: [BigInt(item.requestId)],
@@ -178,7 +179,7 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatu
 
   // Read batch totalMinted for all batches up to current
   const batchContracts = Array.from({ length: Math.min(currentBatch + 1, 10) }, (_, i) => ({
-    address: CONTRACTS.WINDOW, abi: WINDOW_ABI,
+    address: CONTRACTS.WINDOW, chainId: 84532, abi: WINDOW_ABI,
     functionName: 'batches', args: [BigInt(i + 1)],
   }))
   const { data: batchDataRaw } = useReadContracts({
@@ -252,7 +253,7 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatu
         const { baseSepolia } = await import('viem/chains')
         const client = createPublicClient({ chain: baseSepolia, transport: http() })
         const requestIds = await client.readContract({
-          address: CONTRACTS.TOKEN, abi: TOKEN_ABI,
+          address: CONTRACTS.TOKEN, chainId: 84532, abi: TOKEN_ABI,
           functionName: 'getPendingRequests', args: [address],
         })
         if (!requestIds || requestIds.length === 0) return
@@ -263,7 +264,7 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatu
           const ridStr = rid.toString()
           if (existingReqIds.has(ridStr)) continue
           const req = await client.readContract({
-            address: CONTRACTS.TOKEN, abi: TOKEN_ABI,
+            address: CONTRACTS.TOKEN, chainId: 84532, abi: TOKEN_ABI,
             functionName: 'vrfMintRequests', args: [rid],
           })
           if (!req || req.player?.toLowerCase() !== address.toLowerCase()) continue
@@ -291,14 +292,14 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatu
   }, [address])
 
 
-  const { writeContract: writeMint } = useWriteContract()
+  const { writeContract: writeMint } = useSafeWrite()
   const total = (qty * mintPrice).toFixed(5)
 
   function doMint() {
     if (!windowOpen) return
     prevBlocksRef.current = blocks ? (blocks[7] || 0) : 0
     writeMint({
-      address: CONTRACTS.TOKEN,
+      address: CONTRACTS.TOKEN, chainId: 84532,
       abi: TOKEN_ABI,
       functionName: "mint",
       args: [BigInt(qty)],

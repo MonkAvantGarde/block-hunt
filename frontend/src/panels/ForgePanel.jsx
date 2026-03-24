@@ -1,3 +1,4 @@
+import { useSafeWrite } from '../hooks/useSafeWrite'
 import { useState, useEffect, useRef } from "react";
 import { useWriteContract, useWaitForTransactionReceipt, useChainId, useSwitchChain, useAccount, useConnect } from 'wagmi';
 import { CONTRACTS } from '../config/wagmi';
@@ -31,7 +32,7 @@ export default function ForgePanel({ blocks, onForge, address }) {
   const pollRef     = useRef(null)
   const forgeBlockRef = useRef(null)
 
-  const { writeContract } = useWriteContract()
+  const { writeContract } = useSafeWrite()
 
   const sel     = selTier ? TMAP[selTier]     : null
   const target  = selTier ? TMAP[selTier - 1] : null
@@ -63,7 +64,7 @@ export default function ForgePanel({ blocks, onForge, address }) {
 
         const fromBlock = forgeBlockRef.current || 'latest'
         const logs = await client.getLogs({
-          address: CONTRACTS.FORGE,
+          address: CONTRACTS.FORGE, chainId: 84532,
           event: parseAbiItem('event ForgeResolved(uint256 indexed requestId, address indexed player, uint256 fromTier, bool success)'),
           args: { player: address },
           fromBlock: typeof fromBlock === 'bigint' ? fromBlock : 'latest',
@@ -110,7 +111,7 @@ export default function ForgePanel({ blocks, onForge, address }) {
     forgeBlockRef.current = null
 
     writeContract({
-      address: CONTRACTS.FORGE,
+      address: CONTRACTS.FORGE, chainId: 84532,
       abi: FORGE_ABI,
       functionName: 'forge',
       args: [BigInt(selTier), BigInt(burnCount)],
@@ -142,7 +143,7 @@ export default function ForgePanel({ blocks, onForge, address }) {
     const burnCounts = batchAttempts.map(a => BigInt(a.burnCount))
 
     writeContract({
-      address: CONTRACTS.FORGE,
+      address: CONTRACTS.FORGE, chainId: 84532,
       abi: FORGE_ABI,
       functionName: 'forgeBatch',
       args: [fromTiers, burnCounts],

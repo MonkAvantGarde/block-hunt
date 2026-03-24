@@ -301,7 +301,7 @@ export function useRewardsData(address, blocks, currentBatch) {
     }
 
     fetchData()
-    const interval = setInterval(fetchData, 120_000)
+    const interval = setInterval(fetchData, 300_000) // 5 min — conserve subgraph quota
     return () => { cancelled = true; clearInterval(interval) }
   }, [address])
 

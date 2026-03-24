@@ -1,3 +1,4 @@
+import { useSafeWrite } from '../hooks/useSafeWrite'
 import { useState, useEffect } from "react";
 import { useAccount, useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt, useDisconnect } from "wagmi";
 import { useBalance } from "wagmi";
@@ -226,7 +227,7 @@ function ChoiceSection({ ethAmount, secondsRemaining }) {
   const expired = secondsRemaining <= 0;
   const display = ethAmount ?? 0;
 
-  const { writeContract, data: txHash, isPending } = useWriteContract();
+  const { writeContract, data: txHash, isPending } = useSafeWrite();
   const { isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
 
   useEffect(() => {
@@ -237,7 +238,7 @@ function ChoiceSection({ ethAmount, secondsRemaining }) {
     if (!selected || !expired) return;
     setTxError(null);
     writeContract({
-      address: CONTRACTS.TOKEN,
+      address: CONTRACTS.TOKEN, chainId: 84532,
       abi: TOKEN_ABI,
       functionName: selected === "claim" ? "claimTreasury" : "sacrifice",
       args: [],
@@ -389,7 +390,7 @@ export default function CountdownHolder({ onBack }) {
   const { disconnect } = useDisconnect();
   // ── Read countdown start time from Token ─────────────────
   const { data: countdownStartTime } = useReadContract({
-    address: CONTRACTS.TOKEN,
+    address: CONTRACTS.TOKEN, chainId: 84532,
     abi: TOKEN_ABI,
     functionName: "countdownStartTime",
     watch: true,
@@ -397,7 +398,7 @@ export default function CountdownHolder({ onBack }) {
 
   // ── Read player balances ──────────────────────────────────
   const { data: balancesRaw } = useReadContract({
-    address: CONTRACTS.TOKEN,
+    address: CONTRACTS.TOKEN, chainId: 84532,
     abi: TOKEN_ABI,
     functionName: "balancesOf",
     args: [address],
@@ -415,7 +416,7 @@ export default function CountdownHolder({ onBack }) {
 
   // ── Read treasury ETH balance ─────────────────────────────
   const { data: treasuryBalanceData } = useBalance({
-  address: CONTRACTS.TREASURY,
+  address: CONTRACTS.TREASURY, chainId: 84532,
   query: { refetchInterval: 5000 },
 });
   const ethAmount = treasuryBalanceData?.value
@@ -424,7 +425,7 @@ export default function CountdownHolder({ onBack }) {
 
   // ── Read votes from Countdown contract ────────────────────
   const { data: countdownInfo } = useReadContract({
-    address: CONTRACTS.COUNTDOWN,
+    address: CONTRACTS.COUNTDOWN, chainId: 84532,
     abi: COUNTDOWN_ABI,
     functionName: "getCountdownInfo",
     watch: true,
