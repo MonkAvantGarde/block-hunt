@@ -304,7 +304,7 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatu
   const { writeContract: writeRefund } = useSafeWrite()
   const total = (qty * mintPrice).toFixed(5)
 
-  const hasPendingVRF = pendingMints.some(m => m.status === 'pending')
+  const hasPendingVRF = pendingMints.some(m => m.status === 'pending' && (Date.now() - m.startTime) < 3600_000)
 
   // ── Batch refund state ──────────────────────────────────────────────────
   const [refunding, setRefunding] = useState(false)
