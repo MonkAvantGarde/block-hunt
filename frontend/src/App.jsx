@@ -64,12 +64,13 @@ export default function App() {
   const [screen, setScreen] = useState("landing");
   const [dismissedSpectator, setDismissedSpectator] = useState(false);
   const [modal, setModal] = useState(null); // "rules" | "leaderboard" | "profile" | null
+  const [profileAddress, setProfileAddress] = useState(null);
   const { address } = useAccount();
   const { prizePool } = useGameState();
   const leaderboardCache = useLeaderboardCache();
 
   function openModal(m) { setModal(m); }
-  function closeModal() { setModal(null); }
+  function closeModal() { setModal(null); setProfileAddress(null); }
 
   if (screen === "countdown-holder") return <CountdownHolder />;
 
@@ -87,8 +88,9 @@ export default function App() {
       <Modals
         open={modal}
         onClose={closeModal}
-        onOpenProfile={() => setModal("profile")}
+        onOpenProfile={(addr) => { setProfileAddress(addr || address); setModal("profile"); }}
         connectedAddress={address}
+        profileAddress={profileAddress || address}
         prizePool={prizePool}
         leaderboardCache={leaderboardCache}
       />
