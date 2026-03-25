@@ -563,7 +563,7 @@ export function ProfileModal({ onClose, connectedAddress, isOwnProfile = true })
   // For other players, read their balances from chain
   const viewedAddr = connectedAddress || '';
   const balanceContracts = !isOwnProfile && viewedAddr ? [2,3,4,5,6,7].map(t => ({
-    address: CONTRACTS.TOKEN, abi: TOKEN_ABI,
+    address: CONTRACTS.TOKEN, chainId: 84532, abi: TOKEN_ABI,
     functionName: 'balanceOf', args: [viewedAddr, BigInt(t)],
   })) : [];
   const { data: otherBalRaw } = useReadContracts({
