@@ -1,5 +1,5 @@
 import { useSafeWrite } from '../hooks/useSafeWrite'
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
 import { useGameState } from '../hooks/useGameState';
 import { CONTRACTS } from '../config/wagmi';
@@ -394,7 +394,7 @@ function buildLbQuery(skip = 0) {
   }`;
 }
 
-export function LeaderboardModal({ onClose, onOpenProfile, connectedAddress, prizePool, leaderboardCache }) {
+export function LeaderboardModal({ onClose, onOpenProfile, onNavigate, connectedAddress, prizePool, leaderboardCache }) {
   const players = leaderboardCache?.players || [];
   const stats = leaderboardCache?.stats || null;
   const loading = leaderboardCache?.loading || false;
@@ -528,10 +528,23 @@ export function LeaderboardModal({ onClose, onOpenProfile, connectedAddress, pri
                 );
               })()}
 
-              {/* End of list indicator */}
+              {/* View full leaderboard + count */}
               {players.length > 0 && (
-                <div style={{ padding: "14px", textAlign: "center", fontFamily: "'Press Start 2P', monospace", fontSize: 8, color: CREAM, opacity: .25, letterSpacing: 1 }}>
-                  {players.length} PLAYERS SHOWN
+                <div style={{ padding: "14px", textAlign: "center" }}>
+                  <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 8, color: CREAM, opacity: .25, letterSpacing: 1, marginBottom: 10 }}>
+                    SHOWING TOP {players.length > 100 ? 100 : players.length} OF {players.length}
+                  </div>
+                  {onNavigate && (
+                    <button
+                      onClick={() => onNavigate("full-leaderboard")}
+                      style={{
+                        fontFamily: "'Press Start 2P', monospace", fontSize: 9,
+                        color: GOLD, background: "rgba(200,168,75,.08)",
+                        border: `1px solid ${GOLD_DK}`, padding: "10px 24px",
+                        cursor: "pointer", letterSpacing: 1,
+                      }}
+                    >VIEW FULL LEADERBOARD</button>
+                  )}
                 </div>
               )}
             </>
@@ -570,7 +583,8 @@ export function ProfileModal({ onClose, connectedAddress, isOwnProfile = true })
     contracts: balanceContracts,
     query: { enabled: balanceContracts.length > 0 },
   });
-  const balances = isOwnProfile ? ownBalances : (() => {
+  const balances = useMemo(() => {
+    if (isOwnProfile) return ownBalances;
     const b = {};
     if (otherBalRaw) {
       [2,3,4,5,6,7].forEach((t, i) => {
@@ -578,7 +592,7 @@ export function ProfileModal({ onClose, connectedAddress, isOwnProfile = true })
       });
     }
     return b;
-  })();
+  }, [isOwnProfile, ownBalances, otherBalRaw]);
   const [copied, setCopied] = useState(false);
   const [activities, setActivities] = useState([]);
   const [actLoading, setActLoading] = useState(false);
@@ -932,12 +946,12 @@ function EscrowClaimsSection({ address }) {
 // EXPORT — MODAL CONTROLLER (convenience wrapper)
 // Usage: <Modals open="rules|leaderboard|profile|null" onClose={fn} />
 // ═══════════════════════════════════════════════════════════════
-export default function Modals({ open, onClose, onOpenProfile, connectedAddress, profileAddress, prizePool, leaderboardCache }) {
+export default function Modals({ open, onClose, onOpenProfile, onNavigate, connectedAddress, profileAddress, prizePool, leaderboardCache }) {
   return (
     <>
       <style>{MODAL_CSS}</style>
       {open === "rules"       && <GameRulesModal   onClose={onClose} />}
-      {open === "leaderboard" && <LeaderboardModal onClose={onClose} onOpenProfile={onOpenProfile} connectedAddress={connectedAddress} prizePool={prizePool} leaderboardCache={leaderboardCache} />}
+      {open === "leaderboard" && <LeaderboardModal onClose={onClose} onOpenProfile={onOpenProfile} onNavigate={onNavigate} connectedAddress={connectedAddress} prizePool={prizePool} leaderboardCache={leaderboardCache} />}
       {open === "profile"     && <ProfileModal     onClose={onClose} connectedAddress={profileAddress || connectedAddress} isOwnProfile={!profileAddress || profileAddress === connectedAddress} />}
     </>
   );

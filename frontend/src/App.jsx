@@ -5,6 +5,7 @@ import GameScreen from "./screens/Game";
 import Modals from "./components/Modals";
 import CountdownHolder from "./screens/CountdownHolder";
 import CountdownSpectator from "./screens/CountdownSpectator";
+import FullLeaderboard from "./screens/FullLeaderboard";
 import { useGameState } from "./hooks/useGameState";
 import { FALLBACK_PLAYERS, FALLBACK_STATS } from "./config/leaderboard-fallback";
 
@@ -72,6 +73,8 @@ export default function App() {
   function openModal(m) { setModal(m); }
   function closeModal() { setModal(null); setProfileAddress(null); }
 
+  if (screen === "full-leaderboard") return <FullLeaderboard onBack={() => setScreen("game")} />;
+
   if (screen === "countdown-holder") return <CountdownHolder />;
 
   if (screen === "countdown-spectator") return (
@@ -89,6 +92,7 @@ export default function App() {
         open={modal}
         onClose={closeModal}
         onOpenProfile={(addr) => { setProfileAddress(addr || address); setModal("profile"); }}
+        onNavigate={(s) => { closeModal(); setScreen(s); }}
         connectedAddress={address}
         profileAddress={profileAddress || address}
         prizePool={prizePool}

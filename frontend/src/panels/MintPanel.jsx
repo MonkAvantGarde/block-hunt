@@ -71,6 +71,7 @@ function PendingMintItem({ item, onDelivered, onRequestId }) {
       abi: TOKEN_ABI,
       functionName: "cancelMintRequest",
       args: [BigInt(item.requestId)],
+      gas: BigInt(200_000),
     }, {
       onSuccess: () => onDelivered(item.id),
       onError: () => setCancelling(false),
@@ -337,6 +338,7 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatu
       abi: TOKEN_ABI,
       functionName: "cancelMintRequest",
       args: [BigInt(item.requestId)],
+      gas: BigInt(200_000),
     }, {
       onSuccess: async (hash) => {
         // User may have cancelled while we were waiting for wallet

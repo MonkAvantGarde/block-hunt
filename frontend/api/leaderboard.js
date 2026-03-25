@@ -22,7 +22,7 @@ export default async function handler(req, res) {
   // Fetch fresh data from subgraph
   try {
     const query = `{
-      players(first: 100, orderBy: progressionScore, orderDirection: desc, where: { totalMints_gt: "0" }) {
+      players(first: 1000, orderBy: progressionScore, orderDirection: desc, where: { totalMints_gt: "0" }) {
         id totalMints totalCombines totalForges progressionScore
         tier2Balance tier3Balance tier4Balance tier5Balance tier6Balance tier7Balance
       }
