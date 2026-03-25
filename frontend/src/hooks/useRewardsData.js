@@ -5,7 +5,7 @@ import { formatEther } from 'viem'
 import { CONTRACTS } from '../config/wagmi'
 import { REWARDS_ABI, WINDOW_ABI } from '../abis'
 
-const SUBGRAPH_URL = "https://api.studio.thegraph.com/query/1744131/blok-hunt/version/latest"
+const SUBGRAPH_PROXY = "/api/subgraph"
 
 // ── Achievement ID mapping (0-12) per batch ─────────────────────────────────
 // IDs 0-3: general firsts, 4-8: tier discoveries, 9-12: advanced firsts
@@ -284,7 +284,7 @@ export function useRewardsData(address, blocks, currentBatch) {
             id
           }
         }`
-        const res = await fetch(SUBGRAPH_URL, {
+        const res = await fetch(SUBGRAPH_PROXY, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ query }),

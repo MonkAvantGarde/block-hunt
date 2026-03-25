@@ -50,15 +50,22 @@ const switchBtnStyle = {
 
 // ── Compact row for sell listings ─────────────────────────────────────────
 function ListingCard({ item, onBuy, onCancel, wrongNetwork, switchChain }) {
-  const [qty, setQty] = useState(1)
+  const maxBuyable = item.fillableQty != null ? item.fillableQty : item.quantity
+  const isPartiallyStale = item.fillableQty != null && item.fillableQty < item.quantity
+  const [qty, setQty] = useState(Math.min(1, maxBuyable))
   const accent = item.tierAccent
   return (
-    <div style={{ background: 'rgba(0,0,0,0.25)', border: `1px solid ${accent}22`, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
+    <div style={{ background: 'rgba(0,0,0,0.25)', border: `1px solid ${accent}22`, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 10, opacity: maxBuyable === 0 && !item.isOwn ? 0.4 : 1 }}>
       <div style={{ ...fp, fontSize: 8, color: accent, width: 28, textAlign: 'center' }}>T{item.tier}</div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
           <span style={{ ...fv, fontSize: 20, color: GOLD_LT }}>{item.pricePerBlock.toFixed(5)} Ξ</span>
-          <span style={{ ...fv, fontSize: 14, color: 'rgba(255,255,255,0.4)' }}>x{item.quantity}</span>
+          <span style={{ ...fv, fontSize: 14, color: 'rgba(255,255,255,0.4)' }}>
+            x{isPartiallyStale ? maxBuyable : item.quantity}
+          </span>
+          {isPartiallyStale && (
+            <span style={{ ...fp, fontSize: 6, color: '#ff8844' }}>({item.quantity - maxBuyable} unavail)</span>
+          )}
           <span style={{ ...fp, fontSize: 6, color: 'rgba(255,255,255,0.25)' }}>{item.ownerShort}</span>
         </div>
       </div>
@@ -66,12 +73,14 @@ function ListingCard({ item, onBuy, onCancel, wrongNetwork, switchChain }) {
         <button onClick={() => onCancel(item.id)} style={cancelBtnStyle}>CANCEL</button>
       ) : wrongNetwork ? (
         <button onClick={() => switchChain({ chainId: TARGET_CHAIN_ID })} style={switchBtnStyle}>SWITCH</button>
+      ) : maxBuyable === 0 ? (
+        <span style={{ ...fp, fontSize: 7, color: '#ff4444' }}>UNAVAILABLE</span>
       ) : (
         <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
           <button onClick={() => setQty(q => Math.max(1, q - 1))} style={stepBtnStyle}>-</button>
-          <input type="text" value={qty} onChange={e => { const v = parseInt(e.target.value) || 0; setQty(Math.min(Math.max(0, v), item.quantity)); }}
+          <input type="text" value={qty} onChange={e => { const v = parseInt(e.target.value) || 0; setQty(Math.min(Math.max(0, v), maxBuyable)); }}
             style={{ ...fv, fontSize: 16, color: CREAM, width: 36, textAlign: 'center', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.12)', outline: 'none' }} />
-          <button onClick={() => setQty(q => Math.min(item.quantity, q + 1))} style={stepBtnStyle}>+</button>
+          <button onClick={() => setQty(q => Math.min(maxBuyable, q + 1))} style={stepBtnStyle}>+</button>
           <button onClick={() => onBuy(item, qty)} disabled={qty < 1} style={{ ...actionBtnStyle, opacity: qty < 1 ? 0.4 : 1 }}>BUY · {(item.pricePerBlock * qty).toFixed(4)} Ξ</button>
         </div>
       )}

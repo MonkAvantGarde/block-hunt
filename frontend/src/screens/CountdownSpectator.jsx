@@ -577,13 +577,8 @@ function Ticker({ holderShort, eth, claimPct, secondsRemaining = 999999 }) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// LEADERBOARD — live from subgraph
+// LEADERBOARD — served from cached API
 // ═══════════════════════════════════════════════════════════════
-const SUBGRAPH_URL = "https://api.studio.thegraph.com/query/1744131/blok-hunt/version/latest";
-const BURN_ADDRESSES = [
-  "0x0000000000000000000000000000000000000000",
-  "0x000000000000000000000000000000000000dead",
-];
 const TIER_COLS_LB = ["#9ba8b0", "#8fa8c8", "#8fb87a", "#c8c870", "#c87a7a", "#c8a84b"];
 
 function Leaderboard({ holderAddress }) {
@@ -593,31 +588,13 @@ function Leaderboard({ holderAddress }) {
   useEffect(() => {
     async function fetchLb() {
       try {
-        const query = `{
-          players(
-            first: 5,
-            orderBy: progressionScore,
-            orderDirection: desc,
-            where: { id_not_in: ${JSON.stringify(BURN_ADDRESSES)} }
-          ) {
-            id
-            tier2Balance tier3Balance tier4Balance
-            tier5Balance tier6Balance tier7Balance
-            tiersUnlocked
-            progressionScore
-          }
-        }`;
-        const res = await fetch(SUBGRAPH_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query }),
-        });
-        if (!res.ok) throw new Error('Rate limited');
+        const res = await fetch('/api/leaderboard');
+        if (!res.ok) throw new Error('API error');
         const json = await res.json();
-        setPlayers(json?.data?.players || []);
+        setPlayers((json.players || []).slice(0, 5));
       } catch (e) {
-        console.warn("Spectator leaderboard fetch failed:", e);
-        // Subgraph down — try localStorage cache, then hardcoded fallback
+        console.warn("Leaderboard API fetch failed:", e);
+        // API down — try localStorage cache, then hardcoded fallback
         let fallback = null;
         try {
           const cached = JSON.parse(localStorage.getItem('blockhunt_lb_cache'));
@@ -632,7 +609,7 @@ function Leaderboard({ holderAddress }) {
       setLoading(false);
     }
     fetchLb();
-    const interval = setInterval(fetchLb, 300_000); // 5 min — conserve subgraph quota
+    const interval = setInterval(fetchLb, 60_000); // 1 min — server caches, cheap
     return () => clearInterval(interval);
   }, []);
 

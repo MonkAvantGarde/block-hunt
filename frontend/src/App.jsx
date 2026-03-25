@@ -8,8 +8,8 @@ import CountdownSpectator from "./screens/CountdownSpectator";
 import { useGameState } from "./hooks/useGameState";
 import { FALLBACK_PLAYERS, FALLBACK_STATS } from "./config/leaderboard-fallback";
 
-const LB_URL = "https://api.studio.thegraph.com/query/1744131/blok-hunt/version/latest";
-const LB_POLL = 300_000; // 5 minutes — conserve subgraph quota
+const LB_API = "/api/leaderboard";
+const LB_POLL = 60_000; // 1 minute — server caches for 5 min, so this is cheap
 const LB_CACHE_KEY = "blockhunt_lb_cache";
 
 function getCachedLeaderboard() {
@@ -32,26 +32,15 @@ function useLeaderboardCache() {
 
   const doFetch = useCallback(async () => {
     try {
-      const res = await fetch(LB_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: `{
-          players(first: 100, orderBy: progressionScore, orderDirection: desc, where: { totalMints_gt: "0" }) {
-            id totalMints totalCombines totalForges progressionScore
-            tier2Balance tier3Balance tier4Balance tier5Balance tier6Balance tier7Balance
-          }
-          seasonStat(id: "season-1") { totalMinted uniquePlayers totalBurned }
-        }` }),
-      });
-      if (!res.ok) throw new Error("Rate limited");
+      const res = await fetch(LB_API);
+      if (!res.ok) throw new Error("API error");
       const json = await res.json();
-      if (json.errors) throw new Error(json.errors[0].message);
-      const players = json.data?.players || [];
-      const stats = json.data?.seasonStat || null;
+      const players = json.players || [];
+      const stats = json.stats || null;
       setCachedLeaderboard(players, stats);
       setData({ players, stats, error: null, loading: false });
     } catch (e) {
-      // Subgraph unavailable — try localStorage cache, then hardcoded fallback
+      // API unavailable — try localStorage cache, then hardcoded fallback
       const cached = getCachedLeaderboard();
       setData(prev => ({
         players: prev.players.length ? prev.players : (cached?.players || FALLBACK_PLAYERS),

@@ -318,21 +318,18 @@ const { data: countdownHolder } = useReadContract({
   function handleMint()  { refetchAll() }
   function handleForge() { refetchAll() }
 
-  // ── Rank change notifications — poll subgraph every 5 min ──
-  const SUBGRAPH_URL = "https://api.studio.thegraph.com/query/1744131/blok-hunt/version/latest"
-  const BURN_ADDRS = ["0x0000000000000000000000000000000000000000","0x000000000000000000000000000000000000dead"]
+  // ── Rank change notifications — reads from server-cached API ──
   useEffect(() => {
     if (!address) return
     async function checkRank() {
       let players = []
       try {
-        const query = `{ players(orderBy: progressionScore, orderDirection: desc, where: { id_not_in: ${JSON.stringify(BURN_ADDRS)} }) { id } }`
-        const res = await fetch(SUBGRAPH_URL, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ query }) })
-        if (!res.ok) throw new Error("Rate limited")
+        const res = await fetch('/api/leaderboard')
+        if (!res.ok) throw new Error("API error")
         const json = await res.json()
-        players = json?.data?.players || []
+        players = json.players || []
       } catch {
-        // Subgraph down — try localStorage cache, then hardcoded fallback
+        // API down — try localStorage cache, then hardcoded fallback
         try {
           const cached = JSON.parse(localStorage.getItem('blockhunt_lb_cache'))
           if (cached?.players?.length) { players = cached.players }
@@ -361,7 +358,7 @@ const { data: countdownHolder } = useReadContract({
       } catch {}
     }
     checkRank()
-    const interval = setInterval(checkRank, 300_000) // 5 min — conserve subgraph quota
+    const interval = setInterval(checkRank, 60_000) // 1 min — server caches, so this is cheap
     return () => clearInterval(interval)
   }, [address])
 

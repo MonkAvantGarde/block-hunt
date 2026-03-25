@@ -332,10 +332,7 @@ export function GameRulesModal({ onClose }) {
 // MODAL 2 — LEADERBOARD
 // ═══════════════════════════════════════════════════════════════
 
-// ⚠️  After deploying your subgraph to The Graph Studio, paste your
-//     query URL here. Format:
-//     https://api.studio.thegraph.com/query/YOUR_ID/block-hunt/version/latest
-const SUBGRAPH_URL = "https://api.studio.thegraph.com/query/1744131/blok-hunt/version/latest";
+const SUBGRAPH_PROXY = "/api/subgraph";
 
 const TIER_COLS = ["#9ba8b0", "#8fa8c8", "#8fb87a", "#c8c870", "#c87a7a", "#c8a84b"];
 
@@ -538,7 +535,7 @@ const TIER_META = [
   { t: 1, name: "THE ORIGIN",     col: "#4466ff" },
 ];
 
-const PROFILE_SUBGRAPH_URL = "https://api.studio.thegraph.com/query/1744131/blok-hunt/version/latest";
+const PROFILE_SUBGRAPH_PROXY = "/api/subgraph";
 
 export function ProfileModal({ onClose, connectedAddress }) {
   const { balances, isConnected } = useGameState();
@@ -570,7 +567,7 @@ export function ProfileModal({ onClose, connectedAddress }) {
             forgeCount
           }
         }`;
-        const res = await fetch(PROFILE_SUBGRAPH_URL, {
+        const res = await fetch(PROFILE_SUBGRAPH_PROXY, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ query }),

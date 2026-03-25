@@ -1,5 +1,5 @@
 import { useSafeWrite } from '../hooks/useSafeWrite'
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useWriteContract, useWaitForTransactionReceipt, useChainId, useSwitchChain, useReadContracts, useAccount, useConnect } from 'wagmi';
 import { parseEther, decodeEventLog } from 'viem';
 import { CONTRACTS } from '../config/wagmi';
@@ -300,10 +300,81 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatu
 
 
   const { writeContract: writeMint } = useSafeWrite()
+  const { writeContract: writeRefund } = useSafeWrite()
   const total = (qty * mintPrice).toFixed(5)
 
+  const hasPendingVRF = pendingMints.some(m => m.status === 'pending')
+
+  // ── Batch refund state ──────────────────────────────────────────────────
+  const [refunding, setRefunding] = useState(false)
+  const [refundProgress, setRefundProgress] = useState({ current: 0, total: 0 })
+  const [refundError, setRefundError] = useState(null)
+  const refundQueueRef = useRef([])
+  const refundCancelledRef = useRef(false)
+
+  function stopBatchRefund() {
+    refundCancelledRef.current = true
+    refundQueueRef.current = []
+    setRefunding(false)
+    setRefundProgress({ current: 0, total: 0 })
+  }
+
+  const processNextRefund = useCallback(async () => {
+    // Check if user cancelled the batch
+    if (refundCancelledRef.current) return
+
+    const queue = refundQueueRef.current
+    if (queue.length === 0) {
+      setRefunding(false)
+      setRefundProgress({ current: 0, total: 0 })
+      return
+    }
+    const item = queue[0]
+    const stepNum = refundProgress.total - queue.length + 1
+    setRefundProgress(prev => ({ ...prev, current: prev.total - queue.length + 1 }))
+    writeRefund({
+      address: CONTRACTS.TOKEN, chainId: 84532,
+      abi: TOKEN_ABI,
+      functionName: "cancelMintRequest",
+      args: [BigInt(item.requestId)],
+    }, {
+      onSuccess: async (hash) => {
+        // User may have cancelled while we were waiting for wallet
+        if (refundCancelledRef.current) return
+        try {
+          const { createPublicClient, http } = await import('viem')
+          const { baseSepolia } = await import('viem/chains')
+          const client = createPublicClient({ chain: baseSepolia, transport: http() })
+          await client.waitForTransactionReceipt({ hash })
+        } catch {} // If receipt polling fails, still proceed — tx was sent
+        if (refundCancelledRef.current) return
+        dismissItem(item.id)
+        refundQueueRef.current = queue.slice(1)
+        processNextRefund()
+      },
+      onError: (err) => {
+        if (refundCancelledRef.current) return
+        setRefundError(`Failed on refund ${stepNum} of ${refundProgress.total}: ${err?.shortMessage || err?.message || 'Transaction rejected'}`)
+        setRefunding(false)
+      },
+    })
+  }, [writeRefund, dismissItem]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  function startBatchRefund() {
+    const stuck = pendingMints.filter(
+      m => m.status === 'pending' && m.requestId && (Date.now() - m.startTime) > 3600_000
+    )
+    if (stuck.length === 0) return
+    refundCancelledRef.current = false
+    refundQueueRef.current = stuck
+    setRefundError(null)
+    setRefunding(true)
+    setRefundProgress({ current: 1, total: stuck.length })
+    processNextRefund()
+  }
+
   function doMint() {
-    if (!windowOpen) return
+    if (!windowOpen || hasPendingVRF) return
     prevBlocksRef.current = blocks ? (blocks[7] || 0) : 0
     writeMint({
       address: CONTRACTS.TOKEN, chainId: 84532,
@@ -383,22 +454,89 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatu
         {drumRollActive ? null : (<>
         {/* — Normal mint UI below (hidden during drum roll) — */}
 
-        {/* Stuck ETH recovery banner */}
+        {/* Stuck ETH recovery banner with batch refund */}
         {(() => {
-          const stuck = pendingMints.filter(m => m.status === 'pending' && m.ethStuck && (Date.now() - m.startTime) > 3600_000)
-          if (stuck.length === 0) return null
+          const stuck = pendingMints.filter(m => m.status === 'pending' && m.requestId && (Date.now() - m.startTime) > 3600_000)
+          if (stuck.length === 0 && !refunding) return null
           const totalEth = stuck.reduce((sum, m) => sum + parseFloat(m.ethStuck || 0), 0)
           return (
             <div style={{
-              background:"rgba(255,80,80,0.12)", border:"1px solid rgba(255,80,80,0.4)",
-              padding:"10px 14px", display:"flex", flexDirection:"column", gap:6,
+              background:"rgba(255,80,80,0.10)", border:"1px solid rgba(255,80,80,0.4)",
+              padding:"14px 16px", display:"flex", flexDirection:"column", gap:10,
             }}>
-              <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:9, color:"#ff6666", letterSpacing:1 }}>
-                ⚠ {totalEth.toFixed(4)} ETH STUCK
+              <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:10, color:"#ff6666", letterSpacing:1 }}>
+                {totalEth > 0 ? `${totalEth.toFixed(4)} ETH` : ''} REFUND AVAILABLE
               </div>
-              <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:11, color:"rgba(255,255,255,0.5)", lineHeight:1.5 }}>
-                {stuck.length} mint request{stuck.length > 1 ? 's' : ''} failed to complete. Cancel below to reclaim your ETH.
+              <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:12, color:"rgba(255,255,255,0.6)", lineHeight:1.6 }}>
+                You have <strong style={{ color:"#fff" }}>{stuck.length} stuck mint{stuck.length !== 1 ? 's' : ''}</strong>.
+                {stuck.length > 1
+                  ? ` You will need to approve ${stuck.length} refund transactions to receive all your ETH back.`
+                  : ' Approve the refund transaction to receive your ETH back.'}
               </div>
+              <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:11, color:"rgba(255,255,255,0.35)", lineHeight:1.5 }}>
+                We regret the inconvenience and are working on a simpler refund flow for the future.
+              </div>
+              {refunding ? (
+                <div style={{
+                  display:"flex", flexDirection:"column", gap:6,
+                }}>
+                  <div style={{
+                    height:6, background:"rgba(0,0,0,0.4)", borderRadius:3, overflow:"hidden",
+                  }}>
+                    <div style={{
+                      height:"100%", borderRadius:3,
+                      width:`${(refundProgress.current / refundProgress.total) * 100}%`,
+                      background:"#6eff8a", transition:"width 0.3s",
+                    }} />
+                  </div>
+                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                    <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:"rgba(255,255,255,0.5)" }}>
+                      REFUND {refundProgress.current} OF {refundProgress.total} — APPROVE IN WALLET
+                    </div>
+                    <button
+                      onClick={stopBatchRefund}
+                      style={{
+                        background:"none", border:"1px solid rgba(255,255,255,0.2)",
+                        color:"rgba(255,255,255,0.5)", fontFamily:"'Press Start 2P', monospace",
+                        fontSize:7, padding:"3px 8px", cursor:"pointer",
+                      }}
+                    >
+                      STOP
+                    </button>
+                  </div>
+                  <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:10, color:"rgba(255,255,255,0.3)" }}>
+                    You can stop at any time. Completed refunds are already in your wallet.
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={startBatchRefund}
+                  disabled={stuck.length === 0}
+                  style={{
+                    width:"100%", padding:"12px 16px",
+                    background:"rgba(255,80,80,0.15)", border:"2px solid rgba(255,80,80,0.5)",
+                    color:"#ff6666", fontFamily:"'Press Start 2P', monospace", fontSize:10,
+                    cursor: stuck.length > 0 ? "pointer" : "default", letterSpacing:1,
+                  }}
+                >
+                  REFUND ALL — {totalEth.toFixed(4)} ETH ({stuck.length} transaction{stuck.length !== 1 ? 's' : ''})
+                </button>
+              )}
+              {refundError && (
+                <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:11, color:"#ff8888", lineHeight:1.4 }}>
+                  {refundError}
+                  <span
+                    onClick={() => {
+                      setRefundError(null)
+                      setRefunding(true)
+                      processNextRefund()
+                    }}
+                    style={{ color:"#ffcc33", cursor:"pointer", marginLeft:8, textDecoration:"underline" }}
+                  >
+                    Retry
+                  </span>
+                </div>
+              )}
             </div>
           )
         })()}
@@ -498,8 +636,8 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatu
             ⚠  SWITCH TO BASE
           </Btn>
         ) : (
-          <Btn onClick={doMint} disabled={!windowOpen || userCapReached || qty < 1}>
-            {userCapReached ? (onCooldown ? "⏳  ON COOLDOWN" : "⏳  DAILY CAP REACHED") : "▶  MINT NOW"}
+          <Btn onClick={doMint} disabled={!windowOpen || userCapReached || qty < 1 || hasPendingVRF}>
+            {hasPendingVRF ? "⏳  MINT IN PROGRESS — WAITING FOR VRF" : userCapReached ? (onCooldown ? "⏳  ON COOLDOWN" : "⏳  DAILY CAP REACHED") : "▶  MINT NOW"}
           </Btn>
         )}
 

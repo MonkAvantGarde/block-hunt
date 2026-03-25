@@ -126,6 +126,15 @@ contract BlockHuntMarketplace is Ownable, ReentrancyGuard {
         uint256 totalPrice = listing.pricePerBlock * quantity;
         require(msg.value >= totalPrice, "Insufficient ETH");
 
+        // Validate seller still holds enough tokens (non-custodial: they may have combined/forged/transferred)
+        uint256 sellerBal = token.balanceOf(listing.seller, listing.tier);
+        require(sellerBal >= quantity, "Seller insufficient balance");
+
+        // Cap listing quantity to seller's actual balance (auto-correct stale listings)
+        if (listing.quantity > sellerBal) {
+            listing.quantity = sellerBal;
+        }
+
         // Update listing
         listing.quantity -= quantity;
         if (listing.quantity == 0) listing.active = false;
@@ -161,6 +170,18 @@ contract BlockHuntMarketplace is Ownable, ReentrancyGuard {
         require(listing.active, "Already cancelled");
         listing.active = false;
         emit ListingCancelled(listingId);
+    }
+
+    // ── Cleanup stale listings ────────────────────────────────────────────
+    /// @notice Anyone can deactivate listings where seller no longer holds tokens.
+    function deactivateStaleListings(uint256[] calldata listingIds) external {
+        for (uint256 i = 0; i < listingIds.length; i++) {
+            Listing storage l = listings[listingIds[i]];
+            if (l.active && token.balanceOf(l.seller, l.tier) == 0) {
+                l.active = false;
+                emit ListingCancelled(listingIds[i]);
+            }
+        }
     }
 
     // ── View helpers ──────────────────────────────────────────────────────

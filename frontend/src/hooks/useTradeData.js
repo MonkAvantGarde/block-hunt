@@ -1,4 +1,4 @@
-import { useReadContract, useAccount } from 'wagmi'
+import { useReadContract, useReadContracts, useAccount } from 'wagmi'
 import { formatEther } from 'viem'
 import { CONTRACTS } from '../config/wagmi'
 import { MARKETPLACE_ABI, TOKEN_ABI } from '../abis'
@@ -63,8 +63,29 @@ export function useTradeData() {
     query: { enabled: isConnected && !!address },
   })
 
-  const listings = parseItems(listingsRaw, 'seller', address, isConnected)
+  const parsedListings = parseItems(listingsRaw, 'seller', address, isConnected)
   const offers = parseItems(offersRaw, 'buyer', address, isConnected)
+
+  // ── Seller balance check: multicall balanceOf for each listing seller ──
+  const balanceContracts = parsedListings.map(l => ({
+    address: CONTRACTS.TOKEN,
+    abi: TOKEN_ABI,
+    functionName: 'balanceOf',
+    args: [l.seller, BigInt(l.tier)],
+  }))
+  const { data: sellerBalances } = useReadContracts({
+    contracts: balanceContracts,
+    query: { enabled: balanceContracts.length > 0, refetchInterval: 30_000 },
+  })
+
+  // Enrich listings with seller's actual balance and filter out dead ones
+  const listings = parsedListings.map((l, i) => {
+    const balResult = sellerBalances?.[i]
+    const sellerBalance = balResult?.status === 'success' ? Number(balResult.result) : null
+    const fillableQty = sellerBalance != null ? Math.min(l.quantity, sellerBalance) : l.quantity
+    const isStale = sellerBalance != null && sellerBalance === 0
+    return { ...l, sellerBalance, fillableQty, isStale }
+  }).filter(l => !l.isStale) // Hide completely dead listings
 
   const myListings = listings.filter(l => l.isOwn)
   const otherListings = listings.filter(l => !l.isOwn)
