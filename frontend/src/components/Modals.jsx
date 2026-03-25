@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { useReadContract, useReadContracts, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
 import { useGameState } from '../hooks/useGameState';
 import { CONTRACTS } from '../config/wagmi';
-import { ESCROW_ABI } from '../abis';
+import { ESCROW_ABI, TOKEN_ABI } from '../abis';
 import { formatEther } from 'viem';
 import {
   WOOD_LIGHT as WOOD, GOLD, GOLD_DK, GOLD_LT,
