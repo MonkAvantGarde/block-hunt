@@ -196,6 +196,18 @@ export function useGameState() {
       }
     : { canMint: true, mintedThisCycle: 0, cycleCap: 500, cooldownUntil: 0, mintsRemaining: 500, dailyMints: 0, dailyCap: 5000, dailyResetsAt: 0 }
 
+  // Fix: contract playerMintInfo view has a bug where cycleMints don't reset when
+  // the daily period expires and the player never hit cycle cap (cooldownUntil stays 0).
+  // recordMint() correctly resets cycleMints on daily expiry, but the view doesn't.
+  // Detect: dailyResetsAt=0 means daily expired (or never minted), dailyMints=0 confirms
+  // the view already reset dailyMints — but cycleMints is stale.
+  if (playerMintRaw && mintStatus.dailyResetsAt === 0 && mintStatus.dailyMints === 0
+      && mintStatus.cooldownUntil === 0 && mintStatus.mintedThisCycle > 0) {
+    mintStatus.mintedThisCycle = 0
+    mintStatus.mintsRemaining = mintStatus.cycleCap
+    mintStatus.canMint = true
+  }
+
   // Backward compat aliases (used by MintPanel and other components)
   const perUserCap = mintStatus.cycleCap
   const userMintedThisWindow = mintStatus.mintedThisCycle

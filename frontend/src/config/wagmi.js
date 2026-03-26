@@ -18,7 +18,7 @@ import { injected, walletConnect } from 'wagmi/connectors'
 // Base Sepolia testnet. Chain ID 84532.
 // Public RPC for now — replace with a dedicated Alchemy/Infura key before mainnet.
 
-const BASE_SEPOLIA_RPC = 'https://base-sepolia.g.alchemy.com/v2/gEjkk1lRRfOpVr2RCtTzl'
+export const BASE_SEPOLIA_RPC = 'https://base-sepolia.g.alchemy.com/v2/gEjkk1lRRfOpVr2RCtTzl'
 
 // ── WALLETCONNECT ─────────────────────────────────────────────────────────────
 // Needed for mobile wallets (Rainbow, MetaMask mobile, etc.)

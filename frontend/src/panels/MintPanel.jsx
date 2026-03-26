@@ -2,7 +2,7 @@ import { useSafeWrite } from '../hooks/useSafeWrite'
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useWriteContract, useWaitForTransactionReceipt, useChainId, useSwitchChain, useReadContracts, useAccount, useConnect } from 'wagmi';
 import { parseEther, decodeEventLog } from 'viem';
-import { CONTRACTS } from '../config/wagmi';
+import { CONTRACTS, BASE_SEPOLIA_RPC } from '../config/wagmi';
 import { TOKEN_ABI, WINDOW_ABI } from '../abis';
 import {
   GOLD, GOLD_DK, GOLD_LT, INK, CREAM,
@@ -48,7 +48,7 @@ function PendingMintItem({ item, onDelivered, onRequestId }) {
       try {
         const { createPublicClient, http } = await import('viem')
         const { baseSepolia } = await import('viem/chains')
-        const client = createPublicClient({ chain: baseSepolia, transport: http() })
+        const client = createPublicClient({ chain: baseSepolia, transport: http(BASE_SEPOLIA_RPC) })
         const reqIds = await client.readContract({
           address: CONTRACTS.TOKEN, chainId: 84532, abi: TOKEN_ABI,
           functionName: 'getPendingRequests', args: [receipt.from],
@@ -214,11 +214,13 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatu
     return () => clearInterval(t)
   }, [])
 
+  // Detect mint delivery by ANY tier balance increase (not just T7)
+  // A mint can produce 0 T7 blocks, so watching only T7 would miss deliveries
   useEffect(() => {
     const hasPending = pendingMints.some(m => m.status === "pending")
     if (!hasPending) return
-    const t7 = blocks ? (blocks[7] || 0) : 0
-    if (prevBlocksRef.current !== null && t7 > prevBlocksRef.current) {
+    const totalNow = blocks ? [2,3,4,5,6,7].reduce((s, t) => s + (blocks[t] || 0), 0) : 0
+    if (prevBlocksRef.current !== null && totalNow > prevBlocksRef.current) {
       setPendingMints(prev => {
         const next = [...prev]
         const idx = next.findIndex(m => m.status === "pending")
@@ -233,7 +235,7 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatu
         setTimeout(() => onMint(), 500)
       }
     }
-    prevBlocksRef.current = t7
+    prevBlocksRef.current = totalNow
   }, [blocks]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -249,62 +251,119 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatu
   }, [pendingMints])
 
   useEffect(() => () => { clearInterval(pollRef.current) }, [])
-  const recoveryRan = useRef(false)
-  useEffect(() => {
-    if (!address || recoveryRan.current) return
-    recoveryRan.current = true
-    async function recover() {
-      try {
-        const { createPublicClient, http } = await import('viem')
-        const { baseSepolia } = await import('viem/chains')
-        const client = createPublicClient({ chain: baseSepolia, transport: http() })
-        const requestIds = await client.readContract({
+
+  // ── On-chain recovery: sync localStorage with actual pending requests ─────
+  // Runs on mount AND periodically (every 15s) while any pending mints exist.
+  // This ensures stuck mints are always detected even if the first attempt
+  // failed (RPC error) or if requestIds were missing.
+  const recoveryRunning = useRef(false)
+  const recoveryTimerRef = useRef(null)
+
+  const runRecovery = useCallback(async () => {
+    if (!address || recoveryRunning.current) return
+    recoveryRunning.current = true
+    try {
+      const { createPublicClient, http, formatEther } = await import('viem')
+      const { baseSepolia } = await import('viem/chains')
+      const client = createPublicClient({ chain: baseSepolia, transport: http(BASE_SEPOLIA_RPC) })
+      const requestIds = await client.readContract({
+        address: CONTRACTS.TOKEN, chainId: 84532, abi: TOKEN_ABI,
+        functionName: 'getPendingRequests', args: [address],
+      })
+      const onChainIds = new Set((requestIds || []).map(r => r.toString()))
+      const existing = loadPending()
+
+      // Clean up stale localStorage entries whose requests no longer exist on-chain
+      const cleaned = existing.filter(m => {
+        if (!m.requestId) {
+          // Items without requestId older than 2 min that aren't on-chain: remove them
+          // (tx probably failed or was never confirmed)
+          if (m.status === 'pending' && (Date.now() - m.startTime) > 120_000) return false
+          return true
+        }
+        if (m.status === 'delivered') return true
+        return onChainIds.has(m.requestId) // only keep if still pending on-chain
+      })
+
+      // Add any on-chain requests not yet in localStorage
+      const existingReqIds = new Set(cleaned.map(m => m.requestId).filter(Boolean))
+      const toAdd = []
+      for (const rid of (requestIds || [])) {
+        const ridStr = rid.toString()
+        if (existingReqIds.has(ridStr)) continue
+        const req = await client.readContract({
           address: CONTRACTS.TOKEN, chainId: 84532, abi: TOKEN_ABI,
-          functionName: 'getPendingRequests', args: [address],
+          functionName: 'vrfMintRequests', args: [rid],
         })
-        if (!requestIds || requestIds.length === 0) return
-        const existing = loadPending()
-        const existingReqIds = new Set(existing.map(m => m.requestId).filter(Boolean))
-        const toAdd = []
-        for (const rid of requestIds) {
+        // vrfMintRequests returns tuple: [player, quantity, amountPaid, requestedAt, windowDay]
+        const player = req[0] || req.player
+        const quantity = req[1] || req.quantity
+        const amountPaid = req[2] || req.amountPaid
+        const requestedAt = req[3] || req.requestedAt
+        if (!player || player === '0x0000000000000000000000000000000000000000' || player.toLowerCase() !== address.toLowerCase()) continue
+        toAdd.push({
+          id: 'recovered_' + ridStr,
+          txHash: null,
+          qty: Number(quantity),
+          startTime: Number(requestedAt) * 1000,
+          status: 'pending',
+          requestId: ridStr,
+          ethStuck: formatEther(amountPaid),
+        })
+      }
+
+      // Also populate requestId for any localStorage items missing it
+      // by matching them against on-chain requests
+      const updatedCleaned = cleaned.map(m => {
+        if (m.requestId || m.status !== 'pending') return m
+        // Try to match by timestamp proximity (within 60s)
+        for (const rid of (requestIds || [])) {
           const ridStr = rid.toString()
           if (existingReqIds.has(ridStr)) continue
-          const req = await client.readContract({
-            address: CONTRACTS.TOKEN, chainId: 84532, abi: TOKEN_ABI,
-            functionName: 'vrfMintRequests', args: [rid],
-          })
-          if (!req || req.player?.toLowerCase() !== address.toLowerCase()) continue
-          const { formatEther } = await import('viem')
-          toAdd.push({
-            id: 'recovered_' + ridStr,
-            txHash: null,
-            qty: Number(req.quantity),
-            startTime: Number(req.requestedAt) * 1000,
-            status: 'pending',
-            requestId: ridStr,
-            ethStuck: formatEther(req.amountPaid),
-          })
+          // Already being added as new — skip
+          if (toAdd.some(a => a.requestId === ridStr)) continue
         }
-        if (toAdd.length > 0) {
-          setPendingMints(prev => {
-            const next = [...prev, ...toAdd]
-            savePending(next)
-            return next
-          })
-        }
-      } catch (e) {
-        console.warn('VRF recovery failed:', e)
-      }
+        return m
+      })
+
+      const final = [...updatedCleaned, ...toAdd]
+      savePending(final)
+      setPendingMints(final)
+    } catch (e) {
+      console.warn('VRF recovery failed:', e)
+    } finally {
+      recoveryRunning.current = false
     }
-    recover()
   }, [address])
+
+  // Run recovery on mount
+  useEffect(() => {
+    if (address) runRecovery()
+  }, [address]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Run recovery periodically while there are pending mints
+  useEffect(() => {
+    const hasPending = pendingMints.some(m => m.status === 'pending')
+    if (hasPending && address) {
+      if (!recoveryTimerRef.current) {
+        recoveryTimerRef.current = setInterval(() => runRecovery(), 15_000)
+      }
+    } else {
+      clearInterval(recoveryTimerRef.current)
+      recoveryTimerRef.current = null
+    }
+    return () => { clearInterval(recoveryTimerRef.current); recoveryTimerRef.current = null }
+  }, [pendingMints, address, runRecovery])
 
 
   const { writeContract: writeMint } = useSafeWrite()
   const { writeContract: writeRefund } = useSafeWrite()
   const total = (qty * mintPrice).toFixed(5)
 
-  const hasPendingVRF = pendingMints.some(m => m.status === 'pending' && (Date.now() - m.startTime) < 3600_000)
+  // Only block minting briefly (90s) after submitting a new mint to prevent double-clicks.
+  // Stuck mints (>90s) should NEVER block the player from minting again.
+  // The contract allows multiple concurrent VRF requests.
+  const hasPendingVRF = pendingMints.some(m => m.status === 'pending' && (Date.now() - m.startTime) < 90_000)
 
   // ── Batch refund state ──────────────────────────────────────────────────
   const [refunding, setRefunding] = useState(false)
@@ -346,7 +405,7 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatu
         try {
           const { createPublicClient, http } = await import('viem')
           const { baseSepolia } = await import('viem/chains')
-          const client = createPublicClient({ chain: baseSepolia, transport: http() })
+          const client = createPublicClient({ chain: baseSepolia, transport: http(BASE_SEPOLIA_RPC) })
           await client.waitForTransactionReceipt({ hash })
         } catch {} // If receipt polling fails, still proceed — tx was sent
         if (refundCancelledRef.current) return
@@ -377,7 +436,8 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatu
 
   function doMint() {
     if (!windowOpen || hasPendingVRF) return
-    prevBlocksRef.current = blocks ? (blocks[7] || 0) : 0
+    // Snapshot total balance across all tiers for delivery detection
+    prevBlocksRef.current = blocks ? [2,3,4,5,6,7].reduce((s, t) => s + (blocks[t] || 0), 0) : 0
     writeMint({
       address: CONTRACTS.TOKEN, chainId: 84532,
       abi: TOKEN_ABI,
@@ -458,8 +518,11 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatu
 
         {/* Stuck ETH recovery banner with batch refund */}
         {(() => {
-          const stuck = pendingMints.filter(m => m.status === 'pending' && m.requestId && (Date.now() - m.startTime) > 3600_000)
-          if (stuck.length === 0 && !refunding) return null
+          const stuckWithId = pendingMints.filter(m => m.status === 'pending' && m.requestId && (Date.now() - m.startTime) > 3600_000)
+          const stuckNoId = pendingMints.filter(m => m.status === 'pending' && !m.requestId && (Date.now() - m.startTime) > 3600_000)
+          const stuck = stuckWithId // refundable items (have requestId)
+          const totalStuck = stuckWithId.length + stuckNoId.length
+          if (totalStuck === 0 && !refunding) return null
           const totalEth = stuck.reduce((sum, m) => sum + parseFloat(m.ethStuck || 0), 0)
           return (
             <div style={{
@@ -470,11 +533,18 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatu
                 {totalEth > 0 ? `${totalEth.toFixed(4)} ETH` : ''} REFUND AVAILABLE
               </div>
               <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:12, color:"rgba(255,255,255,0.6)", lineHeight:1.6 }}>
-                You have <strong style={{ color:"#fff" }}>{stuck.length} stuck mint{stuck.length !== 1 ? 's' : ''}</strong>.
-                {stuck.length > 1
-                  ? ` You will need to approve ${stuck.length} refund transactions to receive all your ETH back.`
-                  : ' Approve the refund transaction to receive your ETH back.'}
+                You have <strong style={{ color:"#fff" }}>{totalStuck} stuck mint{totalStuck !== 1 ? 's' : ''}</strong>.
+                {stuck.length > 0
+                  ? stuck.length > 1
+                    ? ` You will need to approve ${stuck.length} refund transactions to receive all your ETH back.`
+                    : ' Approve the refund transaction to receive your ETH back.'
+                  : ' Recovering request data from chain...'}
               </div>
+              {stuckNoId.length > 0 && (
+                <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:11, color:"#ffaa00", lineHeight:1.5 }}>
+                  {stuckNoId.length} mint{stuckNoId.length !== 1 ? 's' : ''} still syncing — recovery runs automatically every 15s.
+                </div>
+              )}
               <div style={{ fontFamily:"'Courier Prime', monospace", fontSize:11, color:"rgba(255,255,255,0.35)", lineHeight:1.5 }}>
                 We regret the inconvenience and are working on a simpler refund flow for the future.
               </div>
