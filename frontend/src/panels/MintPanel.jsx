@@ -199,12 +199,7 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatu
     })
   }
 
-  // VRF callback gas cap: vrfCallbackGasLimit + qty * VRF_GAS_PER_BLOCK must stay under VRF_GAS_MAX.
-  // Until contract redeploy fixes VRF_GAS_PER_BLOCK (3k→28k), cap mints to what the gas budget allows.
-  // With vrfCallbackGasLimit=2M and VRF_GAS_MAX=2.5M: safe max ≈ (2.5M - 2M) / 3k ≈ 166, but actual
-  // gas needed is ~28k/block, so real safe max ≈ (2.5M - 150k overhead) / 28k ≈ 70.
-  const VRF_SAFE_MAX = 70
-  const maxMintable = userMintsRemaining != null ? Math.min(VRF_SAFE_MAX, userMintsRemaining) : VRF_SAFE_MAX
+  const maxMintable = userMintsRemaining != null ? Math.min(500, userMintsRemaining) : 500
   const [qty, setQty] = useState(Math.min(10, maxMintable))
   const [pendingMints, setPendingMints] = useState(() => loadPending())
   const [mintError, setMintError] = useState(null)
@@ -642,7 +637,7 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatu
 
         {/* Quick-set buttons */}
         <div style={{ display:"flex", gap:6 }}>
-          {[10, 30, 50, Math.min(slots > 0 ? slots : VRF_SAFE_MAX, maxMintable)].map((v, i) => {
+          {[10, 50, 100, Math.min(slots > 0 ? slots : 500, maxMintable)].map((v, i) => {
             const label = i === 3 ? "MAX" : String(v)
             const capped = Math.min(v, maxMintable)
             return (
