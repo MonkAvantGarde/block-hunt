@@ -138,13 +138,13 @@ const { data: countdownActive } = useReadContract({
   address: CONTRACTS.TOKEN, chainId: 84532,
   abi: TOKEN_ABI,
   functionName: 'countdownActive',
-  watch: true,
+  query: { refetchInterval: 10_000 },
 })
 const { data: countdownHolder } = useReadContract({
   address: CONTRACTS.TOKEN, chainId: 84532,
   abi: TOKEN_ABI,
   functionName: 'countdownHolder',
-  watch: true,
+  query: { refetchInterval: 10_000 },
 })
 
   const windowOpen = mintStatus?.canMint ?? true

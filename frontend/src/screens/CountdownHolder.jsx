@@ -393,7 +393,7 @@ export default function CountdownHolder({ onBack }) {
     address: CONTRACTS.TOKEN, chainId: 84532,
     abi: TOKEN_ABI,
     functionName: "countdownStartTime",
-    watch: true,
+    query: { refetchInterval: 10_000 },
   });
 
   // ── Read player balances ──────────────────────────────────
@@ -403,7 +403,7 @@ export default function CountdownHolder({ onBack }) {
     functionName: "balancesOf",
     args: [address],
     enabled: !!address,
-    watch: true,
+    query: { refetchInterval: 10_000 },
   });
 
   // balancesOf returns uint256[8], index = tier id
@@ -428,7 +428,7 @@ export default function CountdownHolder({ onBack }) {
     address: CONTRACTS.COUNTDOWN, chainId: 84532,
     abi: COUNTDOWN_ABI,
     functionName: "getCountdownInfo",
-    watch: true,
+    query: { refetchInterval: 5_000 },
   });
 
   // getCountdownInfo returns: active, holder, startTime, endTime, remaining, burnVotes, claimVotes
