@@ -1,11 +1,13 @@
 out/
 cache/
 .env
-.env
-frontend/node_modules/
 .DS_Store
-subgraph/node_modules/
+frontend/node_modules/
 frontend/dist/
-keeper/node_modules/
+subgraph/node_modules/
 subgraph/build/
+keeper/node_modules/
+blockhunt/
 broadcast/
+lib/
+node_modules/
