@@ -199,7 +199,10 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatu
     })
   }
 
-  const maxMintable = userMintsRemaining != null ? Math.min(500, userMintsRemaining) : 500
+  // VRF callback gas cap: actual gas ~28k/block, not the 3k in the contract constant.
+  // (2,500,000 - 150,000) / 28,000 ≈ 83 — use 80 as safe max until contract redeploy.
+  const VRF_SAFE_MAX = 80
+  const maxMintable = userMintsRemaining != null ? Math.min(VRF_SAFE_MAX, userMintsRemaining) : VRF_SAFE_MAX
   const [qty, setQty] = useState(Math.min(10, maxMintable))
   const [pendingMints, setPendingMints] = useState(() => loadPending())
   const [mintError, setMintError] = useState(null)
@@ -637,11 +640,11 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatu
 
         {/* Quick-set buttons */}
         <div style={{ display:"flex", gap:6 }}>
-          {[10, 50, 100, Math.min(slots > 0 ? slots : 500, maxMintable)].map((v, i) => {
+          {[10, 30, 50, Math.min(slots > 0 ? slots : VRF_SAFE_MAX, maxMintable)].map((v, i) => {
             const label = i === 3 ? "MAX" : String(v)
             const capped = Math.min(v, maxMintable)
             return (
-              <button key={label} onClick={() => setQty(Math.min(capped, 500))} style={{
+              <button key={label} onClick={() => setQty(Math.min(capped, VRF_SAFE_MAX))} style={{
                 flex:1, height:44,
                 fontFamily:"'Press Start 2P', monospace", fontSize:8,
                 color: qty === v ? INK : CREAM,
