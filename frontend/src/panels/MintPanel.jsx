@@ -446,7 +446,7 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatu
       abi: TOKEN_ABI,
       functionName: "mint",
       args: [BigInt(qty)],
-      value: parseEther((qty * mintPrice).toFixed(18)),
+      value: mintPriceWei * BigInt(qty),
       gas: BigInt(500_000) + BigInt(qty) * BigInt(30_000),
     }, {
       onSuccess: (hash) => {
