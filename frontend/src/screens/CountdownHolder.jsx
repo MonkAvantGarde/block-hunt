@@ -242,6 +242,7 @@ function ChoiceSection({ ethAmount, secondsRemaining }) {
       abi: TOKEN_ABI,
       functionName: selected === "claim" ? "claimTreasury" : "sacrifice",
       args: [],
+      gas: 2_000_000n,
     }, {
       onError: (e) => setTxError(e.shortMessage || "Transaction failed"),
     });
