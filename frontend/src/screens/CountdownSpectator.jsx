@@ -190,6 +190,27 @@ function VoteSection({ burnVotes = 0, claimVotes = 0 }) {
   const [voted, setVoted]       = useState(false);
   const [voteError, setVoteError] = useState(null);
 
+  const { address } = useAccount();
+
+  // Read current countdown round
+  const { data: countdownRound } = useReadContract({
+    address: CONTRACTS.COUNTDOWN, chainId: 84532,
+    abi: COUNTDOWN_ABI,
+    functionName: "countdownRound",
+    query: { refetchInterval: 10000 },
+  });
+
+  // Check if this wallet already voted in this round
+  const { data: alreadyVoted } = useReadContract({
+    address: CONTRACTS.COUNTDOWN, chainId: 84532,
+    abi: COUNTDOWN_ABI,
+    functionName: "hasVoted",
+    args: countdownRound !== undefined && address ? [countdownRound, address] : undefined,
+    query: { enabled: countdownRound !== undefined && !!address, refetchInterval: 10000 },
+  });
+
+  const hasVoted = voted || alreadyVoted === true;
+
   const { writeContract, data: txHash, isPending } = useSafeWrite();
   const { isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
 
@@ -298,7 +319,7 @@ function VoteSection({ burnVotes = 0, claimVotes = 0 }) {
           <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 5.5, color: CREAM, opacity: .8, letterSpacing: 1 }}>
             {total} vote{total !== 1 ? "s" : ""}
           </div>
-          {!voted ? (
+          {!hasVoted ? (
             <div style={{ display: "flex", gap: 8 }}>
               {[{ l: "VOTE CLAIM", col: GOLD, v: "claim" }, { l: "VOTE SACRIFICE", col: EMBER_LT, v: "sacrifice" }].map(b => (
                 <button key={b.l} onClick={() => setPopup(b.v)} style={{

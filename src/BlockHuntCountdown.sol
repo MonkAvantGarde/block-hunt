@@ -107,6 +107,24 @@ contract BlockHuntCountdown is Ownable {
         countdownDuration = _duration;
     }
 
+    function adminStartCountdown(address holder) external onlyOwner {
+        require(testModeEnabled, "Test mode disabled");
+        require(!isActive, "Countdown already active");
+        require(tokenContract != address(0), "Token not set");
+
+        isActive           = true;
+        currentHolder      = holder;
+        countdownStartTime = block.timestamp;
+        holderScore        = calculateScore(holder);
+        lastChallengeTime  = block.timestamp;
+        votesBurn          = 0;
+        votesClaim         = 0;
+
+        IBlockHuntTokenCountdown(tokenContract).updateCountdownHolder(holder);
+
+        emit CountdownStarted(holder, block.timestamp, block.timestamp + countdownDuration);
+    }
+
     function disableTestMode() external onlyOwner {
         testModeEnabled = false;
     }
@@ -123,7 +141,7 @@ contract BlockHuntCountdown is Ownable {
              + bals[7] * WEIGHT_T7;
     }
 
-    // ── Ranking: primary = distinct tiers, tiebreaker = total blocks ──────
+    // ── Ranking: primary = distinct tiers, tiebreaker = weighted score ───
 
     function _countDistinctTiers(address player) internal view returns (uint256) {
         IBlockHuntTokenCountdown token = IBlockHuntTokenCountdown(tokenContract);
@@ -134,21 +152,12 @@ contract BlockHuntCountdown is Ownable {
         return count;
     }
 
-    function _totalBlocks(address player) internal view returns (uint256) {
-        uint256[8] memory bals = IBlockHuntTokenCountdown(tokenContract).balancesOf(player);
-        uint256 total;
-        for (uint256 t = 2; t <= 7; t++) {
-            total += bals[t];
-        }
-        return total;
-    }
-
     function _ranksAbove(address challenger, address holder) internal view returns (bool) {
         uint256 cTiers = _countDistinctTiers(challenger);
         uint256 hTiers = _countDistinctTiers(holder);
         if (cTiers > hTiers) return true;
         if (cTiers < hTiers) return false;
-        return _totalBlocks(challenger) > _totalBlocks(holder);
+        return calculateScore(challenger) > calculateScore(holder);
     }
 
     // ── Called by BlockHuntToken when a player triggers the countdown ──────
