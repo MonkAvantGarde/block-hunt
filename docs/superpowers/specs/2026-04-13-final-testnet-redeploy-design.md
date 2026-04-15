@@ -393,3 +393,232 @@ New rewards system design TBD. Separate spec will be created when user shares th
 - Keeper bot configuration (post-deploy operational task)
 - Sound design specifics (direction TBD)
 - Specific animation durations for T3, T2, T1 (artist deliverable)
+
+---
+
+## Security Hardening (added 2026-04-15)
+
+Cross-reviewed against `unaddressed_bugs.md` and `bug_priority_verdict.md`. Items below are additive to the Phase 1 scope above and ship in the same redeploy.
+
+### SH-1. BlockHuntCountdown — `holderSince` initialization guard *(NEW-A, P0)*
+
+Every path that assigns `currentHolder` MUST also set `holderSince = block.timestamp`. Add an invariant check in the challenge function and a test-suite assertion.
+
+```solidity
+require(holderSince > 0, "Holder session not initialized");
+// And in every assignment path:
+currentHolder = newHolder;
+holderSince  = block.timestamp;  // never rely on default
+```
+
+**Invariant test:** `assert(currentHolder == address(0) || holderSince > 0)`.
+
+### SH-2. BlockHuntToken — `setVrfGasParams` bounds *(NEW-G, P0)*
+
+Extends §1.1. Without bounds, the fix recreates the original ETH-locking bug.
+
+```solidity
+function setVrfGasParams(uint32 _gasPerBlock, uint32 _gasMax) external onlyOwner {
+    require(_gasPerBlock >= 10_000 && _gasPerBlock <= 100_000, "gasPerBlock out of range");
+    require(_gasMax >= 500_000 && _gasMax <= 30_000_000, "gasMax out of range");
+    vrfGasPerBlock = _gasPerBlock;
+    vrfGasMax = _gasMax;
+    emit VrfGasParamsUpdated(_gasPerBlock, _gasMax);
+}
+```
+
+### SH-3. BlockHuntToken — try/catch ALL external calls in `fulfillRandomWords` *(NEW-B + rewards, P0)*
+
+§1.2 covered `recordMint`. Extend to every external call in the VRF callback:
+
+```solidity
+// recordMint (from §1.2) — already covered
+try IBlockHuntMint(mintWindowContract).recordMint(req.player, allocated) {}
+catch { emit RecordMintFailed(req.player, allocated); }
+
+// recordProgression — new
+try IBlockHuntCountdown(countdownContract).recordProgression(req.player, mintedCount) {}
+catch { emit RecordProgressionFailed(req.player, mintedCount); }
+
+// rewards.onMint — new, required once rewards contract is wired
+try IBlockHuntRewards(rewardsContract).onMint(req.player, amountPaid, tiers, batch) {}
+catch { emit RewardsOnMintFailed(req.player, amountPaid); }
+```
+
+**Rule:** no bare external call in `fulfillRandomWords`. Every future hook added here inherits the try/catch requirement.
+
+### SH-4. BlockHuntToken — `executeDefaultOnExpiry` holder grace period *(BUG-14, P0)*
+
+15-minute holder-exclusive window before the function becomes permissionless.
+
+```solidity
+function executeDefaultOnExpiry() external nonReentrant {
+    require(countdownActive, "No countdown active");
+    uint256 expiry = countdownStartTime + countdownDuration;
+    require(block.timestamp >= expiry, "Not expired");
+
+    // Holder-exclusive grace period
+    if (block.timestamp < expiry + 15 minutes) {
+        require(msg.sender == countdownHolder, "Holder grace period active");
+    }
+    // ... rest of sacrifice execution
+}
+```
+
+**Decision recorded:** use stored `countdownHolder` as-is during grace. Do NOT re-verify `hasAllTiers` — adds race complexity for a rare scenario. Document inline.
+
+### SH-5. BlockHuntToken + BlockHuntCountdown — forge sandwich protection *(BUG-16, P0)*
+
+Counter-based approach (not time-lock). Track pending forge burns as logically-still-held.
+
+```solidity
+// BlockHuntToken
+mapping(address => mapping(uint8 => uint256)) public pendingForgeBurns;
+
+// When forge starts (burn happens):
+pendingForgeBurns[player][fromTier] += burnCount;
+
+// When forge resolves (success or fail):
+pendingForgeBurns[player][fromTier] -= burnCount;
+
+// When forge is cancelled / times out — SAME decrement path:
+pendingForgeBurns[req.player][req.fromTier] -= req.burnCount;
+```
+
+```solidity
+// BlockHuntCountdown.hasAllTiers
+for (uint8 t = 2; t <= 7; t++) {
+    if (balanceOf(player, t) + pendingForgeBurns[player][t] == 0) return false;
+}
+return true;
+```
+
+**Critical:** cleanup on forge cancel/expire is mandatory — without it, a stuck forge request leaves the holder permanently un-challengeable (inverted exploit).
+
+### SH-6. BlockHuntToken — burn exactly 1 of each tier on claim/sacrifice *(BUG-9, P0)*
+
+```solidity
+// Replace full-balance burn loop with:
+uint256[] memory ids = new uint256[](6);
+uint256[] memory amounts = new uint256[](6);
+for (uint256 i = 0; i < 6; i++) {
+    ids[i] = i + 2;
+    amounts[i] = 1;
+    tierTotalSupply[i + 2] -= 1;
+}
+_burnBatch(msg.sender, ids, amounts);
+```
+
+Frontend must display: *"Burning 6 blocks (1 per tier). You keep: X T7, Y T6, …"* before confirmation.
+
+### SH-7. BlockHuntToken — `combineMany` length cap *(BUG-4, P0)*
+
+```solidity
+function combineMany(uint256[] calldata fromTiers) external nonReentrant whenNotPaused {
+    require(fromTiers.length > 0 && fromTiers.length <= 50, "Invalid length");
+    // ...
+}
+```
+
+Frontend auto-chunks larger requests into sequential 50-item batches.
+
+### SH-8. BlockHuntForge — basis-point probability *(BUG-3, P0)*
+
+```solidity
+uint256 successChance = (singleReq.burnCount * 10_000) / ratio;
+bool success = (randomWords[0] % 10_000) < successChance;
+```
+
+Displayed odds now match actual odds exactly.
+
+### SH-9. BlockHuntEscrow — explicit amount on sacrifice *(BUG-5, P1)*
+
+```solidity
+// Treasury:
+IBlockHuntEscrow(escrow).initiateSacrifice(winner, totalPrizePool);
+
+// Escrow:
+function initiateSacrifice(address winner, uint256 amount) external onlyToken {
+    uint256 winnerShare   = amount * 50 / 100;
+    uint256 communityShare = amount * 40 / 100;
+    uint256 s2Share       = amount * 10 / 100;
+    // ...
+}
+```
+
+Removes reliance on `address(this).balance`.
+
+### SH-10. BlockHuntCountdown — season-indexed leaderboard state *(NEW-F, P1)*
+
+Replace flat mappings with season-indexed ones. Applies to `progressionScore`, `allPlayers`, `isPlayer`, and any other rewards-adjacent state that should reset between seasons.
+
+```solidity
+uint256 public currentSeason;
+mapping(uint256 => address[]) public seasonPlayers;
+mapping(uint256 => mapping(address => uint256)) public seasonScore;
+mapping(uint256 => mapping(address => bool)) public isSeasonPlayer;
+
+function recordProgression(address player, uint256 points) external onlyToken {
+    if (!isSeasonPlayer[currentSeason][player]) {
+        isSeasonPlayer[currentSeason][player] = true;
+        seasonPlayers[currentSeason].push(player);
+    }
+    seasonScore[currentSeason][player] += points;
+}
+
+function advanceSeason() external onlyOwner {
+    currentSeason += 1;
+    emit SeasonAdvanced(currentSeason);
+}
+```
+
+### SH-11. BlockHuntToken + BlockHuntCountdown — eliminate player on claim/sacrifice *(NEW-E, P1)*
+
+After the endgame burn, Token calls:
+
+```solidity
+IBlockHuntCountdown(countdownContract).eliminatePlayer(msg.sender);
+
+// Countdown:
+function eliminatePlayer(address player) external onlyToken {
+    seasonScore[currentSeason][player] = 0;
+    isEliminated[currentSeason][player] = true;
+    emit PlayerEliminated(currentSeason, player);
+}
+```
+
+No ghost leaderboard entries after endgame.
+
+### SH-12. BlockHuntTreasury — creator fee floor + event *(BUG-11, P1)*
+
+```solidity
+uint256 public constant MIN_CREATOR_FEE = 500;  // 5% floor
+event CreatorFeeUpdated(uint256 oldBps, uint256 newBps);
+
+function setCreatorFee(uint256 bps) external onlyOwner {
+    require(bps >= MIN_CREATOR_FEE, "Below minimum");
+    require(bps <= MAX_CREATOR_FEE, "Exceeds max");
+    emit CreatorFeeUpdated(creatorFeeBps, bps);
+    creatorFeeBps = bps;
+}
+```
+
+### SH-13. BlockHuntCountdown — remove `castVote` *(BUG-8, decision)*
+
+Remove `castVote()`, `votesBurn`, `votesClaim`, and `hasVoted` state + events. Remove vote display from frontend. Community signal moves to off-chain (Discord/Twitter).
+
+### Deferred with tracking
+
+- **NEW-C** (lazy reveal + contract wallets): mitigated by shipping `lazyRevealThreshold = 0` at deploy. Revisit before enabling.
+- **BUG-10** (Marketplace CEI): fold into next marketplace iteration, separate deploy.
+
+### Updated Deploy Checklist additions
+
+Add to existing checklist:
+
+- [ ] SH-1 through SH-8 applied + unit tests green
+- [ ] SH-9 through SH-13 applied + unit tests green
+- [ ] Invariant test: `assert(currentHolder == address(0) || holderSince > 0)` in countdown suite
+- [ ] Invariant test: pendingForgeBurns cleanup on forge cancel/timeout path
+- [ ] Confirm `lazyRevealThreshold = 0` in post-deploy config
+- [ ] Confirm `castVote` removed from Countdown + frontend
