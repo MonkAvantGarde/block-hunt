@@ -47,8 +47,8 @@ contract BlockHuntTreasuryTest is Test {
         vm.deal(token, 10 ether);
         vm.prank(token);
         treasury.receiveMintFunds{value: 10 ether}();
-        // 20% creator fee => 2 ether to creator, 8 ether held in contract
-        assertEq(address(treasury).balance, 8 ether);
+        // 20% creator fee => 2 ether to creator, 8 ether tracked in totalDeposited
+        assertEq(treasury.totalDeposited(), 8 ether);
         assertEq(creator.balance, 2 ether);
     }
 }
