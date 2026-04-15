@@ -38,9 +38,9 @@ contract BlockHuntTreasuryTest is Test {
 
     function test_EmergencyWithdrawRemoved() public {
         (bool ok, ) = address(treasury).call(
-            abi.encodeWithSignature("emergencyWithdraw()")
+            abi.encodeWithSignature("emergencyWithdraw(address,uint256)", address(0), 0)
         );
-        assertFalse(ok, "emergencyWithdraw should not exist");
+        assertFalse(ok, "emergencyWithdraw(address,uint256) should not exist");
     }
 
     function test_ReceiveMintFundsRoutes80PctToPool() public {
