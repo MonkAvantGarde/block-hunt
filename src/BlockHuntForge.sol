@@ -190,7 +190,7 @@ contract BlockHuntForge is VRFConsumerBaseV2Plus, ReentrancyGuard {
         });
 
         uint256 ratio = _combineRatioForTier(fromTier);
-        uint256 successChance = (burnCount * 100) / ratio;
+        uint256 successChance = (burnCount * 10_000) / ratio;
         bool success = _pseudoRandom(msg.sender, fromTier, burnCount, requestNonce) < successChance;
         forgeRequests[requestNonce].resolved = true;
 
@@ -318,11 +318,10 @@ contract BlockHuntForge is VRFConsumerBaseV2Plus, ReentrancyGuard {
             });
 
             uint256 ratio = _combineRatioForTier(fromTier);
-            uint256 successChance = (burnCount * 100) / ratio;
-            // Per-attempt randomness derived from nonce + index
+            uint256 successChance = (burnCount * 10_000) / ratio;
             uint256 rand = uint256(keccak256(abi.encodePacked(
                 block.prevrandao, block.timestamp, msg.sender, nonce, i
-            ))) % 100;
+            ))) % 10_000;
             bool success = rand < successChance;
 
             IBlockHuntTokenForge(tokenContract).resolveForge(msg.sender, fromTier, success);
@@ -352,8 +351,8 @@ contract BlockHuntForge is VRFConsumerBaseV2Plus, ReentrancyGuard {
             singleReq.resolved = true;
 
             uint256 ratio = _combineRatioForTier(singleReq.fromTier);
-            uint256 successChance = (singleReq.burnCount * 100) / ratio;
-            bool success = (randomWords[0] % 100) < successChance;
+            uint256 successChance = (singleReq.burnCount * 10_000) / ratio;
+            bool success = (randomWords[0] % 10_000) < successChance;
 
             IBlockHuntTokenForge(tokenContract).resolveForge(
                 singleReq.player, singleReq.fromTier, success
@@ -378,8 +377,8 @@ contract BlockHuntForge is VRFConsumerBaseV2Plus, ReentrancyGuard {
             // Per-attempt randomness derived from single VRF seed
             uint256 derived = uint256(keccak256(abi.encodePacked(seed, i)));
             uint256 ratio = _combineRatioForTier(attempt.fromTier);
-            uint256 successChance = (attempt.burnCount * 100) / ratio;
-            bool success = (derived % 100) < successChance;
+            uint256 successChance = (attempt.burnCount * 10_000) / ratio;
+            bool success = (derived % 10_000) < successChance;
 
             IBlockHuntTokenForge(tokenContract).resolveForge(
                 batchReq.player, attempt.fromTier, success
@@ -432,7 +431,7 @@ contract BlockHuntForge is VRFConsumerBaseV2Plus, ReentrancyGuard {
             fromTier,
             burnCount,
             nonce
-        ))) % 100;
+        ))) % 10_000;
     }
 
     // ── Admin ─────────────────────────────────────────────────────────────────
