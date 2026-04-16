@@ -38,6 +38,11 @@ contract BlockHuntCountdown is Ownable {
     address public currentHolder;
     bool    public isActive;
 
+    // ── Cumulative defense (NEW-A fix + SH-1) ────────────────────────────
+    uint256 public holderSince;
+    mapping(address => uint256) public cumulativeDefenseTime;
+    uint256 public constant REQUIRED_DEFENSE = 7 days;
+
     uint256 public votesBurn;
     uint256 public votesClaim;
     uint256 public countdownRound;
@@ -115,6 +120,7 @@ contract BlockHuntCountdown is Ownable {
         isActive           = true;
         currentHolder      = holder;
         countdownStartTime = block.timestamp;
+        holderSince        = block.timestamp;
         holderScore        = calculateScore(holder);
         lastChallengeTime  = block.timestamp;
         votesBurn          = 0;
@@ -169,6 +175,7 @@ contract BlockHuntCountdown is Ownable {
         isActive           = true;
         currentHolder      = holder;
         countdownStartTime = block.timestamp;
+        holderSince        = block.timestamp;
         votesBurn          = 0;
         votesClaim         = 0;
         holderScore        = calculateScore(holder);
@@ -203,8 +210,14 @@ contract BlockHuntCountdown is Ownable {
         uint256 challengerScore = calculateScore(msg.sender);
         uint256 oldScore = calculateScore(oldHolder);
 
+        // Bank cumulative defense time for the outgoing holder
+        if (holderSince > 0) {
+            cumulativeDefenseTime[oldHolder] += block.timestamp - holderSince;
+        }
+
         currentHolder      = msg.sender;
         holderScore        = challengerScore;
+        holderSince        = block.timestamp;
         lastChallengeTime  = block.timestamp;
         countdownStartTime = block.timestamp;
         takeoverCount++;
@@ -285,11 +298,21 @@ contract BlockHuntCountdown is Ownable {
         isActive           = false;
         currentHolder      = address(0);
         countdownStartTime = 0;
+        holderSince        = 0;
         votesBurn          = 0;
         votesClaim         = 0;
         holderScore        = 0;
         lastChallengeTime  = 0;
         takeoverCount      = 0;
         countdownRound++;
+    }
+
+    // ── Cumulative defense view ──────────────────────────────────────────
+
+    function canClaim(address player) public view returns (bool) {
+        if (player != currentHolder) return false;
+        if (holderSince == 0) return false;
+        uint256 elapsed = block.timestamp - holderSince;
+        return cumulativeDefenseTime[player] + elapsed >= REQUIRED_DEFENSE;
     }
 }
