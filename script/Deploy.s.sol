@@ -157,6 +157,9 @@ contract Deploy is Script {
         countdown.setTokenContract(address(token));
         console.log("Countdown wired to Token.");
 
+        rewards.setTokenContract(address(token));
+        console.log("Rewards wired to Token.");
+
         // ── Step 4: Configure VRF ──────────────────────────────────────────
 
         token.setVrfConfig(VRF_SUB_ID, VRF_KEY_HASH, TOKEN_VRF_GAS);

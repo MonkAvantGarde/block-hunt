@@ -90,6 +90,9 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     uint256 public currentWindowDay;
     uint256[8] public tierTotalSupply;
 
+    mapping(uint256 => mapping(address => bool)) public dailyEligible;
+    mapping(uint256 => uint256) public dailyMinterCount;
+
     bool    public countdownActive;
     address public countdownHolder;
     uint256 public countdownStartTime;
@@ -420,6 +423,12 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
             catch { emit RecordProgressionFailed(req.player, uint32(allocated)); }
         }
 
+        uint256 today = block.timestamp / 86400;
+        if (!dailyEligible[today][req.player]) {
+            dailyEligible[today][req.player] = true;
+            dailyMinterCount[today]++;
+        }
+
         emit BlockMinted(req.player, allocated);
         emit MintFulfilled(req.player, requestId, allocated);
 
@@ -493,6 +502,13 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
 
         _mintBatch(msg.sender, ids, amounts, "");
         IBlockHuntMint(mintWindowContract).recordMint(msg.sender, allocated);
+
+        uint256 today = block.timestamp / 86400;
+        if (!dailyEligible[today][msg.sender]) {
+            dailyEligible[today][msg.sender] = true;
+            dailyMinterCount[today]++;
+        }
+
         emit BlockMinted(msg.sender, allocated);
         _checkCountdownTrigger(msg.sender);
     }
