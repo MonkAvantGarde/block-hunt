@@ -301,7 +301,7 @@ contract BlockHuntTest is Test {
         uint256 creatorBefore = creator.balance;
         _mintBlocks(alice, 100);
         uint256 total = MINT_PRICE * 100;
-        uint256 creatorFee = (total * 1000) / 10000; // 10%
+        uint256 creatorFee = (total * 2000) / 10000; // 20%
         assertEq(creator.balance - creatorBefore, creatorFee);
         assertEq(address(treasury).balance - treasBefore, total - creatorFee);
     }
@@ -735,10 +735,11 @@ contract BlockHuntTest is Test {
         assertEq(token.balanceOf(alice, 6), 1);
     }
 
-    function test_combineMany_emptyArray() public {
+    function test_combineMany_emptyArray_reverts() public {
         uint256[] memory tiers = new uint256[](0);
         vm.prank(alice);
-        token.combineMany(tiers); // Should not revert
+        vm.expectRevert(bytes("Invalid length"));
+        token.combineMany(tiers);
     }
 
     function test_combine_whenPaused_reverts() public {
@@ -1087,7 +1088,7 @@ contract BlockHuntTest is Test {
         uint256 creatorBefore = creator.balance;
         _mintBlocks(alice, 100);
         uint256 total = MINT_PRICE * 100;
-        uint256 creatorFee = (total * 1000) / 10000; // 10%
+        uint256 creatorFee = (total * 2000) / 10000; // 20%
         assertEq(creator.balance - creatorBefore, creatorFee);
     }
 
@@ -1394,9 +1395,9 @@ contract BlockHuntTest is Test {
     function test_executeDefaultOnExpiry_afterExpiry() public {
         _mintBlocks(bob, 500);
         _triggerCountdown(alice);
-        vm.warp(block.timestamp + 7 days + 1);
+        vm.warp(block.timestamp + 7 days + 15 minutes + 1);
 
-        // Anyone can call this
+        // Anyone can call this after grace period
         vm.prank(carol);
         token.executeDefaultOnExpiry();
         assertEq(token.balanceOf(alice, 1), 1, "Holder gets Origin via default");
@@ -2280,11 +2281,11 @@ contract BlockHuntTest is Test {
         uint256 creatorBefore = creator.balance;
         _mintBlocks(alice, 100);
         uint256 totalPaid = MINT_PRICE * 100;
-        uint256 creatorFee = (totalPaid * 1000) / 10000;
+        uint256 creatorFee = (totalPaid * 2000) / 10000;
         uint256 treasuryShare = totalPaid - creatorFee;
 
-        assertEq(creator.balance - creatorBefore, creatorFee, "Creator gets 10%");
-        assertEq(address(treasury).balance, treasuryShare, "Treasury gets 90%");
+        assertEq(creator.balance - creatorBefore, creatorFee, "Creator gets 20%");
+        assertEq(address(treasury).balance, treasuryShare, "Treasury gets 80%");
         assertEq(_totalBlocks(alice), 100, "Alice has 100 blocks");
     }
 
@@ -2576,8 +2577,8 @@ contract BlockHuntTest is Test {
     function test_defaultSacrifice_mintsOrigin() public {
         _mintBlocks(bob, 100);
         _triggerCountdown(alice);
-        vm.warp(block.timestamp + 7 days + 1);
-        vm.prank(carol); // anyone
+        vm.warp(block.timestamp + 7 days + 15 minutes + 1);
+        vm.prank(carol); // anyone, after grace period
         token.executeDefaultOnExpiry();
         assertEq(token.balanceOf(alice, 1), 1);
     }
@@ -2620,7 +2621,7 @@ contract BlockHuntTest is Test {
         uint256 requestId = pending[0];
 
         vm.prank(alice);
-        vm.expectRevert("Too early to cancel: request is within the 1 hour window");
+        vm.expectRevert("Too early to cancel");
         token.cancelMintRequest(requestId);
     }
 
@@ -2984,8 +2985,8 @@ contract BlockHuntTest is Test {
         vm.prank(alice);
         forge.forge(7, 1); // 1/21 = ~4.76% chance
 
-        // Fulfill with randomWord = 99 (99 % 100 = 99, 99 >= 4 = fail)
-        mockVRFCoordinator.fulfillRequest(1, 99);
+        // Fulfill with randomWord = 9999 (9999 % 10000 = 9999, 9999 >= 476 = fail)
+        mockVRFCoordinator.fulfillRequest(1, 9999);
         assertEq(token.balanceOf(alice, 6), 0, "Should not get T6 on fail");
     }
 
@@ -3349,7 +3350,7 @@ contract BlockHuntTest is Test {
     }
 
     function test_treasury_creatorFeeBps() public view {
-        assertEq(treasury.creatorFeeBps(), 1000);
+        assertEq(treasury.creatorFeeBps(), 2000);
     }
 
     function test_treasury_season() public view {
