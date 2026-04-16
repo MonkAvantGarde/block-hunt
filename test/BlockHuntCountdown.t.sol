@@ -194,4 +194,37 @@ contract BlockHuntCountdownTest is Test {
         (address[] memory addrs, ) = countdown.getPlayers(5, 5);
         assertEq(addrs.length, 0);
     }
+
+    // ── B3: eliminatePlayer, castVote removed, hasAllTiersEffective ─────
+
+    function test_EliminatePlayerZerosScore() public {
+        vm.prank(address(mockToken));
+        countdown.recordProgression(alice, 1000);
+        vm.prank(address(mockToken));
+        countdown.eliminatePlayer(alice);
+        assertEq(countdown.seasonScore(countdown.currentSeason(), alice), 0);
+        assertTrue(countdown.isEliminated(countdown.currentSeason(), alice));
+    }
+
+    function test_CastVoteRemoved() public {
+        (bool ok, ) = address(countdown).call(abi.encodeWithSignature("castVote(bool)", true));
+        assertFalse(ok, "castVote should not exist");
+    }
+
+    function test_HasAllTiersEffectiveAccountsForPendingForgeBurns() public {
+        _fullSet(alice);
+        // Simulate alice forging all of her T4
+        mockToken.setBal(alice, 4, 0);
+        vm.prank(address(mockToken));
+        countdown.setPendingForgeBurns(alice, 4, 1);
+
+        assertTrue(countdown.hasAllTiersEffective(alice));
+    }
+
+    function test_HasAllTiersEffectiveFalseWhenTrulyMissing() public {
+        _fullSet(alice);
+        mockToken.setBal(alice, 4, 0);
+        // No pending forge burns — truly missing T4
+        assertFalse(countdown.hasAllTiersEffective(alice));
+    }
 }

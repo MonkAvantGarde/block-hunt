@@ -43,10 +43,7 @@ contract BlockHuntCountdown is Ownable {
     mapping(address => uint256) public cumulativeDefenseTime;
     uint256 public constant REQUIRED_DEFENSE = 7 days;
 
-    uint256 public votesBurn;
-    uint256 public votesClaim;
     uint256 public countdownRound;
-    mapping(uint256 => mapping(address => bool)) public hasVoted;
 
     uint256 public currentSeason;
 
@@ -55,8 +52,13 @@ contract BlockHuntCountdown is Ownable {
     mapping(uint256 => mapping(address => uint256)) public seasonScore;
     mapping(uint256 => mapping(address => bool)) public isSeasonPlayer;
 
+    mapping(uint256 => mapping(address => bool)) public isEliminated;
+    mapping(address => mapping(uint8 => uint256)) public pendingForgeBurns;
+
     event SeasonAdvanced(uint256 newSeason);
     event PlayerRecorded(uint256 season, address indexed player, uint256 totalScore);
+    event PlayerEliminated(uint256 season, address indexed player);
+    event PendingForgeBurnsUpdated(address indexed player, uint8 tier, uint256 delta, bool increment);
 
     // ── Takeover mechanic ─────────────────────────────────────────────────
     uint256 public takeoverCount;
@@ -78,7 +80,6 @@ contract BlockHuntCountdown is Ownable {
     // ── Events ────────────────────────────────────────────────────────────
     event CountdownStarted(address indexed holder, uint256 startTime, uint256 endTime);
     event CountdownEnded(address indexed formerHolder);
-    event VoteCast(address indexed voter, bool burnVote);
     event CountdownReset(address indexed formerHolder);
     event CountdownTakeover(address indexed newHolder, address indexed prevHolder, uint256 takeoverCount);
     event CountdownChallenged(
@@ -131,8 +132,6 @@ contract BlockHuntCountdown is Ownable {
         holderSince        = block.timestamp;
         holderScore        = calculateScore(holder);
         lastChallengeTime  = block.timestamp;
-        votesBurn          = 0;
-        votesClaim         = 0;
 
         IBlockHuntTokenCountdown(tokenContract).updateCountdownHolder(holder);
 
@@ -184,8 +183,6 @@ contract BlockHuntCountdown is Ownable {
         currentHolder      = holder;
         countdownStartTime = block.timestamp;
         holderSince        = block.timestamp;
-        votesBurn          = 0;
-        votesClaim         = 0;
         holderScore        = calculateScore(holder);
         lastChallengeTime  = block.timestamp;
 
@@ -247,25 +244,13 @@ contract BlockHuntCountdown is Ownable {
 
     function checkHolderStatus() external {
         if (!isActive) return;
-        bool stillHolds = IBlockHuntTokenCountdown(tokenContract).hasAllTiers(currentHolder);
+        bool stillHolds = hasAllTiersEffective(currentHolder);
         if (!stillHolds) {
             address former = currentHolder;
             _resetCountdown();
             IBlockHuntTokenCountdown(tokenContract).resetExpiredHolder();
             emit CountdownReset(former);
         }
-    }
-
-    function castVote(bool burnVote) external {
-        require(isActive, "No active countdown");
-        require(!hasVoted[countdownRound][msg.sender], "Already voted");
-        hasVoted[countdownRound][msg.sender] = true;
-        if (burnVote) {
-            votesBurn++;
-        } else {
-            votesClaim++;
-        }
-        emit VoteCast(msg.sender, burnVote);
     }
 
     // ── VIEW HELPERS ──────────────────────────────────────────────────────
@@ -287,17 +272,13 @@ contract BlockHuntCountdown is Ownable {
         address holder,
         uint256 startTime,
         uint256 endTime,
-        uint256 remaining,
-        uint256 burnVotes,
-        uint256 claimVotes
+        uint256 remaining
     ) {
         active     = isActive;
         holder     = currentHolder;
         startTime  = countdownStartTime;
         endTime    = isActive ? countdownStartTime + countdownDuration : 0;
         remaining  = this.timeRemaining();
-        burnVotes  = votesBurn;
-        claimVotes = votesClaim;
     }
 
     // ── Season-indexed progression ──────────────────────────────────────
@@ -345,6 +326,31 @@ contract BlockHuntCountdown is Ownable {
         emit SeasonAdvanced(currentSeason);
     }
 
+    function eliminatePlayer(address player) external onlyToken {
+        uint256 s = currentSeason;
+        seasonScore[s][player] = 0;
+        isEliminated[s][player] = true;
+        emit PlayerEliminated(s, player);
+    }
+
+    function setPendingForgeBurns(address player, uint8 tier, uint256 burnCount) external onlyToken {
+        pendingForgeBurns[player][tier] += burnCount;
+        emit PendingForgeBurnsUpdated(player, tier, burnCount, true);
+    }
+
+    function clearPendingForgeBurns(address player, uint8 tier, uint256 burnCount) external onlyToken {
+        pendingForgeBurns[player][tier] -= burnCount;
+        emit PendingForgeBurnsUpdated(player, tier, burnCount, false);
+    }
+
+    function hasAllTiersEffective(address player) public view returns (bool) {
+        for (uint8 t = 2; t <= 7; t++) {
+            uint256 bal = IBlockHuntTokenCountdown(tokenContract).balanceOf(player, t);
+            if (bal + pendingForgeBurns[player][t] == 0) return false;
+        }
+        return true;
+    }
+
     // ── INTERNAL ──────────────────────────────────────────────────────────
 
     function _resetCountdown() internal {
@@ -352,8 +358,6 @@ contract BlockHuntCountdown is Ownable {
         currentHolder      = address(0);
         countdownStartTime = 0;
         holderSince        = 0;
-        votesBurn          = 0;
-        votesClaim         = 0;
         holderScore        = 0;
         lastChallengeTime  = 0;
         takeoverCount      = 0;

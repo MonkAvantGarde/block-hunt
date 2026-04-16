@@ -1297,7 +1297,7 @@ contract BlockHuntTest is Test {
 
     function test_countdown_getCountdownInfo() public {
         _triggerCountdown(alice);
-        (bool active, address holder, uint256 startTime, uint256 endTime, uint256 remaining,,) = countdown.getCountdownInfo();
+        (bool active, address holder, uint256 startTime, uint256 endTime, uint256 remaining) = countdown.getCountdownInfo();
         assertTrue(active);
         assertEq(holder, alice);
         assertTrue(startTime > 0);
@@ -1539,28 +1539,9 @@ contract BlockHuntTest is Test {
         assertEq(score, 1 * 10000 + 10 * 1, "Score = 1*WEIGHT_T2 + 10*WEIGHT_T7");
     }
 
-    function test_castVote_burn() public {
-        _triggerCountdown(alice);
-        vm.prank(bob);
-        countdown.castVote(true);
-        assertEq(countdown.votesBurn(), 1);
-    }
-
-    function test_castVote_claim() public {
-        _triggerCountdown(alice);
-        vm.prank(bob);
-        countdown.castVote(false);
-        assertEq(countdown.votesClaim(), 1);
-    }
-
-    function test_castVote_doubleVote_reverts() public {
-        _triggerCountdown(alice);
-        vm.prank(bob);
-        countdown.castVote(true);
-        vm.prank(bob);
-        vm.expectRevert("Already voted");
-        countdown.castVote(false);
-    }
+    function skip_castVote_burn_removedB3() public {}
+    function skip_castVote_claim_removedB3() public {}
+    function skip_castVote_doubleVote_reverts_removedB3() public {}
 
     function test_checkHolderStatus_disqualifies() public {
         _triggerCountdown(alice);
@@ -1638,11 +1619,7 @@ contract BlockHuntTest is Test {
         countdown.syncReset();
     }
 
-    function test_countdown_castVote_noCountdown_reverts() public {
-        vm.prank(alice);
-        vm.expectRevert("No active countdown");
-        countdown.castVote(true);
-    }
+    function skip_countdown_castVote_noCountdown_removedB3() public {}
 
     function test_countdown_timeRemaining_noCountdown() public view {
         assertEq(countdown.timeRemaining(), 0);
@@ -3061,15 +3038,7 @@ contract BlockHuntTest is Test {
         assertTrue(token.windowDayMinted() < type(uint256).max);
     }
 
-    function test_countdown_votesBothTypes() public {
-        _triggerCountdown(alice);
-        vm.prank(bob);
-        countdown.castVote(true); // burn
-        vm.prank(carol);
-        countdown.castVote(false); // claim
-        assertEq(countdown.votesBurn(), 1);
-        assertEq(countdown.votesClaim(), 1);
-    }
+    function skip_countdown_votesBothTypes_removedB3() public {}
 
     function test_countdown_scoringWeights() public view {
         assertEq(countdown.WEIGHT_T2(), 10000);
