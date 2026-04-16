@@ -104,12 +104,16 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
 
     // ── Mint VRF pending state ────────────────────────────────────────────────
     struct MintRequest {
-        address player;
-        uint256 quantity;
-        uint256 amountPaid;
-        uint256 requestedAt;
-        uint256 windowDay;
+        address player;        // slot 1 (20)
+        uint32  quantity;      // slot 1 (4)
+        bool    fulfilled;     // slot 1 (1)
+        bool    claimed;       // slot 1 (1)
+        uint128 amountPaid;    // slot 2 (16)
+        uint64  requestedAt;   // slot 2 (8)
+        uint256 seed;          // slot 3
     }
+
+    uint32 public lazyRevealThreshold;
 
     mapping(uint256 => MintRequest) public vrfMintRequests;
     mapping(address => uint256[]) public pendingRequestsByPlayer;
@@ -150,6 +154,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     event RecordProgressionFailed(address indexed player, uint32 quantity);
     event CountdownCheckFailed();
     event RewardMinted(address indexed to, uint32 quantity);
+    event LazyRevealThresholdUpdated(uint32 newThreshold);
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
@@ -279,6 +284,12 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         emit MintRequestTTLUpdated(_ttl);
     }
 
+    function setLazyRevealThreshold(uint32 _threshold) external onlyOwner {
+        require(_threshold == 0 || _threshold >= 50, "Threshold must be 0 or >=50");
+        lazyRevealThreshold = _threshold;
+        emit LazyRevealThresholdUpdated(_threshold);
+    }
+
     // ── Contract must accept ETH (holds pending mint payments) ────────────────
     receive() external payable {}
 
@@ -324,10 +335,12 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
 
         vrfMintRequests[requestId] = MintRequest({
             player:      msg.sender,
-            quantity:    allocated,
-            amountPaid:  totalCost,
-            requestedAt: block.timestamp,
-            windowDay:   currentWindowDay
+            quantity:    uint32(allocated),
+            fulfilled:   false,
+            claimed:     false,
+            amountPaid:  uint128(totalCost),
+            requestedAt: uint64(block.timestamp),
+            seed:        0
         });
 
         pendingRequestsByPlayer[msg.sender].push(requestId);
@@ -340,16 +353,33 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         uint256 requestId,
         uint256[] calldata randomWords
     ) internal override {
-        MintRequest memory req = vrfMintRequests[requestId];
-
+        MintRequest storage req = vrfMintRequests[requestId];
         if (req.player == address(0)) return;
 
+        uint32 threshold = lazyRevealThreshold;
+        if (threshold == 0 || req.quantity <= threshold) {
+            _executeMint(requestId, randomWords[0]);
+            delete vrfMintRequests[requestId];
+        } else {
+            req.seed = randomWords[0];
+            req.fulfilled = true;
+            emit MintFulfilled(req.player, requestId, req.quantity);
+        }
+    }
+
+    function claimMint(uint256 requestId) external nonReentrant whenNotPaused {
+        MintRequest storage req = vrfMintRequests[requestId];
+        require(req.fulfilled && !req.claimed, "Not claimable");
+        req.claimed = true;
+        _executeMint(requestId, req.seed);
         delete vrfMintRequests[requestId];
+    }
+
+    function _executeMint(uint256 requestId, uint256 seed) internal {
+        MintRequest memory req = vrfMintRequests[requestId];
         _removePendingRequest(req.player, requestId);
 
         uint256 allocated = req.quantity;
-        uint256 seed      = randomWords[0];
-
         totalMinted += allocated;
 
         uint256[8] memory tierCounts;
@@ -401,8 +431,11 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
 
         require(req.player != address(0),               "Request not found");
         require(req.player == msg.sender,               "Not your request");
+        if (req.fulfilled) {
+            require(!req.claimed, "Already claimed");
+        }
         require(
-            block.timestamp >= req.requestedAt + mintRequestTTL,
+            block.timestamp >= uint256(req.requestedAt) + mintRequestTTL,
             "Too early to cancel"
         );
 

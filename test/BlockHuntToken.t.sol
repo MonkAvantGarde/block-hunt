@@ -95,4 +95,30 @@ contract BlockHuntTokenTest is Test {
         token.rewardMint(address(0xA11CE), 10);
         assertEq(token.balanceOf(address(0xA11CE), 6), 10);
     }
+
+    // ── D4: Lazy reveal threshold ───────────────────────────────────────
+
+    function test_LazyRevealDisabledByDefault() public view {
+        assertEq(token.lazyRevealThreshold(), 0);
+    }
+
+    function test_SetLazyRevealThreshold() public {
+        vm.prank(owner);
+        token.setLazyRevealThreshold(200);
+        assertEq(token.lazyRevealThreshold(), 200);
+    }
+
+    function test_SetLazyRevealThresholdRejectsLow() public {
+        vm.prank(owner);
+        vm.expectRevert(bytes("Threshold must be 0 or >=50"));
+        token.setLazyRevealThreshold(10);
+    }
+
+    function test_SetLazyRevealThresholdAllowsZero() public {
+        vm.prank(owner);
+        token.setLazyRevealThreshold(200);
+        vm.prank(owner);
+        token.setLazyRevealThreshold(0);
+        assertEq(token.lazyRevealThreshold(), 0);
+    }
 }
