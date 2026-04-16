@@ -1685,7 +1685,7 @@ contract BlockHuntTest is Test {
     function test_initiateSacrifice_onlyToken() public {
         vm.prank(alice);
         vm.expectRevert("Only token contract");
-        escrow.initiateSacrifice(alice);
+        escrow.initiateSacrifice(alice, 0);
     }
 
     function test_initiateSacrifice_doubleSacrifice_reverts() public {
@@ -1700,7 +1700,7 @@ contract BlockHuntTest is Test {
         vm.deal(address(escrow), 1 ether);
         vm.prank(address(token));
         vm.expectRevert("Sacrifice already executed");
-        escrow.initiateSacrifice(bob);
+        escrow.initiateSacrifice(bob, 1 ether);
     }
 
     function test_setLeaderboardEntitlements() public {

@@ -97,11 +97,12 @@ contract BlockHuntEscrow is Ownable, ReentrancyGuard {
     // Treasury sends 100% ETH to this contract first, then Token calls
     // this function to trigger the 50/10 immediate sends and park the 40%.
 
-    function initiateSacrifice(address winner) external onlyToken nonReentrant {
+    function initiateSacrifice(address winner, uint256 amount) external onlyToken nonReentrant {
         require(!sacrificeExecuted, "Sacrifice already executed");
+        require(amount > 0, "No ETH received");
+        require(amount <= address(this).balance, "Insufficient balance");
 
-        uint256 total = address(this).balance;
-        require(total > 0, "No ETH received");
+        uint256 total = amount;
 
         uint256 winnerShare  = total / 2;                          // 50%
         uint256 seedShare    = total / 10;                         // 10%

@@ -95,18 +95,17 @@ contract BlockHuntTreasury is Ownable, ReentrancyGuard {
      *         as the community leaderboard pool, 10% held as Season 2 seed.
      *         Called by BlockHuntToken during sacrifice execution.
      */
-    function sacrificePayout(address winner) external onlyTokenContract nonReentrant {
+    function sacrificePayout(address winner) external onlyTokenContract nonReentrant returns (uint256 amount) {
         require(escrowContract != address(0), "Escrow contract not set");
-        uint256 balance = address(this).balance;
-        require(balance > 0, "Empty treasury");
+        amount = address(this).balance;
+        require(amount > 0, "Empty treasury");
 
-        totalPaidOut += balance;
+        totalPaidOut += amount;
 
-        // [CHANGED] Send to Escrow (was Countdown)
-        (bool sent, ) = payable(escrowContract).call{value: balance}("");
+        (bool sent, ) = payable(escrowContract).call{value: amount}("");
         require(sent, "Transfer to escrow failed");
 
-        emit TreasurySacrificed(winner, balance, season);
+        emit TreasurySacrificed(winner, amount, season);
     }
 
     function startNextSeason() external onlyOwner {

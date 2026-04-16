@@ -20,7 +20,7 @@ import "@chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
 interface IBlockHuntTreasury {
     function receiveMintFunds() external payable;
     function claimPayout(address winner) external;
-    function sacrificePayout(address winner) external;
+    function sacrificePayout(address winner) external returns (uint256 amount);
 }
 
 interface IBlockHuntMint {
@@ -38,7 +38,7 @@ interface IBlockHuntCountdown {
 
 // [NEW] Escrow handles all sacrifice fund distribution
 interface IBlockHuntEscrow {
-    function initiateSacrifice(address winner) external;
+    function initiateSacrifice(address winner, uint256 amount) external;
 }
 
 contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGuard, Pausable {
@@ -574,8 +574,8 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         tierTotalSupply[TIER_ORIGIN]++;
 
         // Treasury sends 100% ETH to Escrow; Escrow handles the 50/40/10 split
-        IBlockHuntTreasury(treasuryContract).sacrificePayout(msg.sender);
-        IBlockHuntEscrow(escrowContract).initiateSacrifice(msg.sender);
+        uint256 sacrificeAmount = IBlockHuntTreasury(treasuryContract).sacrificePayout(msg.sender);
+        IBlockHuntEscrow(escrowContract).initiateSacrifice(msg.sender, sacrificeAmount);
 
         emit OriginSacrificed(msg.sender);
 
@@ -608,8 +608,8 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         _mint(holder, TIER_ORIGIN, 1, "");
         tierTotalSupply[TIER_ORIGIN]++;
 
-        IBlockHuntTreasury(treasuryContract).sacrificePayout(holder);
-        IBlockHuntEscrow(escrowContract).initiateSacrifice(holder);
+        uint256 sacrificeAmount = IBlockHuntTreasury(treasuryContract).sacrificePayout(holder);
+        IBlockHuntEscrow(escrowContract).initiateSacrifice(holder, sacrificeAmount);
         emit OriginSacrificed(holder);
         emit DefaultSacrificeExecuted(holder, msg.sender);
 
