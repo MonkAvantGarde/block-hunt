@@ -101,6 +101,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     uint256 public vrfSubscriptionId;
     bytes32 public vrfKeyHash;
     uint32  public vrfCallbackGasLimit = 150_000;
+    uint16  public vrfRequestConfirmations = 1;
     uint32  public vrfGasPerBlock = 28_000;
     uint32  public vrfGasMax      = 15_000_000;
 
@@ -321,7 +322,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
             VRFV2PlusClient.RandomWordsRequest({
                 keyHash:             vrfKeyHash,
                 subId:               vrfSubscriptionId,
-                requestConfirmations: 3,
+                requestConfirmations: vrfRequestConfirmations,
                 callbackGasLimit:    _gasLimitForQuantity(allocated),
                 numWords:            1,
                 extraArgs:           VRFV2PlusClient._argsToBytes(
