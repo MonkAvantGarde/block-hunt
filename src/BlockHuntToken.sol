@@ -117,6 +117,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     }
 
     uint32 public lazyRevealThreshold;
+    uint32 public vrfMinQuantity;
 
     mapping(uint256 => MintRequest) public vrfMintRequests;
     mapping(address => uint256[]) public pendingRequestsByPlayer;
@@ -158,6 +159,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     event CountdownCheckFailed();
     event RewardMinted(address indexed to, uint32 quantity);
     event LazyRevealThresholdUpdated(uint32 newThreshold);
+    event VrfMinQuantityUpdated(uint32 newMinQuantity);
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
@@ -288,6 +290,12 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         emit LazyRevealThresholdUpdated(_threshold);
     }
 
+    function setVrfMinQuantity(uint32 _min) external onlyOwner {
+        require(_min <= 500, "Exceeds max mint");
+        vrfMinQuantity = _min;
+        emit VrfMinQuantityUpdated(_min);
+    }
+
     // ── Contract must accept ETH (holds pending mint payments) ────────────────
     receive() external payable {}
 
@@ -308,7 +316,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
             require(refunded, "Refund failed");
         }
 
-        if (vrfEnabled) {
+        if (vrfEnabled && allocated >= vrfMinQuantity) {
             _mintVRF(allocated, totalCost);
         } else {
             _mintPseudoRandom(allocated, totalCost);
