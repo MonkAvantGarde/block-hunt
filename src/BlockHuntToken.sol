@@ -380,10 +380,11 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         uint256 allocated = req.quantity;
         totalMinted += allocated;
 
+        (uint256 t2T, uint256 t3T, uint256 t4T) = _getTierThresholds();
         uint256[8] memory tierCounts;
         for (uint256 i = 0; i < allocated; i++) {
             uint256 derived = uint256(keccak256(abi.encodePacked(seed, i)));
-            uint256 tier    = _assignTier(derived);
+            uint256 tier    = _assignTierCached(derived, t2T, t3T, t4T);
             tierCounts[tier]++;
         }
 
@@ -467,12 +468,18 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
 
         totalMinted += allocated;
 
-        // Step 1: roll tiers and tally into buckets
+        // Step 1: roll tiers and tally into buckets (cached thresholds + single nonce write)
+        (uint256 t2T, uint256 t3T, uint256 t4T) = _getTierThresholds();
+        uint256 nonceStart = _nonce;
         uint256[8] memory tierCounts;
         for (uint256 i = 0; i < allocated; i++) {
-            uint256 tier = _rollTier(i);
+            uint256 rand = uint256(keccak256(abi.encodePacked(
+                block.prevrandao, block.timestamp, msg.sender, nonceStart + i + 1, i
+            )));
+            uint256 tier = _assignTierCached(rand, t2T, t3T, t4T);
             tierCounts[tier]++;
         }
+        _nonce = nonceStart + allocated;
 
         // Step 2: update tierTotalSupply
         for (uint256 t = 2; t <= 7; t++) {
@@ -812,7 +819,12 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
 
     function _assignTier(uint256 randomWord) internal view returns (uint256) {
         (uint256 t2T, uint256 t3T, uint256 t4T) = _getTierThresholds();
+        return _assignTierCached(randomWord, t2T, t3T, t4T);
+    }
 
+    function _assignTierCached(
+        uint256 randomWord, uint256 t2T, uint256 t3T, uint256 t4T
+    ) internal pure returns (uint256) {
         uint256 roll = randomWord % DENOM;
 
         if (roll < t2T) return TIER_WILLFUL;
