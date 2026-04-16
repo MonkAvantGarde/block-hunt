@@ -75,7 +75,6 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         return price > 0 ? price : mintPriceForBatch[batch];
     }
 
-    uint256 public countdownDuration = 7 days;
     uint256 public mintRequestTTL = 10 minutes;
 
     mapping(uint256 => uint256) public combineRatio;
@@ -250,11 +249,6 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     }
     function pause()   external onlyOwner { _pause(); }
     function unpause() external onlyOwner { _unpause(); }
-
-    function setCountdownDuration(uint256 _duration) external onlyOwner {
-        require(testMintEnabled, "Test mode disabled");
-        countdownDuration = _duration;
-    }
 
     function setVrfConfig(
         uint256 subId,
@@ -615,7 +609,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         require(countdownActive, "No countdown active");
         require(msg.sender == countdownHolder, "Not the countdown holder");
         require(
-            block.timestamp >= countdownStartTime + countdownDuration,
+            block.timestamp >= countdownStartTime + _countdownDuration(),
             "Countdown still running"
         );
         _verifyHoldsAllTiers(msg.sender);
@@ -642,7 +636,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         require(countdownActive, "No countdown active");
         require(msg.sender == countdownHolder, "Not the countdown holder");
         require(
-            block.timestamp >= countdownStartTime + countdownDuration,
+            block.timestamp >= countdownStartTime + _countdownDuration(),
             "Countdown still running"
         );
         _verifyHoldsAllTiers(msg.sender);
@@ -668,7 +662,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
      */
     function executeDefaultOnExpiry() external nonReentrant {
         require(countdownActive, "No countdown active");
-        uint256 expiry = countdownStartTime + countdownDuration;
+        uint256 expiry = countdownStartTime + _countdownDuration();
         require(block.timestamp >= expiry, "Countdown still running");
 
         if (block.timestamp < expiry + 15 minutes) {
@@ -768,6 +762,11 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
             try IBlockHuntCountdown(countdownContract).eliminatePlayer(player) {}
             catch {}
         }
+    }
+
+    function _countdownDuration() internal view returns (uint256) {
+        if (countdownContract == address(0)) return 7 days;
+        return IBlockHuntCountdown(countdownContract).countdownDuration();
     }
 
     function _verifyHoldsAllTiers(address player) internal view {

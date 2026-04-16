@@ -1275,7 +1275,6 @@ contract BlockHuntTest is Test {
     }
 
     function test_countdown_duration_7days() public view {
-        assertEq(token.countdownDuration(), 7 days);
         assertEq(countdown.countdownDuration(), 7 days);
     }
 
@@ -2487,9 +2486,6 @@ contract BlockHuntTest is Test {
         token.mintForTest(alice, 7, 1);
 
         vm.expectRevert("Test mode disabled");
-        token.setCountdownDuration(1 days);
-
-        vm.expectRevert("Test mode disabled");
         token.setRarityCoefficients(1, 1, 1);
         vm.stopPrank();
     }
@@ -2768,11 +2764,7 @@ contract BlockHuntTest is Test {
         token.setVrfEnabled(true);
     }
 
-    function test_setCountdownDuration_onlyOwner() public {
-        vm.prank(alice);
-        vm.expectRevert();
-        token.setCountdownDuration(1 days);
-    }
+    function skip_setCountdownDuration_removedD21() public {}
 
     function test_setRarityCoefficients_onlyOwner() public {
         vm.prank(alice);
