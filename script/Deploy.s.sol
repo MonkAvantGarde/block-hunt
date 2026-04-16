@@ -148,7 +148,8 @@ contract Deploy is Script {
         console.log("Escrow wired to Token.");
 
         forge.setTokenContract(address(token));
-        console.log("Forge wired to Token.");
+        forge.setCountdownContract(address(countdown));
+        console.log("Forge wired to Token + Countdown.");
 
         mintWindow.setTokenContract(address(token));
         console.log("MintWindow wired to Token.");
@@ -166,10 +167,18 @@ contract Deploy is Script {
         // forge.setVrfEnabled(true);
         console.log("VRF configured (disabled until consumers added on dashboard).");
 
-        // ── Step 5: Minting is always open (no window to open) ────────────
+        // ── Step 5: Post-deploy config (redeploy hardening) ───────────────
+
+        token.setVrfGasParams(28_000, 15_000_000);
+        token.setMintRequestTTL(10 minutes);
+        token.setLazyRevealThreshold(0);
+        token.setRewardsContract(address(rewards));
+        console.log("Token config: VRF gas 28k/15M, TTL 10min, lazy reveal OFF, rewards wired.");
+
+        // ── Step 6: Minting is always open (no window to open) ────────────
         console.log("Minting is always open (per-player cooldown model).");
 
-        // ── Step 6: Register Season 1 ──────────────────────────────────────
+        // ── Step 7: Register Season 1 ──────────────────────────────────────
 
         registry.registerSeason(
             1,
@@ -201,9 +210,14 @@ contract Deploy is Script {
         console.log("  REWARDS:   ", address(rewards));
         console.log("");
         console.log("  SETTINGS:");
-        console.log("  Countdown:   7 days (default)");
-        console.log("  Safe period: 24 hours (default)");
-        console.log("  VRF:         disabled (enable after adding consumers)");
+        console.log("  Countdown:     7 days (default)");
+        console.log("  Safe period:   24 hours (default)");
+        console.log("  Creator fee:   20% (default)");
+        console.log("  VRF gas:       28k/block, 15M max");
+        console.log("  Mint TTL:      10 minutes");
+        console.log("  Lazy reveal:   disabled");
+        console.log("  Grace period:  15 minutes (holder-exclusive)");
+        console.log("  VRF:           disabled (enable after adding consumers)");
         console.log("");
         console.log("=================================================");
         console.log("  MANUAL STEPS:");
