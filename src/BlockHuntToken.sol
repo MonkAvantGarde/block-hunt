@@ -35,6 +35,8 @@ interface IBlockHuntCountdown {
     function startCountdown(address holder) external;
     function syncReset() external;
     function recordProgression(address player, uint256 points) external;
+    function eliminatePlayer(address player) external;
+    function countdownDuration() external view returns (uint256);
 }
 
 // [NEW] Escrow handles all sacrifice fund distribution
@@ -83,6 +85,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     address public forgeContract;
     address public countdownContract;
     address public escrowContract;    // [NEW] holds sacrifice funds
+    address public rewardsContract;
 
     uint256 public currentWindowDay;
     uint256 public windowDayMinted;
@@ -146,6 +149,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     event RecordMintFailed(address indexed player, uint32 quantity);
     event RecordProgressionFailed(address indexed player, uint32 quantity);
     event CountdownCheckFailed();
+    event RewardMinted(address indexed to, uint32 quantity);
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
@@ -226,6 +230,10 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     function setEscrowContract(address addr) external onlyOwner {
         require(escrowContract == address(0) || testMintEnabled, "Already set");
         escrowContract = addr;
+    }
+
+    function setRewardsContract(address addr) external onlyOwner {
+        rewardsContract = addr;
     }
     function setURI(string memory newuri)        external onlyOwner { _setURI(newuri); }
     function setRoyalty(address receiver, uint96 fee) external onlyOwner {
@@ -490,6 +498,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
 
     // [FIX C1] Same fix applied here — fromTier >= 3.
     function combineMany(uint256[] calldata fromTiers) external nonReentrant whenNotPaused {
+        require(fromTiers.length > 0 && fromTiers.length <= 50, "Invalid length");
         for (uint256 i = 0; i < fromTiers.length; i++) {
             uint256 fromTier = fromTiers[i];
             require(fromTier >= 3 && fromTier <= 7, "Invalid tier");
@@ -538,6 +547,14 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         tierTotalSupply[tier] += amount;
     }
 
+    function rewardMint(address to, uint32 quantity) external {
+        require(msg.sender == rewardsContract, "Only rewards");
+        require(quantity > 0, "Zero quantity");
+        _mint(to, 6, quantity, "");
+        tierTotalSupply[6] += quantity;
+        emit RewardMinted(to, quantity);
+    }
+
     function resolveForge(address player, uint256 fromTier, bool success)
         external onlyForge nonReentrant
     {
@@ -564,12 +581,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
             "Countdown still running"
         );
         _verifyHoldsAllTiers(msg.sender);
-
-        for (uint256 tier = 2; tier <= 7; tier++) {
-            uint256 bal = balanceOf(msg.sender, tier);
-            _burn(msg.sender, tier, bal);
-            tierTotalSupply[tier] -= bal;
-        }
+        _burnOnePerTier(msg.sender);
 
         IBlockHuntTreasury(treasuryContract).claimPayout(msg.sender);
         emit OriginClaimed(msg.sender);
@@ -596,17 +608,11 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
             "Countdown still running"
         );
         _verifyHoldsAllTiers(msg.sender);
-
-        for (uint256 tier = 2; tier <= 7; tier++) {
-            uint256 bal = balanceOf(msg.sender, tier);
-            _burn(msg.sender, tier, bal);
-            tierTotalSupply[tier] -= bal;
-        }
+        _burnOnePerTier(msg.sender);
 
         _mint(msg.sender, TIER_ORIGIN, 1, "");
         tierTotalSupply[TIER_ORIGIN]++;
 
-        // Treasury sends 100% ETH to Escrow; Escrow handles the 50/40/10 split
         uint256 sacrificeAmount = IBlockHuntTreasury(treasuryContract).sacrificePayout(msg.sender);
         IBlockHuntEscrow(escrowContract).initiateSacrifice(msg.sender, sacrificeAmount);
 
@@ -624,19 +630,16 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
      */
     function executeDefaultOnExpiry() external nonReentrant {
         require(countdownActive, "No countdown active");
-        require(
-            block.timestamp >= countdownStartTime + countdownDuration,
-            "Countdown still running"
-        );
+        uint256 expiry = countdownStartTime + countdownDuration;
+        require(block.timestamp >= expiry, "Countdown still running");
+
+        if (block.timestamp < expiry + 15 minutes) {
+            require(msg.sender == countdownHolder, "Holder grace period active");
+        }
 
         address holder = countdownHolder;
         _verifyHoldsAllTiers(holder);
-
-        for (uint256 tier = 2; tier <= 7; tier++) {
-            uint256 bal = balanceOf(holder, tier);
-            _burn(holder, tier, bal);
-            tierTotalSupply[tier] -= bal;
-        }
+        _burnOnePerTier(holder);
 
         _mint(holder, TIER_ORIGIN, 1, "");
         tierTotalSupply[TIER_ORIGIN]++;
@@ -711,6 +714,22 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         }
 
         emit CountdownTriggered(player);
+    }
+
+    function _burnOnePerTier(address player) internal {
+        uint256[] memory ids = new uint256[](6);
+        uint256[] memory amounts = new uint256[](6);
+        for (uint256 i = 0; i < 6; i++) {
+            ids[i]     = i + 2;
+            amounts[i] = 1;
+            tierTotalSupply[i + 2] -= 1;
+        }
+        _burnBatch(player, ids, amounts);
+
+        if (countdownContract != address(0)) {
+            try IBlockHuntCountdown(countdownContract).eliminatePlayer(player) {}
+            catch {}
+        }
     }
 
     function _verifyHoldsAllTiers(address player) internal view {

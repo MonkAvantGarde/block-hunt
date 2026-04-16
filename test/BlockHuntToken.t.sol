@@ -63,4 +63,36 @@ contract BlockHuntTokenTest is Test {
         token.setMintRequestTTL(30 minutes);
         assertEq(token.mintRequestTTL(), 30 minutes);
     }
+
+    // ── D6: combineMany cap ─────────────────────────────────────────────
+
+    function test_CombineManyRejectsEmpty() public {
+        uint256[] memory empty = new uint256[](0);
+        vm.expectRevert(bytes("Invalid length"));
+        token.combineMany(empty);
+    }
+
+    function test_CombineManyRejectsOver50() public {
+        uint256[] memory oversize = new uint256[](51);
+        vm.expectRevert(bytes("Invalid length"));
+        token.combineMany(oversize);
+    }
+
+    // ── D10: rewardMint ─────────────────────────────────────────────────
+
+    function test_RewardMintOnlyFromRewardsContract() public {
+        vm.prank(address(0xCAFE));
+        vm.expectRevert(bytes("Only rewards"));
+        token.rewardMint(address(0xA11CE), 10);
+    }
+
+    function test_RewardMintCreatesT6Blocks() public {
+        address rewards = address(0xBBBB);
+        vm.prank(owner);
+        token.setRewardsContract(rewards);
+
+        vm.prank(rewards);
+        token.rewardMint(address(0xA11CE), 10);
+        assertEq(token.balanceOf(address(0xA11CE), 6), 10);
+    }
 }
