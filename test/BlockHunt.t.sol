@@ -2968,7 +2968,7 @@ contract BlockHuntTest is Test {
         forge.forge(7, 5);
 
         // Check request was stored
-        (address player,,, bool resolved,) = forge.vrfForgeRequests(1);
+        (address player,,, bool resolved,,) = forge.vrfForgeRequests(1);
         assertEq(player, alice);
         assertFalse(resolved);
     }

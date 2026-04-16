@@ -505,6 +505,11 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         tierTotalSupply[tier] -= burnCount;
     }
 
+    function forgeRefund(address to, uint256 tier, uint256 amount) external onlyForge {
+        _mint(to, tier, amount, "");
+        tierTotalSupply[tier] += amount;
+    }
+
     function resolveForge(address player, uint256 fromTier, bool success)
         external onlyForge nonReentrant
     {
