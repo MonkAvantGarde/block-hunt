@@ -96,8 +96,8 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     uint256 public vrfSubscriptionId;
     bytes32 public vrfKeyHash;
     uint32  public vrfCallbackGasLimit = 150_000;
-    uint32  public constant VRF_GAS_PER_BLOCK = 3_000;
-    uint32  public constant VRF_GAS_MAX = 2_500_000;
+    uint32  public vrfGasPerBlock = 28_000;
+    uint32  public vrfGasMax      = 15_000_000;
 
     // ── Mint VRF pending state ────────────────────────────────────────────────
     struct MintRequest {
@@ -248,6 +248,16 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
 
     function setVrfEnabled(bool enabled) external onlyOwner {
         vrfEnabled = enabled;
+    }
+
+    event VrfGasParamsUpdated(uint32 gasPerBlock, uint32 gasMax);
+
+    function setVrfGasParams(uint32 _gasPerBlock, uint32 _gasMax) external onlyOwner {
+        require(_gasPerBlock >= 10_000 && _gasPerBlock <= 100_000, "gasPerBlock out of range");
+        require(_gasMax >= 500_000 && _gasMax <= 30_000_000, "gasMax out of range");
+        vrfGasPerBlock = _gasPerBlock;
+        vrfGasMax      = _gasMax;
+        emit VrfGasParamsUpdated(_gasPerBlock, _gasMax);
     }
 
     // ── Contract must accept ETH (holds pending mint payments) ────────────────
@@ -691,8 +701,8 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     }
 
     function _gasLimitForQuantity(uint256 quantity) internal view returns (uint32) {
-        uint256 computed = uint256(vrfCallbackGasLimit) + quantity * uint256(VRF_GAS_PER_BLOCK);
-        return computed > uint256(VRF_GAS_MAX) ? VRF_GAS_MAX : uint32(computed);
+        uint256 computed = uint256(vrfCallbackGasLimit) + quantity * uint256(vrfGasPerBlock);
+        return computed > uint256(vrfGasMax) ? vrfGasMax : uint32(computed);
     }
 
     function _rollTier(uint256 salt) internal returns (uint256) {
