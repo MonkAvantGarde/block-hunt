@@ -540,9 +540,9 @@ contract BlockHuntTest is Test {
         // Use test mode to simulate batch advancement by minting 100k blocks
         // through the window recording
         vm.prank(owner);
-        mintWindow.setPerCycleCap(type(uint256).max);
+        mintWindow.setPerCycleCap(10_000);
         vm.prank(owner);
-        mintWindow.setDailyCap(type(uint256).max);
+        mintWindow.setDailyCap(1_000_000);
 
         // Instead of actually minting 100k (gas-expensive), we can verify
         // the batch config
