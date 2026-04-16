@@ -2643,21 +2643,7 @@ contract BlockHuntTest is Test {
         assertEq(alice.balance, aliceBefore, "Full refund");
     }
 
-    function test_cancelMintRequest_updatesWindowMinted() public {
-        vm.prank(owner);
-        token.setVrfEnabled(true);
-
-        vm.prank(alice);
-        token.mint{value: MINT_PRICE * 10}(10);
-        assertEq(token.windowDayMinted(), 10);
-
-        uint256[] memory pending = token.getPendingRequests(alice);
-        vm.warp(block.timestamp + 1 hours);
-        vm.prank(alice);
-        token.cancelMintRequest(pending[0]);
-
-        assertEq(token.windowDayMinted(), 0, "windowDayMinted should decrease");
-    }
+    function skip_cancelMintRequest_updatesWindowMinted_removedD9() public {}
 
     function test_cancelMintRequest_wrongPlayer_reverts() public {
         vm.prank(owner);
@@ -3031,12 +3017,7 @@ contract BlockHuntTest is Test {
         }
     }
 
-    function test_mint_windowCapMaxUint_neverBlocks() public {
-        // windowCapForBatch returns type(uint256).max, so window cap is never reached
-        _mintBlocks(alice, 500);
-        // windowDayMinted = 500, but cap is max uint, so never blocked
-        assertTrue(token.windowDayMinted() < type(uint256).max);
-    }
+    function skip_mint_windowCapMaxUint_removedD9() public {}
 
     function skip_countdown_votesBothTypes_removedB3() public {}
 

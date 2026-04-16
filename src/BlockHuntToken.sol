@@ -88,7 +88,6 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     address public rewardsContract;
 
     uint256 public currentWindowDay;
-    uint256 public windowDayMinted;
     uint256[8] public tierTotalSupply;
 
     bool    public countdownActive;
@@ -114,6 +113,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
 
     mapping(uint256 => MintRequest) public vrfMintRequests;
     mapping(address => uint256[]) public pendingRequestsByPlayer;
+    mapping(uint256 => uint256) private pendingIndexPlusOne;
 
     // ── Pseudo-random nonce (vrfEnabled = false path only) ────────────────────
     uint256 private _nonce;
@@ -291,23 +291,13 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         uint256 mintPrice = currentMintPrice();
         require(msg.value >= mintPrice * quantity, "Insufficient payment");
 
-        // [FIX H1] Read cap dynamically from MintWindow instead of hardcoded constant.
-        // This ensures Batches 3–6 use their intended higher window caps.
-        uint256 windowCap = IBlockHuntMint(mintWindowContract).windowCapForBatch(
-            IBlockHuntMint(mintWindowContract).currentBatch()
-        );
-        uint256 dayRemaining = windowCap - windowDayMinted;
-        require(dayRemaining > 0, "Window cap reached");
-        uint256 allocated = quantity > dayRemaining ? dayRemaining : quantity;
-
+        uint256 allocated = quantity;
         uint256 totalCost = mintPrice * allocated;
 
         if (msg.value > totalCost) {
             (bool refunded, ) = payable(msg.sender).call{value: msg.value - totalCost}("");
             require(refunded, "Refund failed");
         }
-
-        windowDayMinted += allocated;
 
         if (vrfEnabled) {
             _mintVRF(allocated, totalCost);
@@ -341,6 +331,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         });
 
         pendingRequestsByPlayer[msg.sender].push(requestId);
+        pendingIndexPlusOne[requestId] = pendingRequestsByPlayer[msg.sender].length;
 
         emit MintRequested(msg.sender, requestId, allocated);
     }
@@ -417,8 +408,6 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
 
         delete vrfMintRequests[requestId];
         _removePendingRequest(msg.sender, requestId);
-
-        windowDayMinted -= req.quantity;
 
         (bool sent, ) = payable(msg.sender).call{value: req.amountPaid}("");
         require(sent, "Refund failed");
@@ -800,15 +789,18 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     }
 
     function _removePendingRequest(address player, uint256 requestId) internal {
-        uint256[] storage pending = pendingRequestsByPlayer[player];
-        uint256 len = pending.length;
-        for (uint256 i = 0; i < len; i++) {
-            if (pending[i] == requestId) {
-                pending[i] = pending[len - 1];
-                pending.pop();
-                return;
-            }
+        uint256 idxPlusOne = pendingIndexPlusOne[requestId];
+        if (idxPlusOne == 0) return;
+        uint256 idx = idxPlusOne - 1;
+        uint256[] storage arr = pendingRequestsByPlayer[player];
+        uint256 last = arr.length - 1;
+        if (idx != last) {
+            uint256 moved = arr[last];
+            arr[idx] = moved;
+            pendingIndexPlusOne[moved] = idx + 1;
         }
+        arr.pop();
+        delete pendingIndexPlusOne[requestId];
     }
 
     // ── VIEW HELPERS ──────────────────────────────────────────────────────────
@@ -830,7 +822,6 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
 
     function resetDailyWindow(uint256 newDay) external onlyMintWindow {
         currentWindowDay = newDay;
-        windowDayMinted  = 0;
     }
 
     function supportsInterface(bytes4 interfaceId)
