@@ -48,7 +48,15 @@ contract BlockHuntCountdown is Ownable {
     uint256 public countdownRound;
     mapping(uint256 => mapping(address => bool)) public hasVoted;
 
-    uint256 public season;
+    uint256 public currentSeason;
+
+    // ── Season-indexed progression (§1.8, SH-10) ─────────────────────────
+    mapping(uint256 => address[]) internal _seasonPlayers;
+    mapping(uint256 => mapping(address => uint256)) public seasonScore;
+    mapping(uint256 => mapping(address => bool)) public isSeasonPlayer;
+
+    event SeasonAdvanced(uint256 newSeason);
+    event PlayerRecorded(uint256 season, address indexed player, uint256 totalScore);
 
     // ── Takeover mechanic ─────────────────────────────────────────────────
     uint256 public takeoverCount;
@@ -88,7 +96,7 @@ contract BlockHuntCountdown is Ownable {
     );
 
     constructor() Ownable(msg.sender) {
-        season = 1;
+        currentSeason = 1;
     }
 
     function setTokenContract(address addr) external onlyOwner { tokenContract = addr; }
@@ -290,6 +298,51 @@ contract BlockHuntCountdown is Ownable {
         remaining  = this.timeRemaining();
         burnVotes  = votesBurn;
         claimVotes = votesClaim;
+    }
+
+    // ── Season-indexed progression ──────────────────────────────────────
+
+    modifier onlyToken() {
+        require(msg.sender == tokenContract, "Only token contract");
+        _;
+    }
+
+    function recordProgression(address player, uint256 points) external onlyToken {
+        uint256 s = currentSeason;
+        if (!isSeasonPlayer[s][player]) {
+            isSeasonPlayer[s][player] = true;
+            _seasonPlayers[s].push(player);
+        }
+        seasonScore[s][player] += points;
+        emit PlayerRecorded(s, player, seasonScore[s][player]);
+    }
+
+    function totalPlayers() external view returns (uint256) {
+        return _seasonPlayers[currentSeason].length;
+    }
+
+    function getPlayers(uint256 offset, uint256 limit)
+        external
+        view
+        returns (address[] memory addrs, uint256[] memory scores)
+    {
+        uint256 s = currentSeason;
+        address[] storage all = _seasonPlayers[s];
+        uint256 n = all.length;
+        if (offset >= n) return (new address[](0), new uint256[](0));
+        uint256 end = offset + limit > n ? n : offset + limit;
+        uint256 len = end - offset;
+        addrs = new address[](len);
+        scores = new uint256[](len);
+        for (uint256 i = 0; i < len; i++) {
+            addrs[i]  = all[offset + i];
+            scores[i] = seasonScore[s][addrs[i]];
+        }
+    }
+
+    function advanceSeason() external onlyOwner {
+        currentSeason += 1;
+        emit SeasonAdvanced(currentSeason);
     }
 
     // ── INTERNAL ──────────────────────────────────────────────────────────

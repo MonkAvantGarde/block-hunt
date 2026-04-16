@@ -3368,7 +3368,7 @@ contract BlockHuntTest is Test {
     }
 
     function test_countdown_season() public view {
-        assertEq(countdown.season(), 1);
+        assertEq(countdown.currentSeason(), 1);
     }
 
     function test_countdown_countdownRound() public {

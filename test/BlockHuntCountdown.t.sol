@@ -150,4 +150,48 @@ contract BlockHuntCountdownTest is Test {
         assertEq(countdown.holderSince(), 0);
         assertEq(countdown.currentHolder(), address(0));
     }
+
+    // ── B2: Season-indexed progression ──────────────────────────────────
+
+    function test_RecordProgressionAddsPlayerOnce() public {
+        vm.prank(address(mockToken));
+        countdown.recordProgression(alice, 100);
+        vm.prank(address(mockToken));
+        countdown.recordProgression(alice, 50);
+
+        assertEq(countdown.seasonScore(countdown.currentSeason(), alice), 150);
+        assertEq(countdown.totalPlayers(), 1);
+    }
+
+    function test_AdvanceSeasonResetsLeaderboard() public {
+        vm.prank(address(mockToken));
+        countdown.recordProgression(alice, 100);
+
+        vm.prank(owner);
+        countdown.advanceSeason();
+
+        assertEq(countdown.seasonScore(countdown.currentSeason(), alice), 0);
+        assertEq(countdown.totalPlayers(), 0);
+
+        vm.prank(address(mockToken));
+        countdown.recordProgression(bob, 30);
+        assertEq(countdown.seasonScore(countdown.currentSeason(), bob), 30);
+    }
+
+    function test_GetPlayersPaginates() public {
+        for (uint160 i = 1; i <= 10; i++) {
+            vm.prank(address(mockToken));
+            countdown.recordProgression(address(i), i * 10);
+        }
+        (address[] memory addrs, uint256[] memory scores) = countdown.getPlayers(0, 5);
+        assertEq(addrs.length, 5);
+        assertEq(scores[0], 10);
+    }
+
+    function test_GetPlayersOffsetBeyondLength() public {
+        vm.prank(address(mockToken));
+        countdown.recordProgression(alice, 100);
+        (address[] memory addrs, ) = countdown.getPlayers(5, 5);
+        assertEq(addrs.length, 0);
+    }
 }
