@@ -34,6 +34,7 @@ interface IBlockHuntMint {
 interface IBlockHuntCountdown {
     function startCountdown(address holder) external;
     function syncReset() external;
+    function recordProgression(address player, uint256 points) external;
 }
 
 // [NEW] Escrow handles all sacrifice fund distribution
@@ -142,6 +143,9 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     event MintRequested(address indexed player, uint256 indexed requestId, uint256 quantity);
     event MintFulfilled(address indexed player, uint256 indexed requestId, uint256 quantity);
     event MintCancelled(address indexed player, uint256 indexed requestId, uint256 refundAmount);
+    event RecordMintFailed(address indexed player, uint32 quantity);
+    event RecordProgressionFailed(address indexed player, uint32 quantity);
+    event CountdownCheckFailed();
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
@@ -371,7 +375,14 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         IBlockHuntTreasury(treasuryContract).receiveMintFunds{value: req.amountPaid}();
 
         _mintBatch(req.player, ids, amounts, "");
-        IBlockHuntMint(mintWindowContract).recordMint(req.player, allocated);
+
+        try IBlockHuntMint(mintWindowContract).recordMint(req.player, allocated) {}
+        catch { emit RecordMintFailed(req.player, uint32(allocated)); }
+
+        if (countdownContract != address(0)) {
+            try IBlockHuntCountdown(countdownContract).recordProgression(req.player, allocated) {}
+            catch { emit RecordProgressionFailed(req.player, uint32(allocated)); }
+        }
 
         emit BlockMinted(req.player, allocated);
         emit MintFulfilled(req.player, requestId, allocated);
@@ -688,7 +699,8 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         countdownStartTime = block.timestamp;
 
         if (countdownContract != address(0)) {
-            IBlockHuntCountdown(countdownContract).startCountdown(player);
+            try IBlockHuntCountdown(countdownContract).startCountdown(player) {}
+            catch { emit CountdownCheckFailed(); }
         }
 
         emit CountdownTriggered(player);
