@@ -3242,8 +3242,8 @@ contract BlockHuntTest is Test {
         escrow.claimLeaderboardReward();
     }
 
-    function test_mint_MINT_REQUEST_TTL() public view {
-        assertEq(token.MINT_REQUEST_TTL(), 1 hours);
+    function test_mint_mintRequestTTL() public view {
+        assertEq(token.mintRequestTTL(), 10 minutes);
     }
 
     function test_token_constants() public view {

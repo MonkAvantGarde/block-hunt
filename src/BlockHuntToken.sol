@@ -74,7 +74,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     }
 
     uint256 public countdownDuration = 7 days;
-    uint256 public constant MINT_REQUEST_TTL   = 1 hours;
+    uint256 public mintRequestTTL = 10 minutes;
 
     mapping(uint256 => uint256) public combineRatio;
 
@@ -255,6 +255,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     }
 
     event VrfGasParamsUpdated(uint32 gasPerBlock, uint32 gasMax);
+    event MintRequestTTLUpdated(uint256 newTTL);
 
     function setVrfGasParams(uint32 _gasPerBlock, uint32 _gasMax) external onlyOwner {
         require(_gasPerBlock >= 10_000 && _gasPerBlock <= 100_000, "gasPerBlock out of range");
@@ -262,6 +263,12 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         vrfGasPerBlock = _gasPerBlock;
         vrfGasMax      = _gasMax;
         emit VrfGasParamsUpdated(_gasPerBlock, _gasMax);
+    }
+
+    function setMintRequestTTL(uint256 _ttl) external onlyOwner {
+        require(_ttl >= 5 minutes && _ttl <= 1 hours, "TTL out of range");
+        mintRequestTTL = _ttl;
+        emit MintRequestTTLUpdated(_ttl);
     }
 
     // ── Contract must accept ETH (holds pending mint payments) ────────────────
@@ -396,8 +403,8 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         require(req.player != address(0),               "Request not found");
         require(req.player == msg.sender,               "Not your request");
         require(
-            block.timestamp >= req.requestedAt + MINT_REQUEST_TTL,
-            "Too early to cancel: request is within the 1 hour window"
+            block.timestamp >= req.requestedAt + mintRequestTTL,
+            "Too early to cancel"
         );
 
         delete vrfMintRequests[requestId];

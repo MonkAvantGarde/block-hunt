@@ -39,4 +39,28 @@ contract BlockHuntTokenTest is Test {
         assertEq(token.vrfGasPerBlock(), 50_000);
         assertEq(token.vrfGasMax(), 20_000_000);
     }
+
+    // ── D3: Configurable mint request TTL ───────────────────────────────
+
+    function test_DefaultMintRequestTTL() public view {
+        assertEq(token.mintRequestTTL(), 10 minutes);
+    }
+
+    function test_SetMintRequestTTLRejectsTooLow() public {
+        vm.prank(owner);
+        vm.expectRevert(bytes("TTL out of range"));
+        token.setMintRequestTTL(30 seconds);
+    }
+
+    function test_SetMintRequestTTLRejectsTooHigh() public {
+        vm.prank(owner);
+        vm.expectRevert(bytes("TTL out of range"));
+        token.setMintRequestTTL(2 hours);
+    }
+
+    function test_SetMintRequestTTLSuccess() public {
+        vm.prank(owner);
+        token.setMintRequestTTL(30 minutes);
+        assertEq(token.mintRequestTTL(), 30 minutes);
+    }
 }
