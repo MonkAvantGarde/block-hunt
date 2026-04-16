@@ -733,10 +733,7 @@ export default function CountdownSpectator({ onBack }) {
   ? parseFloat(treasuryBalanceData.value.toString()) / 1e18
   : 0;
 
-  const burnVotes  = countdownInfo ? Number(countdownInfo[5]) : 0;
-  const claimVotes = countdownInfo ? Number(countdownInfo[6]) : 0;
-  const total      = burnVotes + claimVotes;
-  const claimPct   = total === 0 ? 50 : Math.round((claimVotes / total) * 100);
+  // Voting removed in redeploy-hardening (B3/SH-13)
 
   const holderShort = countdownHolder
     ? `${countdownHolder.slice(0, 6)}…${countdownHolder.slice(-4)}`
@@ -838,7 +835,7 @@ export default function CountdownSpectator({ onBack }) {
 
         <ChallengeSection holderAddress={countdownHolder} />
 
-        <VoteSection burnVotes={burnVotes} claimVotes={claimVotes} />
+        {/* Voting removed in redeploy-hardening (B3/SH-13) */}
 
         <Leaderboard holderAddress={countdownHolder} />
 
