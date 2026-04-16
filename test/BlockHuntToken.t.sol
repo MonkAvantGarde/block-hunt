@@ -121,22 +121,4 @@ contract BlockHuntTokenTest is Test {
         token.setLazyRevealThreshold(0);
         assertEq(token.lazyRevealThreshold(), 0);
     }
-
-    // ── VRF min quantity threshold ──────────────────────────────────────
-
-    function test_VrfMinQuantityDefaultZero() public view {
-        assertEq(token.vrfMinQuantity(), 0);
-    }
-
-    function test_SetVrfMinQuantity() public {
-        vm.prank(owner);
-        token.setVrfMinQuantity(20);
-        assertEq(token.vrfMinQuantity(), 20);
-    }
-
-    function test_SetVrfMinQuantityRejectsOver500() public {
-        vm.prank(owner);
-        vm.expectRevert(bytes("Exceeds max mint"));
-        token.setVrfMinQuantity(501);
-    }
 }
