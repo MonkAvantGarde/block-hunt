@@ -58,7 +58,7 @@ contract Deploy is Script {
     address constant VRF_COORDINATOR = 0x5C210eF41CD1a72de73bF76eC39637bB0d3d7BEE;
     bytes32 constant VRF_KEY_HASH = 0x9e1344a1247c8a1785d0a4681a27152bffdb43666ae5bf7d14d24a5efd44bf71;
     uint256 constant VRF_SUB_ID = 57750058386053786990998297633685375559871666481243777791923539169896613845120;
-    uint32 constant TOKEN_VRF_GAS = 2_500_000;
+    uint32 constant TOKEN_VRF_GAS = 150_000;
     uint32 constant FORGE_VRF_GAS = 300_000;
 
     // Old addresses (for VRF consumer removal reference)
