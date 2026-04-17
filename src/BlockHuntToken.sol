@@ -102,7 +102,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     bytes32 public vrfKeyHash;
     uint32  public vrfCallbackGasLimit = 150_000;
     uint16  public vrfRequestConfirmations = 1;
-    uint32  public vrfGasPerBlock = 28_000;
+    uint32  public vrfGasPerBlock = 10_000;
     uint32  public vrfGasMax      = 15_000_000;
 
     // ── Mint VRF pending state ────────────────────────────────────────────────
@@ -269,7 +269,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     event MintRequestTTLUpdated(uint256 newTTL);
 
     function setVrfGasParams(uint32 _gasPerBlock, uint32 _gasMax) external onlyOwner {
-        require(_gasPerBlock >= 10_000 && _gasPerBlock <= 100_000, "gasPerBlock out of range");
+        require(_gasPerBlock >= 500 && _gasPerBlock <= 100_000, "gasPerBlock out of range");
         require(_gasMax >= 500_000 && _gasMax <= 30_000_000, "gasMax out of range");
         vrfGasPerBlock = _gasPerBlock;
         vrfGasMax      = _gasMax;
