@@ -548,14 +548,12 @@ contract BlockHuntRewardsTest is Test {
     }
 
     // Fix 5: topUp still works after withdrawLeftover
-    function test_topUp_works_after_withdrawLeftover() public {
-        rewards.deposit{value: 1 ether}(1, 6000, 2600, 1000); // 4% buffer
+    function test_topUp_blocked_after_settlement() public {
+        rewards.deposit{value: 1 ether}(1, 6000, 2600, 1000);
         rewards.withdrawLeftover(1, founder);
 
-        // TopUp should still work
+        vm.expectRevert(bytes("Batch settled"));
         rewards.topUp{value: 0.5 ether}(1);
-        (uint256 totalDeposit,,,,, ) = rewards.batchConfigs(1);
-        assertEq(totalDeposit, 1.5 ether);
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -607,12 +605,12 @@ contract BlockHuntRewardsTest is Test {
         assertEq(rewards.bountyPool(2), 0.3 ether);
     }
 
-    function test_emergencyWithdraw() public {
+    function test_emergencyWithdrawRemoved() public {
         rewards.deposit{value: 1 ether}(1, 6000, 2600, 1400);
-
-        uint256 founderBefore = founder.balance;
-        rewards.emergencyWithdraw(founder, 0.5 ether);
-        assertEq(founder.balance - founderBefore, 0.5 ether);
+        (bool ok, ) = address(rewards).call(
+            abi.encodeWithSignature("emergencyWithdraw(address,uint256)", address(this), 0.5 ether)
+        );
+        assertFalse(ok, "emergencyWithdraw should not exist");
     }
 
     // ═══════════════════════════════════════════════════════════════════════
