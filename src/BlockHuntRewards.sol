@@ -202,6 +202,7 @@ contract BlockHuntRewards is Ownable, ReentrancyGuard, Pausable {
      */
     function topUp(uint256 batch) external payable onlyOwner {
         require(batchConfigs[batch].active, "Batch not funded");
+        require(!batchConfigs[batch].settled, "Batch settled");
         require(msg.value > 0, "No ETH sent");
 
         batchConfigs[batch].totalDeposit += msg.value;
@@ -677,14 +678,6 @@ contract BlockHuntRewards is Ownable, ReentrancyGuard, Pausable {
     function pause() external onlyOwner { _pause(); }
     function unpause() external onlyOwner { _unpause(); }
 
-    /**
-     * @notice Emergency withdraw. Remove before mainnet.
-     */
-    function emergencyWithdraw(address to, uint256 amount) external onlyOwner {
-        require(to != address(0), "Invalid address");
-        (bool sent, ) = payable(to).call{value: amount}("");
-        require(sent, "Transfer failed");
-    }
 
     receive() external payable {}
 }

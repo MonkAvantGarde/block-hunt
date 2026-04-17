@@ -37,6 +37,7 @@ contract BlockHuntEscrow is Ownable, ReentrancyGuard {
     // ── Sacrifice state ─────────────────────────────────────────────────────
     // Set once per sacrifice. Persists until Season 2 sweep completes.
     bool    public sacrificeExecuted;
+    address public sacrificeWinner;
     uint256 public communityPool;           // 40% held for top-100 claims
     uint256 public season2Seed;             // 10% held until Season 2 address confirmed
     uint256 public claimWindowExpiry;       // block.timestamp + 30 days at sacrifice time
@@ -109,6 +110,7 @@ contract BlockHuntEscrow is Ownable, ReentrancyGuard {
         uint256 community    = total - winnerShare - seedShare;    // 40% (handles rounding)
 
         sacrificeExecuted   = true;
+        sacrificeWinner     = winner;
         communityPool       = community;
         season2Seed         = seedShare;
         claimWindowExpiry   = block.timestamp + CLAIM_WINDOW;
@@ -144,6 +146,7 @@ contract BlockHuntEscrow is Ownable, ReentrancyGuard {
         require(totalAllocated <= communityPool, "Exceeds community pool");
 
         for (uint256 i = 0; i < players.length; i++) {
+            require(players[i] != sacrificeWinner, "Winner excluded from leaderboard");
             if (amounts[i] > 0) {
                 leaderboardEntitlement[players[i]] = amounts[i];
                 _entitlementList.push(players[i]);
