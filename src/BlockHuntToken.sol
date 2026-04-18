@@ -99,6 +99,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     bool    public countdownActive;
     address public countdownHolder;
     uint256 public countdownStartTime;
+    bool    public seasonWon;
 
     // ── VRF config ────────────────────────────────────────────────────────────
     bool    public vrfEnabled;
@@ -249,6 +250,10 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     function setRewardsContract(address addr) external onlyOwner {
         rewardsContract = addr;
     }
+
+    function resetSeasonWon() external onlyOwner {
+        seasonWon = false;
+    }
     function setURI(string memory newuri)        external onlyOwner { _setURI(newuri); }
     function setRoyalty(address receiver, uint96 fee) external onlyOwner {
         require(fee <= 1000, "Exceeds 10% cap");
@@ -300,6 +305,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     // ── CORE GAME ACTIONS ─────────────────────────────────────────────────────
 
     function mint(uint256 quantity) external payable nonReentrant whenNotPaused {
+        require(!seasonWon, "Season ended");
         require(mintWindowContract != address(0), "Mint not configured");
         require(IBlockHuntMint(mintWindowContract).isWindowOpen(), "Window closed");
         require(quantity > 0 && quantity <= 500, "Invalid quantity");
@@ -729,6 +735,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
      *         countdown without needing to mint, combine, or forge first.
      */
     function claimHolderStatus() external {
+        require(!seasonWon, "Season ended");
         require(!countdownActive, "Countdown already active");
         _checkCountdownTrigger(msg.sender);
         require(countdownActive, "Does not hold all 6 tiers");
@@ -765,6 +772,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         countdownActive    = false;
         countdownHolder    = address(0);
         countdownStartTime = 0;
+        seasonWon          = true;
 
         if (countdownContract != address(0)) {
             IBlockHuntCountdown(countdownContract).syncReset();
@@ -772,6 +780,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     }
 
     function _checkCountdownTrigger(address player) internal {
+        if (seasonWon) return;
         if (countdownActive) return;
         for (uint256 tier = 2; tier <= 7; tier++) {
             if (balanceOf(player, tier) == 0) return;
