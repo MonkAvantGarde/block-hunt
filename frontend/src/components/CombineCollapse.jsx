@@ -5,6 +5,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { TMAP, COMBINE_RATIOS, CREAM } from '../config/design-tokens';
+import sounds from '../hooks/useSound';
 
 // Tier card images
 const tierImage = (n) => new URL(`../assets/T${n}.png`, import.meta.url).href;
@@ -50,6 +51,11 @@ export default function CombineCollapse({ fromTier, startCount, combineRatio, on
 
   const accent = TMAP[fromTier]?.accent || '#888';
   const targetAccent = TMAP[toTier]?.accent || '#fff';
+
+  // Play combine sound when animation starts
+  useEffect(() => {
+    sounds.combine();
+  }, []);
 
   // ── Step 1: Countdown ─────────────────────────────────────────────────────
   useEffect(() => {

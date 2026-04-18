@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { GOLD, GOLD_LT, CREAM } from '../config/design-tokens'
+import sounds from '../hooks/useSound'
 
 // ── Fake progress curve: fast early, asymptotic toward 1.0 ──
 // progress = 1 - 1/(1 + elapsed * 0.15)
@@ -121,6 +122,11 @@ export default function VRFDrumRoll({ mode = 'mint', chargeColor, fulfilled, onR
     })
     obs.observe(el)
     return () => obs.disconnect()
+  }, [])
+
+  // Play VRF waiting sound on mount
+  useEffect(() => {
+    sounds.vrfWaiting()
   }, [])
 
   // Tick elapsed time

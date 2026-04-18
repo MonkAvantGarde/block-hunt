@@ -4,6 +4,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { GOLD, GREEN } from '../config/design-tokens';
+import sounds from '../hooks/useSound';
 
 const DIGITS = ['0','1','2','3','4','5','6','7','8','9'];
 const ROLL_DURATION_MS = 400;
@@ -164,6 +165,9 @@ export default function RollingDigits({
 
     if (changed.size > 0) {
       setAnimatingIndices(changed);
+      if (prevChars !== null) {
+        sounds.tick();
+      }
 
       // Show arrow on increase
       const currNum = parseFloat(displayValue) || 0;

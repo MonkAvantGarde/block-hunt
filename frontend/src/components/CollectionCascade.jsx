@@ -6,6 +6,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { TMAP, CREAM } from '../config/design-tokens';
+import sounds from '../hooks/useSound';
 
 // Tier card images
 const tierImage = (n) => new URL(`../assets/T${n}.png`, import.meta.url).href;
@@ -31,6 +32,11 @@ export default function CollectionCascade({ onComplete }) {
   const startRef = useRef(null);
   const rafRef = useRef(null);
   const completeCalled = useRef(false);
+
+  // Play collection sound when full-set animation triggers
+  useEffect(() => {
+    sounds.collection();
+  }, []);
 
   // ── Animation loop ────────────────────────────────────────────────────────
   useEffect(() => {

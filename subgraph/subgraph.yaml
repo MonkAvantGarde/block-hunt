@@ -8,9 +8,9 @@ dataSources:
     name: BlockHuntToken
     network: base-sepolia
     source:
-      address: "0x541a85733d98F720A3b7C15f2fdc2f157599B9dc"
+      address: "0x89D2bA134287B406DEE136B5af22D6d9A1DC0E81"
       abi: BlockHuntToken
-      startBlock: 39171240
+      startBlock: 40500000
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7

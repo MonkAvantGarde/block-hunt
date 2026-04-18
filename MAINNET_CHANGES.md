@@ -253,6 +253,20 @@ function setMintRequestTTL(uint256 _ttl) external onlyOwner {
 
 ---
 
+## BlockHuntCountdown.sol + BlockHuntToken.sol — Countdown Duration Sync (MAINNET PRIORITY)
+
+### 21. Token and Countdown Must Share Single Source of Truth for Countdown Duration
+**Problem:** Both `BlockHuntToken.sol` and `BlockHuntCountdown.sol` have independent `countdownDuration` state variables. On testnet, updating Countdown's duration to 1 hour while Token retained 7 days caused `sacrifice()` to revert with "Countdown still running" — Countdown said expired, Token said 6 days left.
+**Fix:** Token should read countdown duration from the Countdown contract instead of storing its own copy. Replace Token's `countdownDuration` with a call to `IBlockHuntCountdown(countdownContract).countdownDuration()` in the sacrifice/claim expiry check. Alternatively, have `setCountdownDuration` on either contract propagate to the other.
+**Contracts:** BlockHuntToken.sol, BlockHuntCountdown.sol
+
+### 22. Challenge Ranking Must Use Weighted Score (Not Raw Block Count)
+**Problem:** `_ranksAbove()` in Countdown used `_totalBlocks()` (raw token count) as tiebreaker, while the leaderboard uses `calculateScore()` (weighted by tier). Players ranked higher on the leaderboard couldn't challenge because the holder had more low-tier tokens.
+**Fix (applied on testnet):** Changed `_ranksAbove()` tiebreaker from `_totalBlocks(challenger) > _totalBlocks(holder)` to `calculateScore(challenger) > calculateScore(holder)`.
+**Contract:** BlockHuntCountdown.sol
+
+---
+
 ## Session Log
 
 ### 2026-03-25 Session

@@ -4,6 +4,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { TMAP, GOLD, CREAM, GREEN, EMBER_LT } from '../config/design-tokens';
+import sounds from '../hooks/useSound';
 
 const SUCCESS_COLOR = '#6eff8a';
 const FAILURE_COLOR = '#ff4444';
@@ -102,6 +103,7 @@ export default function ForgeNumberReveal({
     // Step 2: start spinning
     schedule(() => {
       setPhase('spinning');
+      sounds.forgeSpin();
       startSpinSequence();
     }, T_SPIN_START);
 
@@ -116,7 +118,14 @@ export default function ForgeNumberReveal({
     }, T_SPIN_END);
 
     // Step 4: result
-    schedule(() => setPhase('result'), T_FREEZE_END);
+    schedule(() => {
+      setPhase('result');
+      if (success) {
+        sounds.forgeSuccess();
+      } else {
+        sounds.forgeFail();
+      }
+    }, T_FREEZE_END);
 
     // Complete callback
     schedule(() => {

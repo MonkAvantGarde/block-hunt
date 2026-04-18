@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { TMAP, FELT, FELT_DARK, INK, CREAM, GOLD } from '../config/design-tokens'
+import sounds from '../hooks/useSound'
 
 // Card images per tier
 const CARD_IMAGES = {
@@ -217,6 +218,7 @@ export default function MintRevealCardFlip({ results, onComplete, onRareReveal }
         await wait(100)
         if (cancelled || skipRef.current) return
         setFlipped(true)
+        sounds.reveal()
         // Trigger shine sweep after flip completes
         await wait(FLIP_SPEED[tier])
         if (cancelled || skipRef.current) return
@@ -242,6 +244,7 @@ export default function MintRevealCardFlip({ results, onComplete, onRareReveal }
 
           // Slow flip
           setFlipped(true)
+          sounds.reveal()
           await wait(FLIP_SPEED[tier])
           if (cancelled || skipRef.current) return
 

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { TMAP, GOLD, GOLD_DK, GOLD_LT, INK, CREAM } from '../config/design-tokens'
+import sounds from '../hooks/useSound'
 
 // Card images
 const CARD_IMAGES = {
@@ -143,6 +144,11 @@ export default function RevealMoment({ tier, prizePool, onDismiss }) {
   if (!config || !tierData) return null
 
   const [phase, setPhase] = useState('entrance') // entrance → visible → exit
+
+  // Play reveal sound when animation starts
+  useEffect(() => {
+    sounds.reveal()
+  }, [])
 
   // Auto-dismiss after duration
   useEffect(() => {
