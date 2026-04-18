@@ -177,9 +177,27 @@ contract Deploy is Script {
         token.setMintRequestTTL(10 minutes);
         token.setLazyRevealThreshold(0);
         token.setRewardsContract(address(rewards));
-        console.log("Token config: VRF gas 28k/15M, TTL 10min, lazy reveal OFF, rewards wired.");
+        console.log("Token config: VRF gas 10k/2.5M, TTL 10min, lazy reveal OFF, rewards wired.");
 
-        // ── Step 6: Minting is always open (no window to open) ────────────
+        // ── Step 6: Configure Rewards v2 ──────────────────────────────────
+
+        rewards.setTierBounty(1, 6, 0.002 ether);
+        rewards.setTierBounty(1, 5, 0.005 ether);
+        rewards.setTierBounty(1, 4, 0.01 ether);
+        rewards.setTierBounty(1, 3, 0.05 ether);
+        rewards.setTierBounty(1, 2, 0.1 ether);
+        rewards.setLeaderboardAmounts([uint256(0.005 ether), 0.003 ether, 0.001 ether]);
+        rewards.setStreakMilestone(0, 3, 100, 10);
+        rewards.setStreakMilestone(1, 5, 75, 25);
+        rewards.setStreakMilestone(2, 7, 50, 50);
+        rewards.setStreakMilestone(3, 14, 30, 100);
+        rewards.setStreakMilestone(4, 21, 15, 150);
+        rewards.setStreakMilestone(5, 30, 10, 250);
+        rewards.setReferralAmount(0.002 ether);
+        rewards.setReferralsActive(true);
+        console.log("Rewards v2 configured: bounties, milestones, referrals.");
+
+        // ── Step 7: Minting is always open (no window to open) ────────────
         console.log("Minting is always open (per-player cooldown model).");
 
         // ── Step 7: Register Season 1 ──────────────────────────────────────
