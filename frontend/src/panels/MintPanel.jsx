@@ -11,6 +11,7 @@ import {
 import { Btn, TxErrorPanel, VRFStatusHeader } from '../components/GameUI';
 import PrizePoolDisplay from '../components/PrizePoolDisplay';
 import VRFDrumRoll from '../components/VRFDrumRoll';
+import { useReferral } from '../hooks/useReferral';
 
 function PendingMintItem({ item, onDelivered, onRequestId }) {
   const [elapsed, setElapsed] = useState(Math.floor((Date.now() - item.startTime) / 1000))
@@ -182,6 +183,11 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatu
   const chainId = useChainId()
   const { switchChain } = useSwitchChain()
   const wrongNetwork = chainId !== TARGET_CHAIN_ID
+
+  // Referral detection: if a ?ref= was captured, prompt user to link before first mint
+  const { pendingReferrer, isLinked, linkReferrer, isLinking, linkSuccess } = useReferral()
+  const hasFirstMint = blocks ? [2,3,4,5,6,7].some(t => (blocks[t] || 0) > 0) : false
+  const showReferralStep = walletConnected && pendingReferrer && !isLinked && !hasFirstMint && !linkSuccess
 
   // Read batch totalMinted for all batches up to current
   const batchContracts = Array.from({ length: Math.min(currentBatch + 1, 10) }, (_, i) => ({
@@ -699,6 +705,37 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatu
               ? <>CYCLE CAP REACHED ({mintStatus?.cycleCap}/{mintStatus?.cycleCap})<br/>Cooldown ends in {timerLabel}</>
               : <>DAILY CAP REACHED ({mintStatus?.dailyCap}/{mintStatus?.dailyCap})<br/>Resets in {timerLabel}</>
             }
+          </div>
+        )}
+
+        {/* Referral link step — shown before first mint if referrer detected */}
+        {showReferralStep && (
+          <div style={{
+            background: 'rgba(110,224,216,0.06)',
+            border: '1px solid rgba(110,224,216,0.25)',
+            padding: '14px 16px',
+            marginBottom: 10,
+          }}>
+            <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 8, color: '#6ee0d8', letterSpacing: 1, marginBottom: 8 }}>
+              REFERRAL DETECTED
+            </div>
+            <div style={{ fontFamily: "'VT323', monospace", fontSize: 20, color: 'rgba(240,234,214,0.7)', marginBottom: 10 }}>
+              Link <span style={{ color: '#6ee0d8' }}>{pendingReferrer.slice(0, 6)}...{pendingReferrer.slice(-4)}</span> as your referrer before your first mint to earn both of you a bonus.
+            </div>
+            <button
+              onClick={linkReferrer}
+              disabled={isLinking}
+              style={{
+                fontFamily: "'Press Start 2P', monospace", fontSize: 8,
+                background: '#6ee0d8', color: '#0a1a0f',
+                border: '2px solid #0a1a0f',
+                padding: '10px 18px',
+                cursor: isLinking ? 'default' : 'pointer',
+                boxShadow: '2px 2px 0 #0a1a0f',
+                opacity: isLinking ? 0.6 : 1,
+                letterSpacing: 1,
+              }}
+            >{isLinking ? 'LINKING...' : 'LINK REFERRER'}</button>
           </div>
         )}
 
