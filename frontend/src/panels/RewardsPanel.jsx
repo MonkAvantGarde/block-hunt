@@ -25,13 +25,25 @@ const TABS = [
 
 export default function RewardsPanel({ address, blocks, currentBatch }) {
   const [activeTab, setActiveTab] = useState('tier')
+  const [refreshing, setRefreshing] = useState(false)
   const rewards = useRewards()
+
+  const handleTabSwitch = (key) => {
+    setActiveTab(key)
+    rewards.refetchAll?.()
+  }
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    await rewards.refetchAll?.()
+    setTimeout(() => setRefreshing(false), 500)
+  }
 
   const {
     season, streak, lastMintDay,
     tierBounties, milestones,
     referralsActive, referralAmount, referralThreshold,
-    leaderboardAmounts, isLoading,
+    leaderboardAmounts, isLoading, refetchAll,
   } = rewards
 
   if (isLoading) {
@@ -59,12 +71,24 @@ export default function RewardsPanel({ address, blocks, currentBatch }) {
 
       {/* Header: AVAILABLE REWARDS + total */}
       <div style={{ textAlign: 'center', marginBottom: 8 }}>
-        <div style={{
-          ...fp, fontSize: 8,
-          color: 'rgba(240,234,214,0.55)',
-          letterSpacing: 2,
-          marginBottom: 8,
-        }}>AVAILABLE REWARDS</div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 8 }}>
+          <div style={{
+            ...fp, fontSize: 8,
+            color: 'rgba(240,234,214,0.55)',
+            letterSpacing: 2,
+          }}>AVAILABLE REWARDS</div>
+          <button
+            onClick={handleRefresh}
+            title="Refresh rewards data"
+            style={{
+              background: 'transparent', border: '1px solid rgba(240,234,214,0.2)',
+              color: 'rgba(240,234,214,0.5)', cursor: 'pointer', padding: '4px 8px',
+              fontSize: 14, lineHeight: 1, borderRadius: 3,
+              transform: refreshing ? 'rotate(360deg)' : 'none',
+              transition: 'transform 0.5s ease',
+            }}
+          >&#x21bb;</button>
+        </div>
         <div style={{
           ...fv, fontSize: 56,
           color: '#f0d868',
@@ -89,7 +113,7 @@ export default function RewardsPanel({ address, blocks, currentBatch }) {
         {TABS.map(tab => (
           <button
             key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
+            onClick={() => handleTabSwitch(tab.key)}
             style={{
               ...fp, fontSize: 7,
               color: activeTab === tab.key ? '#f0d868' : 'rgba(240,234,214,0.5)',
@@ -136,6 +160,7 @@ export default function RewardsPanel({ address, blocks, currentBatch }) {
           lastMintDay={lastMintDay}
           milestones={milestones}
           season={season}
+          refetchAll={refetchAll}
         />
       )}
 

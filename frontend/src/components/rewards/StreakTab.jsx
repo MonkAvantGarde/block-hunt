@@ -7,13 +7,15 @@ import { REWARDS_ABI } from '../../abis'
 const fp = { fontFamily: "'Press Start 2P', monospace" }
 const fv = { fontFamily: "'VT323', monospace" }
 
-export default function StreakTab({ streak, lastMintDay, milestones, season }) {
+export default function StreakTab({ streak, lastMintDay, milestones, season, refetchAll }) {
   const [claimingIndex, setClaimingIndex] = useState(null)
+  const [slotsGoneMsg, setSlotsGoneMsg] = useState(null)
   const { writeContract, data: txHash, isPending, error: writeError, reset } = useWriteContract()
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash })
 
   useEffect(() => {
     if (isSuccess) {
+      refetchAll?.()
       setTimeout(() => { setClaimingIndex(null); reset() }, 2000)
     }
   }, [isSuccess])
@@ -24,8 +26,21 @@ export default function StreakTab({ streak, lastMintDay, milestones, season }) {
     }
   }, [writeError])
 
-  function handleClaim(index) {
+  async function handleClaim(index) {
     setClaimingIndex(index)
+    setSlotsGoneMsg(null)
+
+    try {
+      await refetchAll?.()
+      const m = milestones[index]
+      if (m && m.slotsClaimed >= m.slotsTotal) {
+        setSlotsGoneMsg(index)
+        setClaimingIndex(null)
+        setTimeout(() => setSlotsGoneMsg(null), 4000)
+        return
+      }
+    } catch (e) {}
+
     writeContract({
       address: CONTRACTS.REWARDS,
       abi: REWARDS_ABI,
@@ -122,7 +137,13 @@ export default function StreakTab({ streak, lastMintDay, milestones, season }) {
               </div>
 
               {/* Status / action */}
-              {canClaim && (
+              {canClaim && slotsGoneMsg === i && (
+                <div style={{ ...fp, fontSize: 7, color: '#ff6666', marginTop: 10, lineHeight: 1.6 }}>
+                  Sorry, the slots got over!<br/>Better luck for the next one!
+                </div>
+              )}
+
+              {canClaim && slotsGoneMsg !== i && (
                 <button
                   onClick={() => handleClaim(i)}
                   disabled={isClaiming}

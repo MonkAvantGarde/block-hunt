@@ -20,12 +20,12 @@ export function useRewards() {
 
   // ── Single reads (no player arg needed) ──────────────────────────────────
 
-  const { data: seasonRaw, isLoading: seasonLoading } = useReadContract({
+  const { data: seasonRaw, isLoading: seasonLoading, refetch: refetchSeason } = useReadContract({
     address: CONTRACTS.REWARDS,
     abi: REWARDS_ABI,
     chainId: CHAIN_ID,
     functionName: 'currentSeason',
-    query: { refetchInterval: 15_000 },
+    query: { refetchOnMount: true, staleTime: Infinity },
   })
 
   const { data: milestoneCountRaw, isLoading: milestoneCountLoading } = useReadContract({
@@ -33,7 +33,7 @@ export function useRewards() {
     abi: REWARDS_ABI,
     chainId: CHAIN_ID,
     functionName: 'getStreakMilestoneCount',
-    query: { refetchInterval: 15_000 },
+    query: { refetchOnMount: true, staleTime: Infinity },
   })
 
   const { data: referralsActiveRaw } = useReadContract({
@@ -41,7 +41,7 @@ export function useRewards() {
     abi: REWARDS_ABI,
     chainId: CHAIN_ID,
     functionName: 'referralsActive',
-    query: { refetchInterval: 15_000 },
+    query: { refetchOnMount: true, staleTime: Infinity },
   })
 
   const { data: referralAmountRaw } = useReadContract({
@@ -49,7 +49,7 @@ export function useRewards() {
     abi: REWARDS_ABI,
     chainId: CHAIN_ID,
     functionName: 'referralAmount',
-    query: { refetchInterval: 15_000 },
+    query: { refetchOnMount: true, staleTime: Infinity },
   })
 
   const { data: referralThresholdRaw } = useReadContract({
@@ -57,20 +57,20 @@ export function useRewards() {
     abi: REWARDS_ABI,
     chainId: CHAIN_ID,
     functionName: 'referralThreshold',
-    query: { refetchInterval: 15_000 },
+    query: { refetchOnMount: true, staleTime: Infinity },
   })
 
   const season = seasonRaw != null ? Number(seasonRaw) : 0
 
   // ── Player-specific single reads ─────────────────────────────────────────
 
-  const { data: streakRaw, isLoading: streakLoading } = useReadContract({
+  const { data: streakRaw, isLoading: streakLoading, refetch: refetchStreak } = useReadContract({
     address: CONTRACTS.REWARDS,
     abi: REWARDS_ABI,
     chainId: CHAIN_ID,
     functionName: 'streakDay',
     args: [BigInt(season), address],
-    query: { enabled: enabled && season > 0, refetchInterval: 15_000 },
+    query: { enabled: enabled && season > 0, refetchOnMount: true, staleTime: Infinity },
   })
 
   const { data: lastMintDayRaw } = useReadContract({
@@ -79,7 +79,7 @@ export function useRewards() {
     chainId: CHAIN_ID,
     functionName: 'lastMintDay',
     args: [BigInt(season), address],
-    query: { enabled: enabled && season > 0, refetchInterval: 15_000 },
+    query: { enabled: enabled && season > 0, refetchOnMount: true, staleTime: Infinity },
   })
 
   const { data: referrerRaw } = useReadContract({
@@ -88,7 +88,7 @@ export function useRewards() {
     chainId: CHAIN_ID,
     functionName: 'referrerOf',
     args: [address],
-    query: { enabled, refetchInterval: 15_000 },
+    query: { enabled, refetchOnMount: true, staleTime: Infinity },
   })
 
   // ── Batched reads: tier bounties (tiers 2-7 x 3 calls each = 18 calls) ──
@@ -100,7 +100,7 @@ export function useRewards() {
     abi: [{ name: 'currentBatch', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ name: '', type: 'uint256' }] }],
     chainId: CHAIN_ID,
     functionName: 'currentBatch',
-    query: { refetchInterval: 15_000 },
+    query: { refetchOnMount: true, staleTime: Infinity },
   })
 
   const currentBatch = currentBatchRaw != null ? Number(currentBatchRaw) : 1
@@ -128,9 +128,9 @@ export function useRewards() {
     return calls
   }, [season, currentBatch])
 
-  const { data: tierBountyResults, isLoading: tierBountyLoading } = useReadContracts({
+  const { data: tierBountyResults, isLoading: tierBountyLoading, refetch: refetchBounties } = useReadContracts({
     contracts: tierBountyContracts,
-    query: { enabled: tierBountyContracts.length > 0, refetchInterval: 15_000 },
+    query: { enabled: tierBountyContracts.length > 0, refetchOnMount: true, staleTime: Infinity },
   })
 
   // ── Batched reads: streak milestones (indices 0-5) ───────────────────────
@@ -147,9 +147,9 @@ export function useRewards() {
     return calls
   }, [])
 
-  const { data: milestoneResults, isLoading: milestonesLoading } = useReadContracts({
+  const { data: milestoneResults, isLoading: milestonesLoading, refetch: refetchMilestones } = useReadContracts({
     contracts: milestoneContracts,
-    query: { refetchInterval: 15_000 },
+    query: { refetchOnMount: true, staleTime: Infinity },
   })
 
   // ── Batched reads: streakClaimed for each milestone ──────────────────────
@@ -169,7 +169,7 @@ export function useRewards() {
 
   const { data: streakClaimedResults } = useReadContracts({
     contracts: streakClaimedContracts,
-    query: { enabled: streakClaimedContracts.length > 0, refetchInterval: 15_000 },
+    query: { enabled: streakClaimedContracts.length > 0, refetchOnMount: true, staleTime: Infinity },
   })
 
   // ── Batched reads: leaderboard amounts (indices 0-2) ─────────────────────
@@ -186,9 +186,9 @@ export function useRewards() {
     return calls
   }, [])
 
-  const { data: leaderboardResults, isLoading: leaderboardLoading } = useReadContracts({
+  const { data: leaderboardResults, isLoading: leaderboardLoading, refetch: refetchLeaderboard } = useReadContracts({
     contracts: leaderboardContracts,
-    query: { refetchInterval: 15_000 },
+    query: { refetchOnMount: true, staleTime: Infinity },
   })
 
   // ── Shape the data ───────────────────────────────────────────────────────
@@ -235,6 +235,14 @@ export function useRewards() {
   const isLoading = seasonLoading || streakLoading || milestoneCountLoading
     || tierBountyLoading || milestonesLoading || leaderboardLoading
 
+  const refetchAll = () => {
+    refetchSeason()
+    refetchStreak()
+    refetchBounties()
+    refetchMilestones()
+    refetchLeaderboard()
+  }
+
   return {
     season,
     streak: streakRaw != null ? Number(streakRaw) : 0,
@@ -247,5 +255,6 @@ export function useRewards() {
     referralThreshold: referralThresholdRaw || BigInt(0),
     leaderboardAmounts,
     isLoading,
+    refetchAll,
   }
 }
