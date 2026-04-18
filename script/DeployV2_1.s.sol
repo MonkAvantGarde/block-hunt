@@ -81,7 +81,7 @@ contract DeployV2_1 is Script {
         token.setForgeContract(EXISTING_FORGE);
         token.setCountdownContract(address(countdown));
         token.setEscrowContract(address(escrow));
-        token.setMigrationContract(EXISTING_MIGRATION);
+        // token.setMigrationContract(EXISTING_MIGRATION); // deferred to Season 2
 
         // New peripherals → Token
         treasury.setTokenContract(address(token));

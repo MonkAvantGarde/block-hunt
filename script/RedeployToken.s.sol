@@ -66,7 +66,7 @@ contract RedeployToken is Script {
         token.setForgeContract(FORGE);
         token.setCountdownContract(COUNTDOWN);
         token.setEscrowContract(ESCROW);
-        token.setMigrationContract(MIGRATION);
+        // token.setMigrationContract(MIGRATION); // deferred to Season 2
         console.log("Token -> peripherals wired.");
 
         // ── Step 3: Wire peripherals → new Token ────────────────────────────

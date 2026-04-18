@@ -135,7 +135,7 @@ contract Deploy is Script {
         token.setForgeContract(address(forge));
         token.setCountdownContract(address(countdown));
         token.setEscrowContract(address(escrow));
-        token.setMigrationContract(address(migration));
+        // migration wiring deferred to Season 2
         console.log("Token wired to all peripherals.");
 
         // ── Step 3: Wire peripherals → Token ───────────────────────────────

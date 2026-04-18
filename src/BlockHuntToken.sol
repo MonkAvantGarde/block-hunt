@@ -311,7 +311,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         require(IBlockHuntMint(mintWindowContract).isWindowOpen(), "Window closed");
         require(quantity > 0 && quantity <= 500, "Invalid quantity");
         uint256 mintPrice = currentMintPrice();
-        require(msg.value >= mintPrice * quantity, "Insufficient payment");
+        require(msg.value >= mintPrice * quantity, "Underpaid");
 
         uint256 allocated = quantity;
         uint256 totalCost = mintPrice * allocated;
@@ -830,14 +830,6 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         return computed > uint256(vrfGasMax) ? vrfGasMax : uint32(computed);
     }
 
-    function _rollTier(uint256 salt) internal returns (uint256) {
-        _nonce++;
-        uint256 rand = uint256(keccak256(abi.encodePacked(
-            block.prevrandao, block.timestamp, msg.sender, _nonce, salt
-        )));
-        return _assignTier(rand);
-    }
-
     // ── Continuous rarity: T6/T5 fixed, T4/T3 linear, T2 quadratic ────────
     function _getTierThresholds() internal view returns (uint256 t2T, uint256 t3T, uint256 t4T) {
         return BlockHuntTierLib.getTierThresholds(totalMinted, t4Coeff, t3Coeff, t2Coeff);
@@ -925,36 +917,4 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         testMintEnabled = false;
     }
 
-    // ── Migration support ─────────────────────────────────────────────────────
-
-    address public migrationContract;
-
-    function setMigrationContract(address addr) external onlyOwner {
-        require(migrationContract == address(0) || testMintEnabled, "Already set");
-        migrationContract = addr;
-    }
-
-    function burnForMigration(
-        address player,
-        uint256[] calldata ids,
-        uint256[] calldata amounts
-    ) external {
-        require(msg.sender == migrationContract, "Only migration contract");
-        _burnBatch(player, ids, amounts);
-        for (uint256 i = 0; i < ids.length; i++) {
-            tierTotalSupply[ids[i]] -= amounts[i];
-        }
-    }
-
-    function mintMigrationStarters(
-        address player,
-        uint256[] calldata ids,
-        uint256[] calldata amounts
-    ) external {
-        require(msg.sender == migrationContract, "Only migration contract");
-        _mintBatch(player, ids, amounts, "");
-        for (uint256 i = 0; i < ids.length; i++) {
-            tierTotalSupply[ids[i]] += amounts[i];
-        }
-    }
 }
