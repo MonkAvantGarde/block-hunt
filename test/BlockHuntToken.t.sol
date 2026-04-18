@@ -17,7 +17,7 @@ contract BlockHuntTokenTest is Test {
     // ── D1: VRF gas params ──────────────────────────────────────────────
 
     function test_VrfGasParamsDefault() public view {
-        assertEq(token.vrfGasPerBlock(), 28_000);
+        assertEq(token.vrfGasPerBlock(), 10_000);
         assertEq(token.vrfGasMax(), 15_000_000);
     }
 

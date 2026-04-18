@@ -27,6 +27,7 @@ contract BlockHuntCountdown is Ownable {
     uint256 public safePeriod = 1 days;
 
     address public tokenContract;
+    address public forgeContract;
     address public keeper;
 
     modifier onlyOwnerOrKeeper() {
@@ -101,6 +102,7 @@ contract BlockHuntCountdown is Ownable {
     }
 
     function setTokenContract(address addr) external onlyOwner { tokenContract = addr; }
+    function setForgeContract(address addr) external onlyOwner { forgeContract = addr; }
 
     event KeeperUpdated(address indexed keeper);
 
@@ -333,12 +335,14 @@ contract BlockHuntCountdown is Ownable {
         emit PlayerEliminated(s, player);
     }
 
-    function setPendingForgeBurns(address player, uint8 tier, uint256 burnCount) external onlyToken {
+    function setPendingForgeBurns(address player, uint8 tier, uint256 burnCount) external {
+        require(msg.sender == tokenContract || msg.sender == forgeContract, "Only token or forge");
         pendingForgeBurns[player][tier] += burnCount;
         emit PendingForgeBurnsUpdated(player, tier, burnCount, true);
     }
 
-    function clearPendingForgeBurns(address player, uint8 tier, uint256 burnCount) external onlyToken {
+    function clearPendingForgeBurns(address player, uint8 tier, uint256 burnCount) external {
+        require(msg.sender == tokenContract || msg.sender == forgeContract, "Only token or forge");
         pendingForgeBurns[player][tier] -= burnCount;
         emit PendingForgeBurnsUpdated(player, tier, burnCount, false);
     }

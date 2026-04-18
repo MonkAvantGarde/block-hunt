@@ -155,7 +155,8 @@ contract Deploy is Script {
         console.log("MintWindow wired to Token.");
 
         countdown.setTokenContract(address(token));
-        console.log("Countdown wired to Token.");
+        countdown.setForgeContract(address(forge));
+        console.log("Countdown wired to Token + Forge.");
 
         rewards.setTokenContract(address(token));
         console.log("Rewards wired to Token.");
