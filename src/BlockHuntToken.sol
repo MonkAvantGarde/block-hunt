@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@chainlink/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
 import "@chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
+import "./BlockHuntTierLib.sol";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // NOTE ON INHERITANCE:
@@ -838,46 +839,19 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     }
 
     // ── Continuous rarity: T6/T5 fixed, T4/T3 linear, T2 quadratic ────────
-    function _getTierThresholds() internal view returns (
-        uint256 t2T, uint256 t3T, uint256 t4T
-    ) {
-        uint256 s = totalMinted / SCALE; // totalMinted / 100K
-
-        t4T = t4Coeff * s;         // linear
-        t3T = t3Coeff * s;         // linear
-        t2T = t2Coeff * s * s;     // QUADRATIC (s²)
-
-        // Safety cap: rare tiers cannot exceed 50% total
-        uint256 totalRare = t2T + t3T + t4T + T5_THRESHOLD + T6_THRESHOLD;
-        if (totalRare > DENOM / 2) {
-            uint256 dynTotal = t2T + t3T + t4T;
-            uint256 maxDyn = DENOM / 2 - T5_THRESHOLD - T6_THRESHOLD;
-            t4T = t4T * maxDyn / dynTotal;
-            t3T = t3T * maxDyn / dynTotal;
-            t2T = t2T * maxDyn / dynTotal;
-        }
+    function _getTierThresholds() internal view returns (uint256 t2T, uint256 t3T, uint256 t4T) {
+        return BlockHuntTierLib.getTierThresholds(totalMinted, t4Coeff, t3Coeff, t2Coeff);
     }
 
     function _assignTier(uint256 randomWord) internal view returns (uint256) {
         (uint256 t2T, uint256 t3T, uint256 t4T) = _getTierThresholds();
-        return _assignTierCached(randomWord, t2T, t3T, t4T);
+        return BlockHuntTierLib.assignTier(randomWord, t2T, t3T, t4T);
     }
 
     function _assignTierCached(
         uint256 randomWord, uint256 t2T, uint256 t3T, uint256 t4T
     ) internal pure returns (uint256) {
-        uint256 roll = randomWord % DENOM;
-
-        if (roll < t2T) return TIER_WILLFUL;
-        roll -= t2T;
-        if (roll < t3T) return TIER_CHAOTIC;
-        roll -= t3T;
-        if (roll < t4T) return TIER_ORDERED;
-        roll -= t4T;
-        if (roll < T5_THRESHOLD) return TIER_REMEMBER;
-        roll -= T5_THRESHOLD;
-        if (roll < T6_THRESHOLD) return TIER_RESTLESS;
-        return TIER_INERT;
+        return BlockHuntTierLib.assignTier(randomWord, t2T, t3T, t4T);
     }
 
     function setRarityCoefficients(
