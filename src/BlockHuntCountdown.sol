@@ -27,6 +27,7 @@ contract BlockHuntCountdown is Ownable {
     uint256 public safePeriod = 1 days;
 
     address public tokenContract;
+    address public forgeContract;
     address public keeper;
 
     modifier onlyOwnerOrKeeper() {
@@ -38,12 +39,27 @@ contract BlockHuntCountdown is Ownable {
     address public currentHolder;
     bool    public isActive;
 
-    uint256 public votesBurn;
-    uint256 public votesClaim;
-    uint256 public countdownRound;
-    mapping(uint256 => mapping(address => bool)) public hasVoted;
+    // ── Cumulative defense (NEW-A fix + SH-1) ────────────────────────────
+    uint256 public holderSince;
+    mapping(address => uint256) public cumulativeDefenseTime;
+    uint256 public constant REQUIRED_DEFENSE = 7 days;
 
-    uint256 public season;
+    uint256 public countdownRound;
+
+    uint256 public currentSeason;
+
+    // ── Season-indexed progression (§1.8, SH-10) ─────────────────────────
+    mapping(uint256 => address[]) internal _seasonPlayers;
+    mapping(uint256 => mapping(address => uint256)) public seasonScore;
+    mapping(uint256 => mapping(address => bool)) public isSeasonPlayer;
+
+    mapping(uint256 => mapping(address => bool)) public isEliminated;
+    mapping(address => mapping(uint8 => uint256)) public pendingForgeBurns;
+
+    event SeasonAdvanced(uint256 newSeason);
+    event PlayerRecorded(uint256 season, address indexed player, uint256 totalScore);
+    event PlayerEliminated(uint256 season, address indexed player);
+    event PendingForgeBurnsUpdated(address indexed player, uint8 tier, uint256 delta, bool increment);
 
     // ── Takeover mechanic ─────────────────────────────────────────────────
     uint256 public takeoverCount;
@@ -65,7 +81,6 @@ contract BlockHuntCountdown is Ownable {
     // ── Events ────────────────────────────────────────────────────────────
     event CountdownStarted(address indexed holder, uint256 startTime, uint256 endTime);
     event CountdownEnded(address indexed formerHolder);
-    event VoteCast(address indexed voter, bool burnVote);
     event CountdownReset(address indexed formerHolder);
     event CountdownTakeover(address indexed newHolder, address indexed prevHolder, uint256 takeoverCount);
     event CountdownChallenged(
@@ -83,10 +98,11 @@ contract BlockHuntCountdown is Ownable {
     );
 
     constructor() Ownable(msg.sender) {
-        season = 1;
+        currentSeason = 1;
     }
 
     function setTokenContract(address addr) external onlyOwner { tokenContract = addr; }
+    function setForgeContract(address addr) external onlyOwner { forgeContract = addr; }
 
     event KeeperUpdated(address indexed keeper);
 
@@ -115,10 +131,9 @@ contract BlockHuntCountdown is Ownable {
         isActive           = true;
         currentHolder      = holder;
         countdownStartTime = block.timestamp;
+        holderSince        = block.timestamp;
         holderScore        = calculateScore(holder);
         lastChallengeTime  = block.timestamp;
-        votesBurn          = 0;
-        votesClaim         = 0;
 
         IBlockHuntTokenCountdown(tokenContract).updateCountdownHolder(holder);
 
@@ -169,8 +184,7 @@ contract BlockHuntCountdown is Ownable {
         isActive           = true;
         currentHolder      = holder;
         countdownStartTime = block.timestamp;
-        votesBurn          = 0;
-        votesClaim         = 0;
+        holderSince        = block.timestamp;
         holderScore        = calculateScore(holder);
         lastChallengeTime  = block.timestamp;
 
@@ -203,8 +217,14 @@ contract BlockHuntCountdown is Ownable {
         uint256 challengerScore = calculateScore(msg.sender);
         uint256 oldScore = calculateScore(oldHolder);
 
+        // Bank cumulative defense time for the outgoing holder
+        if (holderSince > 0) {
+            cumulativeDefenseTime[oldHolder] += block.timestamp - holderSince;
+        }
+
         currentHolder      = msg.sender;
         holderScore        = challengerScore;
+        holderSince        = block.timestamp;
         lastChallengeTime  = block.timestamp;
         countdownStartTime = block.timestamp;
         takeoverCount++;
@@ -226,25 +246,13 @@ contract BlockHuntCountdown is Ownable {
 
     function checkHolderStatus() external {
         if (!isActive) return;
-        bool stillHolds = IBlockHuntTokenCountdown(tokenContract).hasAllTiers(currentHolder);
+        bool stillHolds = hasAllTiersEffective(currentHolder);
         if (!stillHolds) {
             address former = currentHolder;
             _resetCountdown();
             IBlockHuntTokenCountdown(tokenContract).resetExpiredHolder();
             emit CountdownReset(former);
         }
-    }
-
-    function castVote(bool burnVote) external {
-        require(isActive, "No active countdown");
-        require(!hasVoted[countdownRound][msg.sender], "Already voted");
-        hasVoted[countdownRound][msg.sender] = true;
-        if (burnVote) {
-            votesBurn++;
-        } else {
-            votesClaim++;
-        }
-        emit VoteCast(msg.sender, burnVote);
     }
 
     // ── VIEW HELPERS ──────────────────────────────────────────────────────
@@ -266,17 +274,85 @@ contract BlockHuntCountdown is Ownable {
         address holder,
         uint256 startTime,
         uint256 endTime,
-        uint256 remaining,
-        uint256 burnVotes,
-        uint256 claimVotes
+        uint256 remaining
     ) {
         active     = isActive;
         holder     = currentHolder;
         startTime  = countdownStartTime;
         endTime    = isActive ? countdownStartTime + countdownDuration : 0;
         remaining  = this.timeRemaining();
-        burnVotes  = votesBurn;
-        claimVotes = votesClaim;
+    }
+
+    // ── Season-indexed progression ──────────────────────────────────────
+
+    modifier onlyToken() {
+        require(msg.sender == tokenContract, "Only token contract");
+        _;
+    }
+
+    function recordProgression(address player, uint256 points) external onlyToken {
+        uint256 s = currentSeason;
+        if (!isSeasonPlayer[s][player]) {
+            isSeasonPlayer[s][player] = true;
+            _seasonPlayers[s].push(player);
+        }
+        seasonScore[s][player] += points;
+        emit PlayerRecorded(s, player, seasonScore[s][player]);
+    }
+
+    function totalPlayers() external view returns (uint256) {
+        return _seasonPlayers[currentSeason].length;
+    }
+
+    function getPlayers(uint256 offset, uint256 limit)
+        external
+        view
+        returns (address[] memory addrs, uint256[] memory scores)
+    {
+        uint256 s = currentSeason;
+        address[] storage all = _seasonPlayers[s];
+        uint256 n = all.length;
+        if (offset >= n) return (new address[](0), new uint256[](0));
+        uint256 end = offset + limit > n ? n : offset + limit;
+        uint256 len = end - offset;
+        addrs = new address[](len);
+        scores = new uint256[](len);
+        for (uint256 i = 0; i < len; i++) {
+            addrs[i]  = all[offset + i];
+            scores[i] = seasonScore[s][addrs[i]];
+        }
+    }
+
+    function advanceSeason() external onlyOwner {
+        currentSeason += 1;
+        emit SeasonAdvanced(currentSeason);
+    }
+
+    function eliminatePlayer(address player) external onlyToken {
+        uint256 s = currentSeason;
+        seasonScore[s][player] = 0;
+        isEliminated[s][player] = true;
+        emit PlayerEliminated(s, player);
+    }
+
+    function setPendingForgeBurns(address player, uint8 tier, uint256 burnCount) external {
+        require(msg.sender == tokenContract || msg.sender == forgeContract, "Only token or forge");
+        pendingForgeBurns[player][tier] += burnCount;
+        emit PendingForgeBurnsUpdated(player, tier, burnCount, true);
+    }
+
+    function clearPendingForgeBurns(address player, uint8 tier, uint256 burnCount) external {
+        require(msg.sender == tokenContract || msg.sender == forgeContract, "Only token or forge");
+        pendingForgeBurns[player][tier] -= burnCount;
+        emit PendingForgeBurnsUpdated(player, tier, burnCount, false);
+    }
+
+    function hasAllTiersEffective(address player) public view returns (bool) {
+        for (uint8 t = 2; t <= 7; t++) {
+            uint256 bal = IBlockHuntTokenCountdown(tokenContract).balanceOf(player, t);
+            if (bal + pendingForgeBurns[player][t] == 0) return false;
+        }
+        return true;
     }
 
     // ── INTERNAL ──────────────────────────────────────────────────────────
@@ -285,11 +361,19 @@ contract BlockHuntCountdown is Ownable {
         isActive           = false;
         currentHolder      = address(0);
         countdownStartTime = 0;
-        votesBurn          = 0;
-        votesClaim         = 0;
+        holderSince        = 0;
         holderScore        = 0;
         lastChallengeTime  = 0;
         takeoverCount      = 0;
         countdownRound++;
+    }
+
+    // ── Cumulative defense view ──────────────────────────────────────────
+
+    function canClaim(address player) public view returns (bool) {
+        if (player != currentHolder) return false;
+        if (holderSince == 0) return false;
+        uint256 elapsed = block.timestamp - holderSince;
+        return cumulativeDefenseTime[player] + elapsed >= REQUIRED_DEFENSE;
     }
 }

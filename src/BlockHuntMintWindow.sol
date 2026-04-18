@@ -47,6 +47,7 @@ contract BlockHuntMintWindow is Ownable {
         uint256 cooldownUntil;    // timestamp when cooldown expires (0 = none)
         uint256 dailyMints;       // mints in current 24h period
         uint256 dailyPeriodStart; // timestamp when current 24h period began
+        uint256 cycleStartedAt;   // timestamp of first mint in current cycle (auto-reset)
     }
 
     mapping(address => PlayerMintState) public playerState;
@@ -100,18 +101,22 @@ contract BlockHuntMintWindow is Ownable {
     }
 
     function setCooldownDuration(uint256 _duration) external onlyOwner {
+        require(_duration >= 1 minutes && _duration <= 24 hours, "Duration out of range");
         cooldownDuration = _duration;
     }
 
     function setPerCycleCap(uint256 _cap) external onlyOwner {
+        require(_cap >= 1 && _cap <= 10_000, "Cap out of range");
         perCycleCap = _cap;
     }
 
     function setDailyCap(uint256 _cap) external onlyOwner {
+        require(_cap >= 1 && _cap <= 1_000_000, "Cap out of range");
         dailyCap = _cap;
     }
 
     function setDailyPeriod(uint256 _period) external onlyOwner {
+        require(_period >= 1 hours && _period <= 7 days, "Duration out of range");
         dailyPeriod = _period;
     }
 
@@ -247,16 +252,30 @@ contract BlockHuntMintWindow is Ownable {
             s.dailyMints = 0;
             s.cycleMints = 0;
             s.cooldownUntil = 0;
+            s.cycleStartedAt = 0;
         }
 
-        // 2. Reset cycle if cooldown has expired
+        // 2. Auto-reset cycle after cooldownDuration of inactivity
+        if (s.cycleStartedAt > 0 && block.timestamp >= s.cycleStartedAt + cooldownDuration) {
+            s.cycleMints = 0;
+            s.cooldownUntil = 0;
+            s.cycleStartedAt = 0;
+        }
+
+        // 3. Reset cycle if cooldown has expired (cap-triggered cooldown)
         if (s.cooldownUntil > 0 && block.timestamp >= s.cooldownUntil) {
             s.cycleMints = 0;
             s.cooldownUntil = 0;
+            s.cycleStartedAt = 0;
         }
 
-        // 3. Reject if still on cooldown
+        // 4. Reject if still on cooldown
         require(s.cooldownUntil == 0, "Player on cooldown");
+
+        // 5. Start cycle timer on first mint of a new cycle
+        if (s.cycleStartedAt == 0) {
+            s.cycleStartedAt = block.timestamp;
+        }
 
         // 4. Enforce daily cap
         require(s.dailyMints + quantity <= dailyCap, "Daily mint cap reached");

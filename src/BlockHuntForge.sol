@@ -15,7 +15,13 @@ error InvalidTierForForge();
 interface IBlockHuntTokenForge {
     function burnForForge(address player, uint256 fromTier, uint256 burnCount) external;
     function resolveForge(address player, uint256 fromTier, bool success) external;
+    function forgeRefund(address to, uint256 tier, uint256 amount) external;
     function balanceOf(address account, uint256 id) external view returns (uint256);
+}
+
+interface IBlockHuntCountdownForge {
+    function setPendingForgeBurns(address player, uint8 tier, uint256 burnCount) external;
+    function clearPendingForgeBurns(address player, uint8 tier, uint256 burnCount) external;
 }
 
 contract BlockHuntForge is VRFConsumerBaseV2Plus, ReentrancyGuard {
@@ -23,9 +29,11 @@ contract BlockHuntForge is VRFConsumerBaseV2Plus, ReentrancyGuard {
     // ── State ─────────────────────────────────────────────────────────────────
 
     address public tokenContract;
+    address public countdownContract;
     bool    public vrfEnabled;
     uint256 public forgeFee    = 0;       // per attempt (scales with batch size)
     uint256 public requestNonce;          // pseudo-random mode only
+    uint256 public forgeRequestTTL = 10 minutes;
 
     // ── VRF configuration ─────────────────────────────────────────────────────
     //
@@ -57,10 +65,13 @@ contract BlockHuntForge is VRFConsumerBaseV2Plus, ReentrancyGuard {
     // Both VRF and pseudo-random paths support batching.
 
     struct ForgeRequest {
-        address player;
-        uint256 fromTier;
-        uint256 burnCount;
-        bool    resolved;
+        address player;      // 20 bytes
+        uint8   fromTier;    // 1
+        uint16  burnCount;   // 2
+        bool    resolved;    // 1
+        bool    success;     // 1
+        // 25 bytes — fits in 1 slot
+        uint40  requestedAt; // 5 bytes — slot 2 (for cancel TTL)
     }
 
     // [NEW] Batch forge request — one VRF word resolves N attempts
@@ -72,8 +83,8 @@ contract BlockHuntForge is VRFConsumerBaseV2Plus, ReentrancyGuard {
 
     // [NEW] Individual attempt within a batch — stored separately for gas efficiency
     struct ForgeAttempt {
-        uint256 fromTier;
-        uint256 burnCount;
+        uint8  fromTier;
+        uint16 burnCount;
     }
 
     // Single-forge storage (pseudo-random path, backward compat)
@@ -97,6 +108,7 @@ contract BlockHuntForge is VRFConsumerBaseV2Plus, ReentrancyGuard {
     // [NEW] Batch events
     event BatchForgeRequested(uint256 indexed requestId, address indexed player, uint256 attemptCount);
     event BatchForgeResolved(uint256 indexed requestId, address indexed player, uint256 successes, uint256 failures);
+    event ForgeCancelled(uint256 indexed requestId, address indexed player);
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
@@ -106,6 +118,15 @@ contract BlockHuntForge is VRFConsumerBaseV2Plus, ReentrancyGuard {
 
     function setTokenContract(address addr) external onlyOwner {
         tokenContract = addr;
+    }
+
+    function setCountdownContract(address addr) external onlyOwner {
+        countdownContract = addr;
+    }
+
+    function setForgeRequestTTL(uint256 _ttl) external onlyOwner {
+        require(_ttl >= 5 minutes && _ttl <= 1 hours, "TTL out of range");
+        forgeRequestTTL = _ttl;
     }
 
     function setForgeFee(uint256 fee) external onlyOwner {
@@ -170,11 +191,19 @@ contract BlockHuntForge is VRFConsumerBaseV2Plus, ReentrancyGuard {
         );
 
         vrfForgeRequests[requestId] = ForgeRequest({
-            player:    msg.sender,
-            fromTier:  fromTier,
-            burnCount: burnCount,
-            resolved:  false
+            player:      msg.sender,
+            fromTier:    uint8(fromTier),
+            burnCount:   uint16(burnCount),
+            resolved:    false,
+            success:     false,
+            requestedAt: uint40(block.timestamp)
         });
+
+        if (countdownContract != address(0)) {
+            IBlockHuntCountdownForge(countdownContract).setPendingForgeBurns(
+                msg.sender, uint8(fromTier), burnCount
+            );
+        }
 
         emit ForgeRequested(requestId, msg.sender, fromTier, burnCount);
     }
@@ -183,21 +212,24 @@ contract BlockHuntForge is VRFConsumerBaseV2Plus, ReentrancyGuard {
         requestNonce++;
 
         forgeRequests[requestNonce] = ForgeRequest({
-            player:    msg.sender,
-            fromTier:  fromTier,
-            burnCount: burnCount,
-            resolved:  false
+            player:      msg.sender,
+            fromTier:    uint8(fromTier),
+            burnCount:   uint16(burnCount),
+            resolved:    false,
+            success:     false,
+            requestedAt: uint40(block.timestamp)
         });
 
         uint256 ratio = _combineRatioForTier(fromTier);
-        uint256 successChance = (burnCount * 100) / ratio;
+        uint256 successChance = (burnCount * 10_000) / ratio;
         bool success = _pseudoRandom(msg.sender, fromTier, burnCount, requestNonce) < successChance;
-        forgeRequests[requestNonce].resolved = true;
 
         IBlockHuntTokenForge(tokenContract).resolveForge(msg.sender, fromTier, success);
 
         emit ForgeRequested(requestNonce, msg.sender, fromTier, burnCount);
         emit ForgeResolved(requestNonce, msg.sender, fromTier, success);
+
+        delete forgeRequests[requestNonce];
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -282,12 +314,17 @@ contract BlockHuntForge is VRFConsumerBaseV2Plus, ReentrancyGuard {
             resolved:     false
         });
 
-        // Store individual attempts
+        // Store individual attempts + notify countdown
         for (uint256 i = 0; i < count; i++) {
             batchAttempts[requestId][i] = ForgeAttempt({
-                fromTier:  fromTiers[i],
-                burnCount: burnCounts[i]
+                fromTier:  uint8(fromTiers[i]),
+                burnCount: uint16(burnCounts[i])
             });
+            if (countdownContract != address(0)) {
+                IBlockHuntCountdownForge(countdownContract).setPendingForgeBurns(
+                    msg.sender, uint8(fromTiers[i]), burnCounts[i]
+                );
+            }
         }
 
         emit BatchForgeRequested(requestId, msg.sender, count);
@@ -313,16 +350,15 @@ contract BlockHuntForge is VRFConsumerBaseV2Plus, ReentrancyGuard {
             uint256 burnCount = burnCounts[i];
 
             batchAttempts[nonce][i] = ForgeAttempt({
-                fromTier:  fromTier,
-                burnCount: burnCount
+                fromTier:  uint8(fromTier),
+                burnCount: uint16(burnCount)
             });
 
             uint256 ratio = _combineRatioForTier(fromTier);
-            uint256 successChance = (burnCount * 100) / ratio;
-            // Per-attempt randomness derived from nonce + index
+            uint256 successChance = (burnCount * 10_000) / ratio;
             uint256 rand = uint256(keccak256(abi.encodePacked(
                 block.prevrandao, block.timestamp, msg.sender, nonce, i
-            ))) % 100;
+            ))) % 10_000;
             bool success = rand < successChance;
 
             IBlockHuntTokenForge(tokenContract).resolveForge(msg.sender, fromTier, success);
@@ -331,9 +367,36 @@ contract BlockHuntForge is VRFConsumerBaseV2Plus, ReentrancyGuard {
             if (success) successes++;
         }
 
-        batchRequests[nonce].resolved = true;
         emit BatchForgeRequested(nonce, msg.sender, count);
         emit BatchForgeResolved(nonce, msg.sender, successes, count - successes);
+
+        // Cleanup batch storage
+        for (uint256 i = 0; i < count; i++) {
+            delete batchAttempts[nonce][i];
+        }
+        delete batchRequests[nonce];
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // CANCEL — refund after TTL expires (VRF never came back)
+    // ═════════════════════════════════════════════════════════════════════════
+
+    function cancelForgeRequest(uint256 requestId) external nonReentrant {
+        ForgeRequest storage r = vrfForgeRequests[requestId];
+        require(r.player == msg.sender, "Not requester");
+        require(!r.resolved, "Already resolved");
+        require(block.timestamp >= uint256(r.requestedAt) + forgeRequestTTL, "TTL not reached");
+
+        IBlockHuntTokenForge(tokenContract).forgeRefund(msg.sender, r.fromTier, r.burnCount);
+
+        if (countdownContract != address(0)) {
+            IBlockHuntCountdownForge(countdownContract).clearPendingForgeBurns(
+                msg.sender, r.fromTier, r.burnCount
+            );
+        }
+
+        emit ForgeCancelled(requestId, msg.sender);
+        delete vrfForgeRequests[requestId];
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -349,16 +412,25 @@ contract BlockHuntForge is VRFConsumerBaseV2Plus, ReentrancyGuard {
         ForgeRequest storage singleReq = vrfForgeRequests[requestId];
         if (singleReq.player != address(0)) {
             require(!singleReq.resolved, "Already resolved");
-            singleReq.resolved = true;
 
-            uint256 ratio = _combineRatioForTier(singleReq.fromTier);
-            uint256 successChance = (singleReq.burnCount * 100) / ratio;
-            bool success = (randomWords[0] % 100) < successChance;
+            address player = singleReq.player;
+            uint8 fromTier = singleReq.fromTier;
+            uint16 burnCount = singleReq.burnCount;
 
-            IBlockHuntTokenForge(tokenContract).resolveForge(
-                singleReq.player, singleReq.fromTier, success
-            );
-            emit ForgeResolved(requestId, singleReq.player, singleReq.fromTier, success);
+            uint256 ratio = _combineRatioForTier(fromTier);
+            uint256 successChance = (uint256(burnCount) * 10_000) / ratio;
+            bool success = (randomWords[0] % 10_000) < successChance;
+
+            IBlockHuntTokenForge(tokenContract).resolveForge(player, fromTier, success);
+
+            if (countdownContract != address(0)) {
+                IBlockHuntCountdownForge(countdownContract).clearPendingForgeBurns(
+                    player, fromTier, burnCount
+                );
+            }
+
+            emit ForgeResolved(requestId, player, fromTier, success);
+            delete vrfForgeRequests[requestId];
             return;
         }
 
@@ -367,7 +439,7 @@ contract BlockHuntForge is VRFConsumerBaseV2Plus, ReentrancyGuard {
         require(batchReq.player != address(0), "Unknown request");
         require(!batchReq.resolved,             "Already resolved");
 
-        batchReq.resolved = true;
+        address batchPlayer = batchReq.player;
         uint256 seed = randomWords[0];
         uint256 count = batchReq.attemptCount;
         uint256 successes;
@@ -375,21 +447,31 @@ contract BlockHuntForge is VRFConsumerBaseV2Plus, ReentrancyGuard {
         for (uint256 i = 0; i < count; i++) {
             ForgeAttempt memory attempt = batchAttempts[requestId][i];
 
-            // Per-attempt randomness derived from single VRF seed
             uint256 derived = uint256(keccak256(abi.encodePacked(seed, i)));
             uint256 ratio = _combineRatioForTier(attempt.fromTier);
-            uint256 successChance = (attempt.burnCount * 100) / ratio;
-            bool success = (derived % 100) < successChance;
+            uint256 successChance = (uint256(attempt.burnCount) * 10_000) / ratio;
+            bool success = (derived % 10_000) < successChance;
 
-            IBlockHuntTokenForge(tokenContract).resolveForge(
-                batchReq.player, attempt.fromTier, success
-            );
-            emit ForgeResolved(requestId, batchReq.player, attempt.fromTier, success);
+            IBlockHuntTokenForge(tokenContract).resolveForge(batchPlayer, attempt.fromTier, success);
+
+            if (countdownContract != address(0)) {
+                IBlockHuntCountdownForge(countdownContract).clearPendingForgeBurns(
+                    batchPlayer, attempt.fromTier, attempt.burnCount
+                );
+            }
+
+            emit ForgeResolved(requestId, batchPlayer, attempt.fromTier, success);
 
             if (success) successes++;
         }
 
-        emit BatchForgeResolved(requestId, batchReq.player, successes, count - successes);
+        emit BatchForgeResolved(requestId, batchPlayer, successes, count - successes);
+
+        // Cleanup storage
+        for (uint256 i = 0; i < count; i++) {
+            delete batchAttempts[requestId][i];
+        }
+        delete vrfBatchRequests[requestId];
     }
 
     // ── Gas limit scaling ─────────────────────────────────────────────────────
@@ -432,7 +514,7 @@ contract BlockHuntForge is VRFConsumerBaseV2Plus, ReentrancyGuard {
             fromTier,
             burnCount,
             nonce
-        ))) % 100;
+        ))) % 10_000;
     }
 
     // ── Admin ─────────────────────────────────────────────────────────────────

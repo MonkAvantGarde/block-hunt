@@ -1,6 +1,6 @@
 import { useSafeWrite } from '../hooks/useSafeWrite'
 import { useState, useEffect } from "react";
-import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt, useDisconnect } from "wagmi";
+import { useAccount, useReadContract, useWaitForTransactionReceipt, useDisconnect } from "wagmi";
 import { useBalance } from "wagmi";
 import { CONTRACTS } from "../config/wagmi";
 import { TOKEN_ABI, COUNTDOWN_ABI } from "../abis";
@@ -174,171 +174,6 @@ function PrizeDisplay({ eth = 0 }) {
         ))}
       </div>
     </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════
-// COMMUNITY VOTE — live data + real castVote()
-// ═══════════════════════════════════════════════════════════════
-function VoteSection({ burnVotes = 0, claimVotes = 0 }) {
-  const total     = burnVotes + claimVotes;
-  const claimPct  = total === 0 ? 50 : Math.round((claimVotes / total) * 100);
-  const sacPct    = 100 - claimPct;
-
-  const [popup, setPopup]       = useState(null);
-  const [voteChoice, setVote]   = useState(null); // true=burn, false=claim
-  const [voted, setVoted]       = useState(false);
-  const [voteError, setVoteError] = useState(null);
-
-  const { address } = useAccount();
-
-  // Read current countdown round
-  const { data: countdownRound } = useReadContract({
-    address: CONTRACTS.COUNTDOWN, chainId: 84532,
-    abi: COUNTDOWN_ABI,
-    functionName: "countdownRound",
-    query: { refetchInterval: 10000 },
-  });
-
-  // Check if this wallet already voted in this round
-  const { data: alreadyVoted } = useReadContract({
-    address: CONTRACTS.COUNTDOWN, chainId: 84532,
-    abi: COUNTDOWN_ABI,
-    functionName: "hasVoted",
-    args: countdownRound !== undefined && address ? [countdownRound, address] : undefined,
-    query: { enabled: countdownRound !== undefined && !!address, refetchInterval: 10000 },
-  });
-
-  const hasVoted = voted || alreadyVoted === true;
-
-  const { writeContract, data: txHash, isPending } = useSafeWrite();
-  const { isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
-
-  useEffect(() => { if (isSuccess) { setVoted(true); setPopup(null); } }, [isSuccess]);
-
-  function castVote(burnVote) {
-    setVoteError(null);
-    writeContract({
-      address: CONTRACTS.COUNTDOWN, chainId: 84532,
-      abi: COUNTDOWN_ABI,
-      functionName: "castVote",
-      args: [burnVote],
-    }, {
-      onError: (e) => setVoteError(e.shortMessage || "Vote failed"),
-    });
-  }
-
-  return (
-    <>
-      {popup && (
-        <div onClick={() => setPopup(null)} style={{
-          position: "fixed", inset: 0, zIndex: 1000,
-          background: "rgba(0,0,0,.75)",
-          display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
-        }}>
-          <div onClick={e => e.stopPropagation()} style={{
-            background: "#0e2a1a",
-            border: `2px solid ${popup === "claim" ? GOLD : EMBER}`,
-            boxShadow: `0 0 40px ${popup === "claim" ? "rgba(200,168,75,.3)" : "rgba(204,51,34,.3)"}`,
-            padding: "32px 36px", maxWidth: 380, width: "90%",
-            textAlign: "center", cursor: "default",
-          }}>
-            {voted ? (
-              <>
-                <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: GREEN, letterSpacing: 2, marginBottom: 14 }}>VOTE CAST</div>
-                <div style={{ fontFamily: "'VT323', monospace", fontSize: 24, color: CREAM, lineHeight: 1.4, marginBottom: 18 }}>
-                  Your signal is recorded on-chain. The holder's choice remains private until expiry.
-                </div>
-                <button onClick={() => setPopup(null)} style={{
-                  fontFamily: "'Press Start 2P', monospace", fontSize: 7, letterSpacing: 1,
-                  background: GOLD, color: INK, border: `2px solid ${INK}`,
-                  boxShadow: `3px 3px 0 ${INK}`, padding: "10px 24px", cursor: "pointer",
-                }}>CLOSE</button>
-              </>
-            ) : (
-              <>
-                <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: popup === "claim" ? GOLD : EMBER_LT, letterSpacing: 2, marginBottom: 14 }}>
-                  VOTE {popup.toUpperCase()}
-                </div>
-                <div style={{ fontFamily: "'VT323', monospace", fontSize: 20, color: CREAM, lineHeight: 1.4, marginBottom: 18 }}>
-                  This is a social signal only. One vote per wallet per countdown. The holder's actual choice remains private until expiry.
-                </div>
-                {voteError && (
-                  <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 6, color: EMBER_LT, marginBottom: 12 }}>{voteError}</div>
-                )}
-                <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
-                  <button onClick={() => setPopup(null)} style={{
-                    fontFamily: "'Press Start 2P', monospace", fontSize: 6, letterSpacing: 1,
-                    background: "transparent", color: "rgba(255,255,255,.4)",
-                    border: "1px solid rgba(255,255,255,.2)", padding: "10px 16px", cursor: "pointer",
-                  }}>CANCEL</button>
-                  <button
-                    onClick={() => castVote(popup === "sacrifice")}
-                    disabled={isPending}
-                    style={{
-                      fontFamily: "'Press Start 2P', monospace", fontSize: 6, letterSpacing: 1,
-                      background: popup === "claim" ? GOLD : EMBER,
-                      color: INK, border: `2px solid ${INK}`,
-                      boxShadow: `3px 3px 0 ${INK}`,
-                      padding: "10px 20px", cursor: isPending ? "not-allowed" : "pointer",
-                      opacity: isPending ? 0.6 : 1,
-                    }}
-                  >{isPending ? "CONFIRM…" : "CONFIRM VOTE"}</button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      <div style={{
-        border: "1px solid rgba(255,255,255,.06)", background: "rgba(0,0,0,.2)",
-        padding: "20px 24px", marginBottom: 24,
-      }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
-          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 7, color: CREAM, opacity: .7, letterSpacing: 2 }}>COMMUNITY SIGNAL</div>
-          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 5.5, color: CREAM, opacity: .8, letterSpacing: 1 }}>
-            Holder's actual choice is private until expiry
-          </div>
-        </div>
-
-        {[
-          { label: "CLAIM",     pct: claimPct, fill: `repeating-linear-gradient(90deg,${GOLD} 0,${GOLD} 8px,${GOLD_DK} 8px,${GOLD_DK} 10px)`, col: GOLD_LT },
-          { label: "SACRIFICE", pct: sacPct,   fill: `repeating-linear-gradient(90deg,${EMBER} 0,${EMBER} 8px,#881f14 8px,#881f14 10px)`,    col: EMBER_LT },
-        ].map(v => (
-          <div key={v.label} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
-            <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 6, color: v.col, width: 72, flexShrink: 0 }}>{v.label}</div>
-            <div style={{ flex: 1, height: 12, background: "rgba(0,0,0,.4)", border: "1px solid rgba(255,255,255,.06)", overflow: "hidden" }}>
-              <div style={{ height: "100%", width: `${v.pct}%`, background: v.fill, transition: "width .6s" }} />
-            </div>
-            <div style={{ fontFamily: "'VT323', monospace", fontSize: 22, color: v.col, width: 44, textAlign: "right" }}>{v.pct}%</div>
-          </div>
-        ))}
-
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8, flexWrap: "wrap", gap: 8 }}>
-          <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 5.5, color: CREAM, opacity: .8, letterSpacing: 1 }}>
-            {total} vote{total !== 1 ? "s" : ""}
-          </div>
-          {!hasVoted ? (
-            <div style={{ display: "flex", gap: 8 }}>
-              {[{ l: "VOTE CLAIM", col: GOLD, v: "claim" }, { l: "VOTE SACRIFICE", col: EMBER_LT, v: "sacrifice" }].map(b => (
-                <button key={b.l} onClick={() => setPopup(b.v)} style={{
-                  fontFamily: "'Press Start 2P', monospace", fontSize: 5.5,
-                  color: b.col, background: "transparent",
-                  border: `1px solid ${b.col}44`, padding: "6px 10px",
-                  cursor: "pointer", letterSpacing: .5, transition: "background .1s",
-                }}
-                  onMouseEnter={e => { e.currentTarget.style.background = `${b.col}11`; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
-                >{b.l}</button>
-              ))}
-            </div>
-          ) : (
-            <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 6, color: GREEN, letterSpacing: 1 }}>✓ VOTED</div>
-          )}
-        </div>
-      </div>
-    </>
   );
 }
 
@@ -733,10 +568,7 @@ export default function CountdownSpectator({ onBack }) {
   ? parseFloat(treasuryBalanceData.value.toString()) / 1e18
   : 0;
 
-  const burnVotes  = countdownInfo ? Number(countdownInfo[5]) : 0;
-  const claimVotes = countdownInfo ? Number(countdownInfo[6]) : 0;
-  const total      = burnVotes + claimVotes;
-  const claimPct   = total === 0 ? 50 : Math.round((claimVotes / total) * 100);
+  // Voting removed in redeploy-hardening (B3/SH-13)
 
   const holderShort = countdownHolder
     ? `${countdownHolder.slice(0, 6)}…${countdownHolder.slice(-4)}`
@@ -838,7 +670,7 @@ export default function CountdownSpectator({ onBack }) {
 
         <ChallengeSection holderAddress={countdownHolder} />
 
-        <VoteSection burnVotes={burnVotes} claimVotes={claimVotes} />
+        {/* Voting removed in redeploy-hardening (B3/SH-13) */}
 
         <Leaderboard holderAddress={countdownHolder} />
 

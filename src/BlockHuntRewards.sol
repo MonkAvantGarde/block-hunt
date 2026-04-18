@@ -19,7 +19,19 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
  *         basis-point ratios. Changing the deposit or ratios automatically
  *         rescales all unawarded sub-pools proportionally.
  */
+interface IBlockHuntTokenRewards {
+    function dailyEligible(uint256 day, address player) external view returns (bool);
+    function dailyMinterCount(uint256 day) external view returns (uint256);
+}
+
 contract BlockHuntRewards is Ownable, ReentrancyGuard, Pausable {
+
+    // ── Linked contracts ──────────────────────────────────────────────────
+    address public tokenContract;
+
+    function setTokenContract(address addr) external onlyOwner {
+        tokenContract = addr;
+    }
 
     // ── Constants ──────────────────────────────────────────────────────────
     uint256 public constant MAX_BATCHES          = 10;
@@ -190,6 +202,7 @@ contract BlockHuntRewards is Ownable, ReentrancyGuard, Pausable {
      */
     function topUp(uint256 batch) external payable onlyOwner {
         require(batchConfigs[batch].active, "Batch not funded");
+        require(!batchConfigs[batch].settled, "Batch settled");
         require(msg.value > 0, "No ETH sent");
 
         batchConfigs[batch].totalDeposit += msg.value;
@@ -319,6 +332,13 @@ contract BlockHuntRewards is Ownable, ReentrancyGuard, Pausable {
 
         uint256 winnerIdx = randomSeed % wallets.length;
         address winner = wallets[winnerIdx];
+
+        if (tokenContract != address(0)) {
+            require(
+                IBlockHuntTokenRewards(tokenContract).dailyEligible(day, winner),
+                "Winner not eligible on-chain"
+            );
+        }
 
         dailyDraws[day] = DailyDraw({
             batch:      batch,
@@ -658,14 +678,6 @@ contract BlockHuntRewards is Ownable, ReentrancyGuard, Pausable {
     function pause() external onlyOwner { _pause(); }
     function unpause() external onlyOwner { _unpause(); }
 
-    /**
-     * @notice Emergency withdraw. Remove before mainnet.
-     */
-    function emergencyWithdraw(address to, uint256 amount) external onlyOwner {
-        require(to != address(0), "Invalid address");
-        (bool sent, ) = payable(to).call{value: amount}("");
-        require(sent, "Transfer failed");
-    }
 
     receive() external payable {}
 }

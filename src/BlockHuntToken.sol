@@ -20,7 +20,7 @@ import "@chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
 interface IBlockHuntTreasury {
     function receiveMintFunds() external payable;
     function claimPayout(address winner) external;
-    function sacrificePayout(address winner) external;
+    function sacrificePayout(address winner) external returns (uint256 amount);
 }
 
 interface IBlockHuntMint {
@@ -34,11 +34,14 @@ interface IBlockHuntMint {
 interface IBlockHuntCountdown {
     function startCountdown(address holder) external;
     function syncReset() external;
+    function recordProgression(address player, uint256 points) external;
+    function eliminatePlayer(address player) external;
+    function countdownDuration() external view returns (uint256);
 }
 
 // [NEW] Escrow handles all sacrifice fund distribution
 interface IBlockHuntEscrow {
-    function initiateSacrifice(address winner) external;
+    function initiateSacrifice(address winner, uint256 amount) external;
 }
 
 contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGuard, Pausable {
@@ -72,8 +75,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         return price > 0 ? price : mintPriceForBatch[batch];
     }
 
-    uint256 public countdownDuration = 7 days;
-    uint256 public constant MINT_REQUEST_TTL   = 1 hours;
+    uint256 public mintRequestTTL = 10 minutes;
 
     mapping(uint256 => uint256) public combineRatio;
 
@@ -82,10 +84,13 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     address public forgeContract;
     address public countdownContract;
     address public escrowContract;    // [NEW] holds sacrifice funds
+    address public rewardsContract;
 
     uint256 public currentWindowDay;
-    uint256 public windowDayMinted;
     uint256[8] public tierTotalSupply;
+
+    mapping(uint256 => mapping(address => bool)) public dailyEligible;
+    mapping(uint256 => uint256) public dailyMinterCount;
 
     bool    public countdownActive;
     address public countdownHolder;
@@ -96,20 +101,26 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     uint256 public vrfSubscriptionId;
     bytes32 public vrfKeyHash;
     uint32  public vrfCallbackGasLimit = 150_000;
-    uint32  public constant VRF_GAS_PER_BLOCK = 3_000;
-    uint32  public constant VRF_GAS_MAX = 2_500_000;
+    uint16  public vrfRequestConfirmations = 1;
+    uint32  public vrfGasPerBlock = 10_000;
+    uint32  public vrfGasMax      = 15_000_000;
 
     // ── Mint VRF pending state ────────────────────────────────────────────────
     struct MintRequest {
-        address player;
-        uint256 quantity;
-        uint256 amountPaid;
-        uint256 requestedAt;
-        uint256 windowDay;
+        address player;        // slot 1 (20)
+        uint32  quantity;      // slot 1 (4)
+        bool    fulfilled;     // slot 1 (1)
+        bool    claimed;       // slot 1 (1)
+        uint128 amountPaid;    // slot 2 (16)
+        uint64  requestedAt;   // slot 2 (8)
+        uint256 seed;          // slot 3
     }
+
+    uint32 public lazyRevealThreshold;
 
     mapping(uint256 => MintRequest) public vrfMintRequests;
     mapping(address => uint256[]) public pendingRequestsByPlayer;
+    mapping(uint256 => uint256) private pendingIndexPlusOne;
 
     // ── Pseudo-random nonce (vrfEnabled = false path only) ────────────────────
     uint256 private _nonce;
@@ -142,6 +153,11 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     event MintRequested(address indexed player, uint256 indexed requestId, uint256 quantity);
     event MintFulfilled(address indexed player, uint256 indexed requestId, uint256 quantity);
     event MintCancelled(address indexed player, uint256 indexed requestId, uint256 refundAmount);
+    event RecordMintFailed(address indexed player, uint32 quantity);
+    event RecordProgressionFailed(address indexed player, uint32 quantity);
+    event CountdownCheckFailed();
+    event RewardMinted(address indexed to, uint32 quantity);
+    event LazyRevealThresholdUpdated(uint32 newThreshold);
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
@@ -223,6 +239,10 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         require(escrowContract == address(0) || testMintEnabled, "Already set");
         escrowContract = addr;
     }
+
+    function setRewardsContract(address addr) external onlyOwner {
+        rewardsContract = addr;
+    }
     function setURI(string memory newuri)        external onlyOwner { _setURI(newuri); }
     function setRoyalty(address receiver, uint96 fee) external onlyOwner {
         require(fee <= 1000, "Exceeds 10% cap");
@@ -230,11 +250,6 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     }
     function pause()   external onlyOwner { _pause(); }
     function unpause() external onlyOwner { _unpause(); }
-
-    function setCountdownDuration(uint256 _duration) external onlyOwner {
-        require(testMintEnabled, "Test mode disabled");
-        countdownDuration = _duration;
-    }
 
     function setVrfConfig(
         uint256 subId,
@@ -250,6 +265,29 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         vrfEnabled = enabled;
     }
 
+    event VrfGasParamsUpdated(uint32 gasPerBlock, uint32 gasMax);
+    event MintRequestTTLUpdated(uint256 newTTL);
+
+    function setVrfGasParams(uint32 _gasPerBlock, uint32 _gasMax) external onlyOwner {
+        require(_gasPerBlock >= 500 && _gasPerBlock <= 100_000, "gasPerBlock out of range");
+        require(_gasMax >= 500_000 && _gasMax <= 30_000_000, "gasMax out of range");
+        vrfGasPerBlock = _gasPerBlock;
+        vrfGasMax      = _gasMax;
+        emit VrfGasParamsUpdated(_gasPerBlock, _gasMax);
+    }
+
+    function setMintRequestTTL(uint256 _ttl) external onlyOwner {
+        require(_ttl >= 5 minutes && _ttl <= 1 hours, "TTL out of range");
+        mintRequestTTL = _ttl;
+        emit MintRequestTTLUpdated(_ttl);
+    }
+
+    function setLazyRevealThreshold(uint32 _threshold) external onlyOwner {
+        require(_threshold == 0 || _threshold >= 50, "Threshold must be 0 or >=50");
+        lazyRevealThreshold = _threshold;
+        emit LazyRevealThresholdUpdated(_threshold);
+    }
+
     // ── Contract must accept ETH (holds pending mint payments) ────────────────
     receive() external payable {}
 
@@ -262,23 +300,13 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         uint256 mintPrice = currentMintPrice();
         require(msg.value >= mintPrice * quantity, "Insufficient payment");
 
-        // [FIX H1] Read cap dynamically from MintWindow instead of hardcoded constant.
-        // This ensures Batches 3–6 use their intended higher window caps.
-        uint256 windowCap = IBlockHuntMint(mintWindowContract).windowCapForBatch(
-            IBlockHuntMint(mintWindowContract).currentBatch()
-        );
-        uint256 dayRemaining = windowCap - windowDayMinted;
-        require(dayRemaining > 0, "Window cap reached");
-        uint256 allocated = quantity > dayRemaining ? dayRemaining : quantity;
-
+        uint256 allocated = quantity;
         uint256 totalCost = mintPrice * allocated;
 
         if (msg.value > totalCost) {
             (bool refunded, ) = payable(msg.sender).call{value: msg.value - totalCost}("");
             require(refunded, "Refund failed");
         }
-
-        windowDayMinted += allocated;
 
         if (vrfEnabled) {
             _mintVRF(allocated, totalCost);
@@ -294,7 +322,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
             VRFV2PlusClient.RandomWordsRequest({
                 keyHash:             vrfKeyHash,
                 subId:               vrfSubscriptionId,
-                requestConfirmations: 3,
+                requestConfirmations: vrfRequestConfirmations,
                 callbackGasLimit:    _gasLimitForQuantity(allocated),
                 numWords:            1,
                 extraArgs:           VRFV2PlusClient._argsToBytes(
@@ -305,13 +333,16 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
 
         vrfMintRequests[requestId] = MintRequest({
             player:      msg.sender,
-            quantity:    allocated,
-            amountPaid:  totalCost,
-            requestedAt: block.timestamp,
-            windowDay:   currentWindowDay
+            quantity:    uint32(allocated),
+            fulfilled:   false,
+            claimed:     false,
+            amountPaid:  uint128(totalCost),
+            requestedAt: uint64(block.timestamp),
+            seed:        0
         });
 
         pendingRequestsByPlayer[msg.sender].push(requestId);
+        pendingIndexPlusOne[requestId] = pendingRequestsByPlayer[msg.sender].length;
 
         emit MintRequested(msg.sender, requestId, allocated);
     }
@@ -320,22 +351,40 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         uint256 requestId,
         uint256[] calldata randomWords
     ) internal override {
-        MintRequest memory req = vrfMintRequests[requestId];
-
+        MintRequest storage req = vrfMintRequests[requestId];
         if (req.player == address(0)) return;
 
+        uint32 threshold = lazyRevealThreshold;
+        if (threshold == 0 || req.quantity <= threshold) {
+            _executeMint(requestId, randomWords[0]);
+            delete vrfMintRequests[requestId];
+        } else {
+            req.seed = randomWords[0];
+            req.fulfilled = true;
+            emit MintFulfilled(req.player, requestId, req.quantity);
+        }
+    }
+
+    function claimMint(uint256 requestId) external nonReentrant whenNotPaused {
+        MintRequest storage req = vrfMintRequests[requestId];
+        require(req.fulfilled && !req.claimed, "Not claimable");
+        req.claimed = true;
+        _executeMint(requestId, req.seed);
         delete vrfMintRequests[requestId];
+    }
+
+    function _executeMint(uint256 requestId, uint256 seed) internal {
+        MintRequest memory req = vrfMintRequests[requestId];
         _removePendingRequest(req.player, requestId);
 
         uint256 allocated = req.quantity;
-        uint256 seed      = randomWords[0];
-
         totalMinted += allocated;
 
+        (uint256 t2T, uint256 t3T, uint256 t4T) = _getTierThresholds();
         uint256[8] memory tierCounts;
         for (uint256 i = 0; i < allocated; i++) {
             uint256 derived = uint256(keccak256(abi.encodePacked(seed, i)));
-            uint256 tier    = _assignTier(derived);
+            uint256 tier    = _assignTierCached(derived, t2T, t3T, t4T);
             tierCounts[tier]++;
         }
 
@@ -361,7 +410,20 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         IBlockHuntTreasury(treasuryContract).receiveMintFunds{value: req.amountPaid}();
 
         _mintBatch(req.player, ids, amounts, "");
-        IBlockHuntMint(mintWindowContract).recordMint(req.player, allocated);
+
+        try IBlockHuntMint(mintWindowContract).recordMint(req.player, allocated) {}
+        catch { emit RecordMintFailed(req.player, uint32(allocated)); }
+
+        if (countdownContract != address(0)) {
+            try IBlockHuntCountdown(countdownContract).recordProgression(req.player, allocated) {}
+            catch { emit RecordProgressionFailed(req.player, uint32(allocated)); }
+        }
+
+        uint256 today = block.timestamp / 86400;
+        if (!dailyEligible[today][req.player]) {
+            dailyEligible[today][req.player] = true;
+            dailyMinterCount[today]++;
+        }
 
         emit BlockMinted(req.player, allocated);
         emit MintFulfilled(req.player, requestId, allocated);
@@ -374,15 +436,16 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
 
         require(req.player != address(0),               "Request not found");
         require(req.player == msg.sender,               "Not your request");
+        if (req.fulfilled) {
+            require(!req.claimed, "Already claimed");
+        }
         require(
-            block.timestamp >= req.requestedAt + MINT_REQUEST_TTL,
-            "Too early to cancel: request is within the 1 hour window"
+            block.timestamp >= uint256(req.requestedAt) + mintRequestTTL,
+            "Too early to cancel"
         );
 
         delete vrfMintRequests[requestId];
         _removePendingRequest(msg.sender, requestId);
-
-        windowDayMinted -= req.quantity;
 
         (bool sent, ) = payable(msg.sender).call{value: req.amountPaid}("");
         require(sent, "Refund failed");
@@ -405,12 +468,18 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
 
         totalMinted += allocated;
 
-        // Step 1: roll tiers and tally into buckets
+        // Step 1: roll tiers and tally into buckets (cached thresholds + single nonce write)
+        (uint256 t2T, uint256 t3T, uint256 t4T) = _getTierThresholds();
+        uint256 nonceStart = _nonce;
         uint256[8] memory tierCounts;
         for (uint256 i = 0; i < allocated; i++) {
-            uint256 tier = _rollTier(i);
+            uint256 rand = uint256(keccak256(abi.encodePacked(
+                block.prevrandao, block.timestamp, msg.sender, nonceStart + i + 1, i
+            )));
+            uint256 tier = _assignTierCached(rand, t2T, t3T, t4T);
             tierCounts[tier]++;
         }
+        _nonce = nonceStart + allocated;
 
         // Step 2: update tierTotalSupply
         for (uint256 t = 2; t <= 7; t++) {
@@ -435,6 +504,13 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
 
         _mintBatch(msg.sender, ids, amounts, "");
         IBlockHuntMint(mintWindowContract).recordMint(msg.sender, allocated);
+
+        uint256 today = block.timestamp / 86400;
+        if (!dailyEligible[today][msg.sender]) {
+            dailyEligible[today][msg.sender] = true;
+            dailyMinterCount[today]++;
+        }
+
         emit BlockMinted(msg.sender, allocated);
         _checkCountdownTrigger(msg.sender);
     }
@@ -462,6 +538,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
 
     // [FIX C1] Same fix applied here — fromTier >= 3.
     function combineMany(uint256[] calldata fromTiers) external nonReentrant whenNotPaused {
+        require(fromTiers.length > 0 && fromTiers.length <= 50, "Invalid length");
         for (uint256 i = 0; i < fromTiers.length; i++) {
             uint256 fromTier = fromTiers[i];
             require(fromTier >= 3 && fromTier <= 7, "Invalid tier");
@@ -505,6 +582,19 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         tierTotalSupply[tier] -= burnCount;
     }
 
+    function forgeRefund(address to, uint256 tier, uint256 amount) external onlyForge {
+        _mint(to, tier, amount, "");
+        tierTotalSupply[tier] += amount;
+    }
+
+    function rewardMint(address to, uint32 quantity) external {
+        require(msg.sender == rewardsContract, "Only rewards");
+        require(quantity > 0, "Zero quantity");
+        _mint(to, 6, quantity, "");
+        tierTotalSupply[6] += quantity;
+        emit RewardMinted(to, quantity);
+    }
+
     function resolveForge(address player, uint256 fromTier, bool success)
         external onlyForge nonReentrant
     {
@@ -527,16 +617,11 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         require(countdownActive, "No countdown active");
         require(msg.sender == countdownHolder, "Not the countdown holder");
         require(
-            block.timestamp >= countdownStartTime + countdownDuration,
+            block.timestamp >= countdownStartTime + _countdownDuration(),
             "Countdown still running"
         );
         _verifyHoldsAllTiers(msg.sender);
-
-        for (uint256 tier = 2; tier <= 7; tier++) {
-            uint256 bal = balanceOf(msg.sender, tier);
-            _burn(msg.sender, tier, bal);
-            tierTotalSupply[tier] -= bal;
-        }
+        _burnOnePerTier(msg.sender);
 
         IBlockHuntTreasury(treasuryContract).claimPayout(msg.sender);
         emit OriginClaimed(msg.sender);
@@ -559,23 +644,17 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         require(countdownActive, "No countdown active");
         require(msg.sender == countdownHolder, "Not the countdown holder");
         require(
-            block.timestamp >= countdownStartTime + countdownDuration,
+            block.timestamp >= countdownStartTime + _countdownDuration(),
             "Countdown still running"
         );
         _verifyHoldsAllTiers(msg.sender);
-
-        for (uint256 tier = 2; tier <= 7; tier++) {
-            uint256 bal = balanceOf(msg.sender, tier);
-            _burn(msg.sender, tier, bal);
-            tierTotalSupply[tier] -= bal;
-        }
+        _burnOnePerTier(msg.sender);
 
         _mint(msg.sender, TIER_ORIGIN, 1, "");
         tierTotalSupply[TIER_ORIGIN]++;
 
-        // Treasury sends 100% ETH to Escrow; Escrow handles the 50/40/10 split
-        IBlockHuntTreasury(treasuryContract).sacrificePayout(msg.sender);
-        IBlockHuntEscrow(escrowContract).initiateSacrifice(msg.sender);
+        uint256 sacrificeAmount = IBlockHuntTreasury(treasuryContract).sacrificePayout(msg.sender);
+        IBlockHuntEscrow(escrowContract).initiateSacrifice(msg.sender, sacrificeAmount);
 
         emit OriginSacrificed(msg.sender);
 
@@ -591,25 +670,22 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
      */
     function executeDefaultOnExpiry() external nonReentrant {
         require(countdownActive, "No countdown active");
-        require(
-            block.timestamp >= countdownStartTime + countdownDuration,
-            "Countdown still running"
-        );
+        uint256 expiry = countdownStartTime + _countdownDuration();
+        require(block.timestamp >= expiry, "Countdown still running");
+
+        if (block.timestamp < expiry + 15 minutes) {
+            require(msg.sender == countdownHolder, "Holder grace period active");
+        }
 
         address holder = countdownHolder;
         _verifyHoldsAllTiers(holder);
-
-        for (uint256 tier = 2; tier <= 7; tier++) {
-            uint256 bal = balanceOf(holder, tier);
-            _burn(holder, tier, bal);
-            tierTotalSupply[tier] -= bal;
-        }
+        _burnOnePerTier(holder);
 
         _mint(holder, TIER_ORIGIN, 1, "");
         tierTotalSupply[TIER_ORIGIN]++;
 
-        IBlockHuntTreasury(treasuryContract).sacrificePayout(holder);
-        IBlockHuntEscrow(escrowContract).initiateSacrifice(holder);
+        uint256 sacrificeAmount = IBlockHuntTreasury(treasuryContract).sacrificePayout(holder);
+        IBlockHuntEscrow(escrowContract).initiateSacrifice(holder, sacrificeAmount);
         emit OriginSacrificed(holder);
         emit DefaultSacrificeExecuted(holder, msg.sender);
 
@@ -673,10 +749,32 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         countdownStartTime = block.timestamp;
 
         if (countdownContract != address(0)) {
-            IBlockHuntCountdown(countdownContract).startCountdown(player);
+            try IBlockHuntCountdown(countdownContract).startCountdown(player) {}
+            catch { emit CountdownCheckFailed(); }
         }
 
         emit CountdownTriggered(player);
+    }
+
+    function _burnOnePerTier(address player) internal {
+        uint256[] memory ids = new uint256[](6);
+        uint256[] memory amounts = new uint256[](6);
+        for (uint256 i = 0; i < 6; i++) {
+            ids[i]     = i + 2;
+            amounts[i] = 1;
+            tierTotalSupply[i + 2] -= 1;
+        }
+        _burnBatch(player, ids, amounts);
+
+        if (countdownContract != address(0)) {
+            try IBlockHuntCountdown(countdownContract).eliminatePlayer(player) {}
+            catch {}
+        }
+    }
+
+    function _countdownDuration() internal view returns (uint256) {
+        if (countdownContract == address(0)) return 7 days;
+        return IBlockHuntCountdown(countdownContract).countdownDuration();
     }
 
     function _verifyHoldsAllTiers(address player) internal view {
@@ -686,8 +784,8 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     }
 
     function _gasLimitForQuantity(uint256 quantity) internal view returns (uint32) {
-        uint256 computed = uint256(vrfCallbackGasLimit) + quantity * uint256(VRF_GAS_PER_BLOCK);
-        return computed > uint256(VRF_GAS_MAX) ? VRF_GAS_MAX : uint32(computed);
+        uint256 computed = uint256(vrfCallbackGasLimit) + quantity * uint256(vrfGasPerBlock);
+        return computed > uint256(vrfGasMax) ? vrfGasMax : uint32(computed);
     }
 
     function _rollTier(uint256 salt) internal returns (uint256) {
@@ -721,7 +819,12 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
 
     function _assignTier(uint256 randomWord) internal view returns (uint256) {
         (uint256 t2T, uint256 t3T, uint256 t4T) = _getTierThresholds();
+        return _assignTierCached(randomWord, t2T, t3T, t4T);
+    }
 
+    function _assignTierCached(
+        uint256 randomWord, uint256 t2T, uint256 t3T, uint256 t4T
+    ) internal pure returns (uint256) {
         uint256 roll = randomWord % DENOM;
 
         if (roll < t2T) return TIER_WILLFUL;
@@ -747,15 +850,18 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     }
 
     function _removePendingRequest(address player, uint256 requestId) internal {
-        uint256[] storage pending = pendingRequestsByPlayer[player];
-        uint256 len = pending.length;
-        for (uint256 i = 0; i < len; i++) {
-            if (pending[i] == requestId) {
-                pending[i] = pending[len - 1];
-                pending.pop();
-                return;
-            }
+        uint256 idxPlusOne = pendingIndexPlusOne[requestId];
+        if (idxPlusOne == 0) return;
+        uint256 idx = idxPlusOne - 1;
+        uint256[] storage arr = pendingRequestsByPlayer[player];
+        uint256 last = arr.length - 1;
+        if (idx != last) {
+            uint256 moved = arr[last];
+            arr[idx] = moved;
+            pendingIndexPlusOne[moved] = idx + 1;
         }
+        arr.pop();
+        delete pendingIndexPlusOne[requestId];
     }
 
     // ── VIEW HELPERS ──────────────────────────────────────────────────────────
@@ -777,7 +883,6 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
 
     function resetDailyWindow(uint256 newDay) external onlyMintWindow {
         currentWindowDay = newDay;
-        windowDayMinted  = 0;
     }
 
     function supportsInterface(bytes4 interfaceId)

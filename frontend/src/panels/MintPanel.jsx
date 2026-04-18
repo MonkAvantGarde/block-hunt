@@ -298,11 +298,11 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatu
           address: CONTRACTS.TOKEN, chainId: 84532, abi: TOKEN_ABI,
           functionName: 'vrfMintRequests', args: [rid],
         })
-        // vrfMintRequests returns tuple: [player, quantity, amountPaid, requestedAt, windowDay]
+        // vrfMintRequests returns tuple: [player, quantity, fulfilled, claimed, amountPaid, requestedAt, seed]
         const player = req[0] || req.player
         const quantity = req[1] || req.quantity
-        const amountPaid = req[2] || req.amountPaid
-        const requestedAt = req[3] || req.requestedAt
+        const amountPaid = req[4] || req.amountPaid
+        const requestedAt = req[5] || req.requestedAt
         if (!player || player === '0x0000000000000000000000000000000000000000' || player.toLowerCase() !== address.toLowerCase()) continue
         toAdd.push({
           id: 'recovered_' + ridStr,

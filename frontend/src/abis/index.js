@@ -47,9 +47,10 @@ export const TOKEN_ABI = [
   { name: 'vrfMintRequests', type: 'function', stateMutability: 'view',
     inputs: [{ name: '', type: 'uint256' }],
     outputs: [
-      { name: 'player', type: 'address' }, { name: 'quantity', type: 'uint256' },
-      { name: 'amountPaid', type: 'uint256' }, { name: 'requestedAt', type: 'uint256' },
-      { name: 'windowDay', type: 'uint256' },
+      { name: 'player', type: 'address' }, { name: 'quantity', type: 'uint32' },
+      { name: 'fulfilled', type: 'bool' }, { name: 'claimed', type: 'bool' },
+      { name: 'amountPaid', type: 'uint128' }, { name: 'requestedAt', type: 'uint64' },
+      { name: 'seed', type: 'uint256' },
     ] },
 
   // ── Write ──
@@ -189,12 +190,9 @@ export const COUNTDOWN_ABI = [
       { name: 'active', type: 'bool' }, { name: 'holder', type: 'address' },
       { name: 'startTime', type: 'uint256' }, { name: 'endTime', type: 'uint256' },
       { name: 'remaining', type: 'uint256' },
-      { name: 'burnVotes', type: 'uint256' }, { name: 'claimVotes', type: 'uint256' },
     ] },
   { name: 'checkHolderStatus', type: 'function', stateMutability: 'nonpayable',
     inputs: [], outputs: [] },
-  { name: 'castVote', type: 'function', stateMutability: 'nonpayable',
-    inputs: [{ name: 'burnVote', type: 'bool' }], outputs: [] },
   { name: 'timeRemaining', type: 'function', stateMutability: 'view',
     inputs: [], outputs: [{ name: '', type: 'uint256' }] },
   { name: 'hasExpired', type: 'function', stateMutability: 'view',
@@ -206,12 +204,8 @@ export const COUNTDOWN_ABI = [
   { name: 'calculateScore', type: 'function', stateMutability: 'view',
     inputs: [{ name: 'player', type: 'address' }],
     outputs: [{ name: '', type: 'uint256' }] },
-  // Phase 5: round-based voting (H-3 fix — replaces voter list)
   { name: 'countdownRound', type: 'function', stateMutability: 'view',
     inputs: [], outputs: [{ name: '', type: 'uint256' }] },
-  { name: 'hasVoted', type: 'function', stateMutability: 'view',
-    inputs: [{ name: '', type: 'uint256' }, { name: '', type: 'address' }],
-    outputs: [{ name: '', type: 'bool' }] },
   { name: 'holderScore', type: 'function', stateMutability: 'view',
     inputs: [], outputs: [{ name: '', type: 'uint256' }] },
   { name: 'lastChallengeTime', type: 'function', stateMutability: 'view',
@@ -242,9 +236,6 @@ export const COUNTDOWN_ABI = [
     { name: 'timestamp', type: 'uint256', indexed: false }] },
   { name: 'CountdownReset', type: 'event', inputs: [
     { name: 'formerHolder', type: 'address', indexed: true }] },
-  { name: 'VoteCast', type: 'event', inputs: [
-    { name: 'voter', type: 'address', indexed: true },
-    { name: 'burnVote', type: 'bool', indexed: false }] },
 ];
 
 

@@ -58,7 +58,7 @@ contract Deploy is Script {
     address constant VRF_COORDINATOR = 0x5C210eF41CD1a72de73bF76eC39637bB0d3d7BEE;
     bytes32 constant VRF_KEY_HASH = 0x9e1344a1247c8a1785d0a4681a27152bffdb43666ae5bf7d14d24a5efd44bf71;
     uint256 constant VRF_SUB_ID = 57750058386053786990998297633685375559871666481243777791923539169896613845120;
-    uint32 constant TOKEN_VRF_GAS = 2_500_000;
+    uint32 constant TOKEN_VRF_GAS = 650_000;
     uint32 constant FORGE_VRF_GAS = 300_000;
 
     // Old addresses (for VRF consumer removal reference)
@@ -148,13 +148,18 @@ contract Deploy is Script {
         console.log("Escrow wired to Token.");
 
         forge.setTokenContract(address(token));
-        console.log("Forge wired to Token.");
+        forge.setCountdownContract(address(countdown));
+        console.log("Forge wired to Token + Countdown.");
 
         mintWindow.setTokenContract(address(token));
         console.log("MintWindow wired to Token.");
 
         countdown.setTokenContract(address(token));
-        console.log("Countdown wired to Token.");
+        countdown.setForgeContract(address(forge));
+        console.log("Countdown wired to Token + Forge.");
+
+        rewards.setTokenContract(address(token));
+        console.log("Rewards wired to Token.");
 
         // ── Step 4: Configure VRF ──────────────────────────────────────────
 
@@ -166,10 +171,18 @@ contract Deploy is Script {
         // forge.setVrfEnabled(true);
         console.log("VRF configured (disabled until consumers added on dashboard).");
 
-        // ── Step 5: Minting is always open (no window to open) ────────────
+        // ── Step 5: Post-deploy config (redeploy hardening) ───────────────
+
+        token.setVrfGasParams(10_000, 2_500_000);
+        token.setMintRequestTTL(10 minutes);
+        token.setLazyRevealThreshold(0);
+        token.setRewardsContract(address(rewards));
+        console.log("Token config: VRF gas 28k/15M, TTL 10min, lazy reveal OFF, rewards wired.");
+
+        // ── Step 6: Minting is always open (no window to open) ────────────
         console.log("Minting is always open (per-player cooldown model).");
 
-        // ── Step 6: Register Season 1 ──────────────────────────────────────
+        // ── Step 7: Register Season 1 ──────────────────────────────────────
 
         registry.registerSeason(
             1,
@@ -201,9 +214,14 @@ contract Deploy is Script {
         console.log("  REWARDS:   ", address(rewards));
         console.log("");
         console.log("  SETTINGS:");
-        console.log("  Countdown:   7 days (default)");
-        console.log("  Safe period: 24 hours (default)");
-        console.log("  VRF:         disabled (enable after adding consumers)");
+        console.log("  Countdown:     7 days (default)");
+        console.log("  Safe period:   24 hours (default)");
+        console.log("  Creator fee:   20% (default)");
+        console.log("  VRF gas:       28k/block, 15M max");
+        console.log("  Mint TTL:      10 minutes");
+        console.log("  Lazy reveal:   disabled");
+        console.log("  Grace period:  15 minutes (holder-exclusive)");
+        console.log("  VRF:           disabled (enable after adding consumers)");
         console.log("");
         console.log("=================================================");
         console.log("  MANUAL STEPS:");
