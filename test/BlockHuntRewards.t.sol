@@ -1,778 +1,395 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.28;
 
 import "forge-std/Test.sol";
 import "../src/BlockHuntRewards.sol";
 
-contract BlockHuntRewardsTest is Test {
+contract MockTokenForRewards {
+    mapping(address => uint256) public t6Balance;
 
-    BlockHuntRewards public rewards;
-
-    address public owner    = address(this);
-    address public alice    = address(0xA11CE);
-    address public bob      = address(0xB0B);
-    address public charlie  = address(0xC0C);
-    address public founder  = address(0xF00);
-
-    function setUp() public {
-        rewards = new BlockHuntRewards();
+    function rewardMint(address to, uint32 quantity) external {
+        t6Balance[to] += quantity;
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    //  DEPOSIT & CONFIGURATION
-    // ═══════════════════════════════════════════════════════════════════════
-
-    function test_deposit() public {
-        rewards.deposit{value: 0.5 ether}(1, 6000, 2600, 1400);
-
-        (uint256 totalDeposit, uint16 lotteryBps, uint16 firstsBps, uint16 bountyBps, bool active,) =
-            rewards.batchConfigs(1);
-
-        assertEq(totalDeposit, 0.5 ether);
-        assertEq(lotteryBps, 6000);
-        assertEq(firstsBps, 2600);
-        assertEq(bountyBps, 1400);
-        assertTrue(active);
-    }
-
-    function test_deposit_reverts_if_already_funded() public {
-        rewards.deposit{value: 0.5 ether}(1, 6000, 2600, 1400);
-        vm.expectRevert("Batch already funded");
-        rewards.deposit{value: 0.5 ether}(1, 6000, 2600, 1400);
-    }
-
-    function test_deposit_reverts_if_ratios_exceed_100() public {
-        vm.expectRevert("Ratios exceed 100%");
-        rewards.deposit{value: 0.5 ether}(1, 5000, 4000, 2000);
-    }
-
-    function test_deposit_reverts_for_invalid_batch() public {
-        vm.expectRevert("Invalid batch");
-        rewards.deposit{value: 0.5 ether}(0, 6000, 2600, 1400);
-
-        vm.expectRevert("Invalid batch");
-        rewards.deposit{value: 0.5 ether}(11, 6000, 2600, 1400);
-    }
-
-    function test_deposit_reverts_from_non_owner() public {
-        vm.deal(alice, 1 ether);
-        vm.prank(alice);
-        vm.expectRevert();
-        rewards.deposit{value: 0.5 ether}(1, 6000, 2600, 1400);
-    }
-
-    function test_topUp() public {
-        rewards.deposit{value: 0.5 ether}(1, 6000, 2600, 1400);
-        rewards.topUp{value: 0.3 ether}(1);
-
-        (uint256 totalDeposit,,,,, ) = rewards.batchConfigs(1);
-        assertEq(totalDeposit, 0.8 ether);
-    }
-
-    function test_topUp_reverts_if_not_funded() public {
-        vm.expectRevert("Batch not funded");
-        rewards.topUp{value: 0.3 ether}(1);
-    }
-
-    function test_updateRatios() public {
-        rewards.deposit{value: 1 ether}(1, 6000, 2600, 1400);
-        rewards.updateRatios(1, 5000, 3000, 2000);
-
-        (, uint16 lotteryBps, uint16 firstsBps, uint16 bountyBps,,) = rewards.batchConfigs(1);
-        assertEq(lotteryBps, 5000);
-        assertEq(firstsBps, 3000);
-        assertEq(bountyBps, 2000);
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    //  PROPORTIONAL SUB-POOL VIEWS
-    // ═══════════════════════════════════════════════════════════════════════
-
-    function test_subPool_calculation() public {
-        rewards.deposit{value: 1 ether}(1, 6000, 2600, 1400);
-
-        assertEq(rewards.lotteryPool(1), 0.6 ether);
-        assertEq(rewards.firstsPool(1), 0.26 ether);
-        assertEq(rewards.bountyPool(1), 0.14 ether);
-    }
-
-    function test_subPools_rescale_on_topUp() public {
-        rewards.deposit{value: 1 ether}(1, 6000, 2600, 1400);
-        rewards.topUp{value: 1 ether}(1);
-
-        // Pools should double
-        assertEq(rewards.lotteryPool(1), 1.2 ether);
-        assertEq(rewards.firstsPool(1), 0.52 ether);
-        assertEq(rewards.bountyPool(1), 0.28 ether);
-    }
-
-    function test_subPools_rescale_on_ratioChange() public {
-        rewards.deposit{value: 1 ether}(1, 6000, 2600, 1400);
-        rewards.updateRatios(1, 4000, 4000, 2000);
-
-        assertEq(rewards.lotteryPool(1), 0.4 ether);
-        assertEq(rewards.firstsPool(1), 0.4 ether);
-        assertEq(rewards.bountyPool(1), 0.2 ether);
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    //  DAILY LOTTERY
-    // ═══════════════════════════════════════════════════════════════════════
-
-    function test_dailyDraw_resolve_and_claim() public {
-        rewards.deposit{value: 1 ether}(1, 6000, 2600, 1400);
-        rewards.setDailyPrize(1, 0.01 ether);
-
-        address[] memory wallets = new address[](3);
-        wallets[0] = alice;
-        wallets[1] = bob;
-        wallets[2] = charlie;
-
-        // randomSeed=0 → winner index 0 = alice
-        rewards.resolveDailyDraw(1, 1, wallets, 0);
-
-        (uint256 batch, uint256 prize, address winner, uint256 resolvedAt, bool claimed) =
-            rewards.dailyDraws(1);
-
-        assertEq(batch, 1);
-        assertEq(prize, 0.01 ether);
-        assertEq(winner, alice);
-        assertTrue(resolvedAt > 0);
-        assertFalse(claimed);
-
-        // Alice claims
-        vm.prank(alice);
-        rewards.claimDailyPrize(1);
-
-        (,,,, claimed) = rewards.dailyDraws(1);
-        assertTrue(claimed);
-        assertEq(alice.balance, 0.01 ether);
-    }
-
-    function test_dailyDraw_selects_correct_winner() public {
-        rewards.deposit{value: 1 ether}(1, 6000, 2600, 1400);
-        rewards.setDailyPrize(1, 0.01 ether);
-
-        address[] memory wallets = new address[](3);
-        wallets[0] = alice;
-        wallets[1] = bob;
-        wallets[2] = charlie;
-
-        // randomSeed=1 → 1 % 3 = 1 → bob
-        rewards.resolveDailyDraw(1, 1, wallets, 1);
-        (, , address winner,,) = rewards.dailyDraws(1);
-        assertEq(winner, bob);
-    }
-
-    function test_dailyDraw_reverts_already_resolved() public {
-        rewards.deposit{value: 1 ether}(1, 6000, 2600, 1400);
-        rewards.setDailyPrize(1, 0.01 ether);
-
-        address[] memory wallets = new address[](1);
-        wallets[0] = alice;
-
-        rewards.resolveDailyDraw(1, 1, wallets, 0);
-        vm.expectRevert("Day already resolved");
-        rewards.resolveDailyDraw(1, 1, wallets, 0);
-    }
-
-    function test_dailyPrize_claim_reverts_non_winner() public {
-        rewards.deposit{value: 1 ether}(1, 6000, 2600, 1400);
-        rewards.setDailyPrize(1, 0.01 ether);
-
-        address[] memory wallets = new address[](1);
-        wallets[0] = alice;
-        rewards.resolveDailyDraw(1, 1, wallets, 0);
-
-        vm.prank(bob);
-        vm.expectRevert("Not the winner");
-        rewards.claimDailyPrize(1);
-    }
-
-    function test_dailyPrize_claim_reverts_expired() public {
-        rewards.deposit{value: 1 ether}(1, 6000, 2600, 1400);
-        rewards.setDailyPrize(1, 0.01 ether);
-
-        address[] memory wallets = new address[](1);
-        wallets[0] = alice;
-        rewards.resolveDailyDraw(1, 1, wallets, 0);
-
-        vm.warp(block.timestamp + 31 days);
-        vm.prank(alice);
-        vm.expectRevert("Claim window expired");
-        rewards.claimDailyPrize(1);
-    }
-
-    // Fix 1: Pool exhaustion reverts at resolve time, not claim time
-    function test_dailyDraw_reverts_when_pool_exhausted() public {
-        rewards.deposit{value: 0.1 ether}(1, 1000, 0, 0); // 10% = 0.01 ETH lottery
-        rewards.setDailyPrize(1, 0.01 ether);
-
-        address[] memory wallets = new address[](1);
-        wallets[0] = alice;
-
-        rewards.resolveDailyDraw(1, 1, wallets, 0);
-
-        // Pool committed at resolve time — second resolve should revert immediately
-        vm.expectRevert("Lottery pool exhausted");
-        rewards.resolveDailyDraw(2, 1, wallets, 0);
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    //  BATCH FIRSTS
-    // ═══════════════════════════════════════════════════════════════════════
-
-    function test_batchFirst_award_and_claim() public {
-        rewards.deposit{value: 1 ether}(1, 0, 10000, 0); // 100% to firsts
-
-        rewards.setBatchFirstWinner(1, 0, alice);
-
-        (address winner, uint256 prize, uint256 awardedAt, bool claimed) =
-            rewards.batchFirsts(1, 0);
-
-        assertEq(winner, alice);
-        assertEq(prize, uint256(1 ether) / 13);
-        assertTrue(awardedAt > 0);
-        assertFalse(claimed);
-
-        vm.prank(alice);
-        rewards.claimBatchFirst(1, 0);
-
-        (,,, claimed) = rewards.batchFirsts(1, 0);
-        assertTrue(claimed);
-    }
-
-    function test_batchFirst_custom_prize() public {
-        rewards.deposit{value: 1 ether}(1, 0, 10000, 0);
-        rewards.setFirstPrize(1, 0, 0.05 ether);
-
-        rewards.setBatchFirstWinner(1, 0, alice);
-        (, uint256 prize,,) = rewards.batchFirsts(1, 0);
-        assertEq(prize, 0.05 ether);
-    }
-
-    function test_batchFirst_reverts_already_awarded() public {
-        rewards.deposit{value: 1 ether}(1, 0, 10000, 0);
-        rewards.setBatchFirstWinner(1, 0, alice);
-
-        vm.expectRevert("Already awarded");
-        rewards.setBatchFirstWinner(1, 0, bob);
-    }
-
-    function test_batchFirst_claim_reverts_non_winner() public {
-        rewards.deposit{value: 1 ether}(1, 0, 10000, 0);
-        rewards.setBatchFirstWinner(1, 0, alice);
-
-        vm.prank(bob);
-        vm.expectRevert("Not the winner");
-        rewards.claimBatchFirst(1, 0);
-    }
-
-    function test_batchFirst_claim_reverts_expired() public {
-        rewards.deposit{value: 1 ether}(1, 0, 10000, 0);
-        rewards.setBatchFirstWinner(1, 0, alice);
-
-        vm.warp(block.timestamp + 31 days);
-
-        vm.prank(alice);
-        vm.expectRevert("Claim window expired");
-        rewards.claimBatchFirst(1, 0);
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    //  BATCH BOUNTY (two-step: addBatchBountyRecipients + finalizeBatchBounty)
-    // ═══════════════════════════════════════════════════════════════════════
-
-    function test_batchBounty_set_and_claim() public {
-        rewards.deposit{value: 1 ether}(1, 0, 0, 10000); // 100% to bounty
-
-        address[] memory wallets = new address[](4);
-        wallets[0] = alice;
-        wallets[1] = bob;
-        wallets[2] = charlie;
-        wallets[3] = founder;
-
-        rewards.addBatchBountyRecipients(1, wallets);
-        rewards.finalizeBatchBounty(1);
-
-        (uint256 totalRecipients, uint256 perWalletShare,, bool distributed) =
-            rewards.batchBounties(1);
-
-        assertEq(totalRecipients, 4);
-        assertEq(perWalletShare, 0.25 ether);
-        assertTrue(distributed);
-
-        vm.prank(alice);
-        rewards.claimBatchBounty(1);
-        assertEq(alice.balance, 0.25 ether);
-
-        vm.prank(bob);
-        rewards.claimBatchBounty(1);
-        assertEq(bob.balance, 0.25 ether);
-    }
-
-    function test_batchBounty_reverts_not_entitled() public {
-        rewards.deposit{value: 1 ether}(1, 0, 0, 10000);
-
-        address[] memory wallets = new address[](1);
-        wallets[0] = alice;
-        rewards.addBatchBountyRecipients(1, wallets);
-        rewards.finalizeBatchBounty(1);
-
-        vm.prank(bob);
-        vm.expectRevert("Not entitled");
-        rewards.claimBatchBounty(1);
-    }
-
-    function test_batchBounty_reverts_double_claim() public {
-        rewards.deposit{value: 1 ether}(1, 0, 0, 10000);
-
-        address[] memory wallets = new address[](1);
-        wallets[0] = alice;
-        rewards.addBatchBountyRecipients(1, wallets);
-        rewards.finalizeBatchBounty(1);
-
-        vm.prank(alice);
-        rewards.claimBatchBounty(1);
-
-        vm.prank(alice);
-        vm.expectRevert("Already claimed");
-        rewards.claimBatchBounty(1);
-    }
-
-    function test_batchBounty_reverts_expired() public {
-        rewards.deposit{value: 1 ether}(1, 0, 0, 10000);
-
-        address[] memory wallets = new address[](1);
-        wallets[0] = alice;
-        rewards.addBatchBountyRecipients(1, wallets);
-        rewards.finalizeBatchBounty(1);
-
-        vm.warp(block.timestamp + 31 days);
-
-        vm.prank(alice);
-        vm.expectRevert("Claim window expired");
-        rewards.claimBatchBounty(1);
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    //  DYNAMIC ADJUSTMENT — THE KEY FEATURE
-    // ═══════════════════════════════════════════════════════════════════════
-
-    function test_topUp_increases_all_subPools() public {
-        rewards.deposit{value: 1 ether}(1, 6000, 2600, 1400);
-
-        // Before topup
-        assertEq(rewards.lotteryPool(1), 0.6 ether);
-        assertEq(rewards.firstsPool(1), 0.26 ether);
-        assertEq(rewards.bountyPool(1), 0.14 ether);
-
-        rewards.topUp{value: 1 ether}(1);
-
-        // After topup — all doubled proportionally
-        assertEq(rewards.lotteryPool(1), 1.2 ether);
-        assertEq(rewards.firstsPool(1), 0.52 ether);
-        assertEq(rewards.bountyPool(1), 0.28 ether);
-    }
-
-    function test_ratio_change_preserves_already_awarded() public {
-        rewards.deposit{value: 1 ether}(1, 6000, 2600, 1400);
-        rewards.setDailyPrize(1, 0.01 ether);
-
-        // Award day 1 with 60% lottery pool
-        address[] memory wallets = new address[](1);
-        wallets[0] = alice;
-        rewards.resolveDailyDraw(1, 1, wallets, 0);
-
-        // Claim
-        vm.prank(alice);
-        rewards.claimDailyPrize(1);
-
-        // Now change ratios — shrink lottery to 20%
-        rewards.updateRatios(1, 2000, 4000, 4000);
-
-        // Lottery pool is now 0.2 ETH, with 0.01 already committed
-        assertEq(rewards.lotteryPool(1), 0.2 ether);
-        assertEq(rewards.lotteryPaidOut(1), 0.01 ether);
-        assertEq(rewards.lotteryRemaining(1), 0.19 ether);
-    }
-
-    function test_full_lifecycle() public {
-        // 1. Deposit batch 1 with design doc ratios
-        rewards.deposit{value: 0.5 ether}(1, 6000, 2600, 1400);
-        rewards.setDailyPrize(1, 0.01 ether);
-
-        // 2. Daily draw day 1
-        address[] memory dayWallets = new address[](2);
-        dayWallets[0] = alice;
-        dayWallets[1] = bob;
-        rewards.resolveDailyDraw(1, 1, dayWallets, 0); // alice wins
-
-        // 3. Batch first: Pioneer
-        rewards.setBatchFirstWinner(1, 0, bob);
-
-        // 4. Game goes well — top up
-        rewards.topUp{value: 0.5 ether}(1);
-
-        // Sub-pools doubled (now based on 1 ETH deposit)
-        assertEq(rewards.lotteryPool(1), 0.6 ether);
-        assertEq(rewards.firstsPool(1), 0.26 ether);
-        assertEq(rewards.bountyPool(1), 0.14 ether);
-
-        // 5. Claims still work
-        vm.prank(alice);
-        rewards.claimDailyPrize(1);
-        assertEq(alice.balance, 0.01 ether);
-
-        vm.prank(bob);
-        rewards.claimBatchFirst(1, 0);
-        // Bob's prize was awarded when pool was 0.13 ETH (0.5 * 26%)
-        // Prize = 0.13 / 13 = 0.01 ETH
-        assertEq(bob.balance, 0.01 ether);
-
-        // 6. Batch sells out — bounty distributed
-        address[] memory minters = new address[](2);
-        minters[0] = alice;
-        minters[1] = charlie;
-        rewards.addBatchBountyRecipients(1, minters);
-        rewards.finalizeBatchBounty(1);
-
-        vm.prank(charlie);
-        rewards.claimBatchBounty(1);
-        assertEq(charlie.balance, 0.07 ether); // 0.14 / 2
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    //  GETCLAIMABLE VIEW
-    // ═══════════════════════════════════════════════════════════════════════
-
-    function test_getClaimable() public {
-        rewards.deposit{value: 1 ether}(1, 6000, 2600, 1400);
-        rewards.setDailyPrize(1, 0.01 ether);
-
-        // Give alice a daily win
-        address[] memory wallets = new address[](1);
-        wallets[0] = alice;
-        rewards.resolveDailyDraw(1, 1, wallets, 0);
-
-        // Give alice a batch first
-        rewards.setBatchFirstWinner(1, 0, alice);
-
-        // Give alice a bounty
-        rewards.addBatchBountyRecipients(1, wallets);
-        rewards.finalizeBatchBounty(1);
-
-        BlockHuntRewards.ClaimableResult memory result = rewards.getClaimable(alice);
-
-        assertEq(result.wonDays.length, 1);
-        assertEq(result.wonDays[0], 1);
-        assertEq(result.wonAmounts[0], 0.01 ether);
-
-        assertEq(result.firstBatches.length, 1);
-        assertEq(result.firstBatches[0], 1);
-        assertEq(result.firstIds[0], 0);
-
-        assertEq(result.bountyBatches.length, 1);
-        assertEq(result.bountyBatches[0], 1);
-    }
-
-    function test_getClaimable_empty_for_non_winner() public {
-        rewards.deposit{value: 1 ether}(1, 6000, 2600, 1400);
-
-        BlockHuntRewards.ClaimableResult memory result = rewards.getClaimable(alice);
-        assertEq(result.wonDays.length, 0);
-        assertEq(result.firstBatches.length, 0);
-        assertEq(result.bountyBatches.length, 0);
-    }
-
-    function test_getClaimable_excludes_expired() public {
-        rewards.deposit{value: 1 ether}(1, 6000, 2600, 1400);
-        rewards.setDailyPrize(1, 0.01 ether);
-
-        address[] memory wallets = new address[](1);
-        wallets[0] = alice;
-        rewards.resolveDailyDraw(1, 1, wallets, 0);
-
-        // Before expiry — should show 1 claimable
-        BlockHuntRewards.ClaimableResult memory before = rewards.getClaimable(alice);
-        assertEq(before.wonDays.length, 1);
-
-        // After expiry — should show 0
-        vm.warp(block.timestamp + 31 days);
-        BlockHuntRewards.ClaimableResult memory after_ = rewards.getClaimable(alice);
-        assertEq(after_.wonDays.length, 0);
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    //  SWEEP & WITHDRAW
-    // ═══════════════════════════════════════════════════════════════════════
-
-    function test_sweepExpired_daily() public {
-        rewards.deposit{value: 1 ether}(1, 6000, 2600, 1400);
-        rewards.setDailyPrize(1, 0.01 ether);
-
-        address[] memory wallets = new address[](1);
-        wallets[0] = alice;
-        rewards.resolveDailyDraw(1, 1, wallets, 0);
-
-        // Fast forward past claim window
-        vm.warp(block.timestamp + 31 days);
-
-        uint256 founderBefore = founder.balance;
-        rewards.sweepExpired(1, founder);
-        assertEq(founder.balance - founderBefore, 0.01 ether);
-    }
-
-    function test_sweepExpired_batchFirsts() public {
-        rewards.deposit{value: 1 ether}(1, 0, 10000, 0);
-        rewards.setBatchFirstWinner(1, 0, alice);
-
-        vm.warp(block.timestamp + 31 days);
-
-        uint256 founderBefore = founder.balance;
-        rewards.sweepExpired(1, founder);
-        // Should recover the first's prize (1 ether / 13)
-        assertGt(founder.balance - founderBefore, 0);
-    }
-
-    function test_withdrawLeftover_buffer() public {
-        // 60% + 26% + 10% = 96%, so 4% buffer
-        rewards.deposit{value: 1 ether}(1, 6000, 2600, 1000);
-
-        uint256 buffer = 1 ether - rewards.lotteryPool(1) - rewards.firstsPool(1) - rewards.bountyPool(1);
-        assertEq(buffer, 0.04 ether);
-
-        uint256 founderBefore = founder.balance;
-        rewards.withdrawLeftover(1, founder);
-        assertEq(founder.balance - founderBefore, 0.04 ether);
-    }
-
-    // Fix 5: topUp still works after withdrawLeftover
-    function test_topUp_blocked_after_settlement() public {
-        rewards.deposit{value: 1 ether}(1, 6000, 2600, 1000);
-        rewards.withdrawLeftover(1, founder);
-
-        vm.expectRevert(bytes("Batch settled"));
-        rewards.topUp{value: 0.5 ether}(1);
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    //  PAUSE
-    // ═══════════════════════════════════════════════════════════════════════
-
-    function test_pause_blocks_claims() public {
-        rewards.deposit{value: 1 ether}(1, 6000, 2600, 1400);
-        rewards.setDailyPrize(1, 0.01 ether);
-
-        address[] memory wallets = new address[](1);
-        wallets[0] = alice;
-        rewards.resolveDailyDraw(1, 1, wallets, 0);
-
-        rewards.pause();
-
-        vm.prank(alice);
-        vm.expectRevert();
-        rewards.claimDailyPrize(1);
-
-        rewards.unpause();
-
-        vm.prank(alice);
-        rewards.claimDailyPrize(1);
-        assertEq(alice.balance, 0.01 ether);
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    //  EDGE CASES
-    // ═══════════════════════════════════════════════════════════════════════
-
-    function test_setDailyPrize_updatable() public {
-        rewards.deposit{value: 1 ether}(1, 6000, 2600, 1400);
-        rewards.setDailyPrize(1, 0.01 ether);
-        assertEq(rewards.dailyPrize(1), 0.01 ether);
-
-        rewards.setDailyPrize(1, 0.02 ether);
-        assertEq(rewards.dailyPrize(1), 0.02 ether);
-    }
-
-    function test_multiple_batches_independent() public {
-        rewards.deposit{value: 0.5 ether}(1, 6000, 2600, 1400);
-        rewards.deposit{value: 1.0 ether}(2, 4000, 3000, 3000);
-
-        assertEq(rewards.lotteryPool(1), 0.3 ether);
-        assertEq(rewards.lotteryPool(2), 0.4 ether);
-
-        assertEq(rewards.bountyPool(1), 0.07 ether);
-        assertEq(rewards.bountyPool(2), 0.3 ether);
-    }
-
-    function test_emergencyWithdrawRemoved() public {
-        rewards.deposit{value: 1 ether}(1, 6000, 2600, 1400);
-        (bool ok, ) = address(rewards).call(
-            abi.encodeWithSignature("emergencyWithdraw(address,uint256)", address(this), 0.5 ether)
-        );
-        assertFalse(ok, "emergencyWithdraw should not exist");
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    //  FIX 1: POOL COMMITMENT TRACKED AT RESOLVE TIME
-    // ═══════════════════════════════════════════════════════════════════════
-
-    function test_pool_commitment_tracked_at_resolve_time() public {
-        rewards.deposit{value: 0.1 ether}(1, 10000, 0, 0); // 100% lottery = 0.1 ETH
-        rewards.setDailyPrize(1, 0.05 ether);
-
-        address[] memory wallets = new address[](1);
-        wallets[0] = alice;
-
-        // First draw: 0.05 committed, 0.05 remaining
-        rewards.resolveDailyDraw(1, 1, wallets, 0);
-        assertEq(rewards.lotteryRemaining(1), 0.05 ether);
-
-        // Second draw: 0.05 committed, 0 remaining
-        rewards.resolveDailyDraw(2, 1, wallets, 0);
-        assertEq(rewards.lotteryRemaining(1), 0);
-
-        // Third draw: should revert — pool exhausted even though nobody claimed
-        vm.expectRevert("Lottery pool exhausted");
-        rewards.resolveDailyDraw(3, 1, wallets, 0);
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    //  FIX 3: NON-SEQUENTIAL DAY NUMBERS
-    // ═══════════════════════════════════════════════════════════════════════
-
-    function test_nonSequential_days_getClaimable_and_sweep() public {
-        rewards.deposit{value: 1 ether}(1, 10000, 0, 0);
-        rewards.setDailyPrize(1, 0.01 ether);
-
-        address[] memory wallets = new address[](1);
-        wallets[0] = alice;
-
-        // Use non-sequential day numbers
-        rewards.resolveDailyDraw(100, 1, wallets, 0);
-        rewards.resolveDailyDraw(200, 1, wallets, 0);
-
-        // getClaimable should find both
-        BlockHuntRewards.ClaimableResult memory result = rewards.getClaimable(alice);
-        assertEq(result.wonDays.length, 2);
-        assertEq(result.wonDays[0], 100);
-        assertEq(result.wonDays[1], 200);
-
-        // Day range tracking
-        assertEq(rewards.firstDrawDay(), 100);
-        assertEq(rewards.lastDrawDay(), 200);
-
-        // Sweep after expiry
-        vm.warp(block.timestamp + 31 days);
-        uint256 founderBefore = founder.balance;
-        rewards.sweepExpired(1, founder);
-        assertEq(founder.balance - founderBefore, 0.02 ether);
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    //  FIX 4: BATCHED BOUNTY RECIPIENTS
-    // ═══════════════════════════════════════════════════════════════════════
-
-    function test_bounty_batched_recipients() public {
-        rewards.deposit{value: 1 ether}(1, 0, 0, 10000);
-
-        // Add in two batches
-        address[] memory batch1 = new address[](2);
-        batch1[0] = alice;
-        batch1[1] = bob;
-        rewards.addBatchBountyRecipients(1, batch1);
-
-        address[] memory batch2 = new address[](2);
-        batch2[0] = charlie;
-        batch2[1] = founder;
-        rewards.addBatchBountyRecipients(1, batch2);
-
-        rewards.finalizeBatchBounty(1);
-
-        (uint256 totalRecipients, uint256 perWalletShare,, bool distributed) =
-            rewards.batchBounties(1);
-        assertEq(totalRecipients, 4);
-        assertEq(perWalletShare, 0.25 ether);
-        assertTrue(distributed);
-
-        // All can claim
-        vm.prank(alice);
-        rewards.claimBatchBounty(1);
-        assertEq(alice.balance, 0.25 ether);
-    }
-
-    function test_bounty_duplicate_wallets_not_double_counted() public {
-        rewards.deposit{value: 1 ether}(1, 0, 0, 10000);
-
-        address[] memory wallets1 = new address[](2);
-        wallets1[0] = alice;
-        wallets1[1] = bob;
-        rewards.addBatchBountyRecipients(1, wallets1);
-
-        // Add alice again — should not double count
-        address[] memory wallets2 = new address[](1);
-        wallets2[0] = alice;
-        rewards.addBatchBountyRecipients(1, wallets2);
-
-        rewards.finalizeBatchBounty(1);
-
-        (uint256 totalRecipients,,,) = rewards.batchBounties(1);
-        assertEq(totalRecipients, 2); // alice + bob, not 3
-    }
-
-    // ── Keeper role tests ──────────────────────────────────────────────────
-
-    function test_setKeeper() public {
-        address keeperAddr = makeAddr("keeper");
-        rewards.setKeeper(keeperAddr);
-        assertEq(rewards.keeper(), keeperAddr);
-    }
-
-    function test_keeper_can_resolveDailyDraw() public {
-        address keeperAddr = makeAddr("keeper");
-        rewards.setKeeper(keeperAddr);
-
-        rewards.deposit{value: 1 ether}(1, 6000, 2600, 1400);
-        rewards.setDailyPrize(1, 0.01 ether);
-
-        address[] memory wallets = new address[](1);
-        wallets[0] = alice;
-
-        vm.prank(keeperAddr);
-        rewards.resolveDailyDraw(1, 1, wallets, 42);
-
-        (,,address winner,,) = rewards.dailyDraws(1);
-        assertEq(winner, alice);
-    }
-
-    function test_keeper_can_setBatchFirstWinner() public {
-        address keeperAddr = makeAddr("keeper");
-        rewards.setKeeper(keeperAddr);
-
-        rewards.deposit{value: 1 ether}(1, 6000, 2600, 1400);
-
-        vm.prank(keeperAddr);
-        rewards.setBatchFirstWinner(1, 0, alice);
-
-        (address winner,,,) = rewards.batchFirsts(1, 0);
-        assertEq(winner, alice);
-    }
-
-    function test_unauthorized_cannot_call_keeper_functions() public {
-        rewards.deposit{value: 1 ether}(1, 6000, 2600, 1400);
-        rewards.setDailyPrize(1, 0.01 ether);
-
-        address[] memory wallets = new address[](1);
-        wallets[0] = alice;
-
-        vm.prank(alice);
-        vm.expectRevert("Not authorized");
-        rewards.resolveDailyDraw(1, 1, wallets, 42);
-    }
-
-    function test_MAX_BATCHES_is_10() public view {
-        assertEq(rewards.MAX_BATCHES(), 10);
-    }
+    function dailyEligible(uint256, address) external pure returns (bool) { return false; }
+    function dailyMinterCount(uint256) external pure returns (uint256) { return 0; }
+}
+
+contract BlockHuntRewardsV2Test is Test {
+    BlockHuntRewards rewards;
+    MockTokenForRewards mockToken;
+    address owner = address(this);
+    address alice = address(0xA11CE);
+    address bob = address(0xB0B);
+    address carol = address(0xC0C);
+    address token;
 
     receive() external payable {}
+
+    function setUp() public {
+        vm.warp(1700000000);
+        mockToken = new MockTokenForRewards();
+        token = address(mockToken);
+        rewards = new BlockHuntRewards();
+        rewards.setTokenContract(token);
+    }
+
+    // ── Vault ───────────────────────────────────────────────────────────────
+
+    function test_fund() public {
+        rewards.fund{value: 1 ether}();
+        assertEq(rewards.vaultBalance(), 1 ether);
+    }
+
+    function test_withdraw() public {
+        rewards.fund{value: 1 ether}();
+        rewards.withdraw(0.5 ether);
+        assertEq(rewards.vaultBalance(), 0.5 ether);
+    }
+
+    function test_withdraw_exceeds_vault_reverts() public {
+        rewards.fund{value: 1 ether}();
+        vm.expectRevert(bytes("Insufficient vault"));
+        rewards.withdraw(1.5 ether);
+    }
+
+    // ── Config ──────────────────────────────────────────────────────────────
+
+    function test_setTierBounty() public {
+        rewards.setTierBounty(1, 6, 0.01 ether);
+        assertEq(rewards.tierBountyAmount(1, 1, 6), 0.01 ether);
+    }
+
+    function test_setLeaderboardAmounts() public {
+        uint256[3] memory amounts = [uint256(0.05 ether), 0.03 ether, 0.01 ether];
+        rewards.setLeaderboardAmounts(amounts);
+        assertEq(rewards.leaderboardAmounts(0), 0.05 ether);
+        assertEq(rewards.leaderboardAmounts(1), 0.03 ether);
+        assertEq(rewards.leaderboardAmounts(2), 0.01 ether);
+    }
+
+    function test_setStreakMilestone() public {
+        rewards.setStreakMilestone(0, 3, 100, 10);
+        (uint16 days_, uint16 slots, uint16 claimed, uint16 reward) = rewards.streakMilestones(0);
+        assertEq(days_, 3);
+        assertEq(slots, 100);
+        assertEq(claimed, 0);
+        assertEq(reward, 10);
+    }
+
+    // ── onMint ──────────────────────────────────────────────────────────────
+
+    function test_onMint_setsEligibility() public {
+        vm.prank(token);
+        rewards.onMint(alice, 0.001 ether, 1);
+        uint32 today = uint32(block.timestamp / 1 days);
+        assertTrue(rewards.dailyEligible(1, today, alice));
+    }
+
+    function test_onMint_incrementsStreak() public {
+        vm.prank(token);
+        rewards.onMint(alice, 0.001 ether, 1);
+        assertEq(rewards.streakDay(1, alice), 1);
+
+        vm.warp(block.timestamp + 1 days);
+        vm.prank(token);
+        rewards.onMint(alice, 0.001 ether, 1);
+        assertEq(rewards.streakDay(1, alice), 2);
+    }
+
+    function test_onMint_streakResets_afterGap() public {
+        vm.prank(token);
+        rewards.onMint(alice, 0.001 ether, 1);
+
+        vm.warp(block.timestamp + 3 days);
+        vm.prank(token);
+        rewards.onMint(alice, 0.001 ether, 1);
+        assertEq(rewards.streakDay(1, alice), 1);
+    }
+
+    function test_onMint_sameDayNoOp() public {
+        vm.prank(token);
+        rewards.onMint(alice, 0.001 ether, 1);
+        vm.prank(token);
+        rewards.onMint(alice, 0.002 ether, 1);
+        assertEq(rewards.streakDay(1, alice), 1);
+    }
+
+    function test_onMint_onlyToken() public {
+        vm.prank(alice);
+        vm.expectRevert(bytes("Only token"));
+        rewards.onMint(alice, 0.001 ether, 1);
+    }
+
+    // ── recordTierDrop ──────────────────────────────────────────────────────
+
+    function test_recordTierDrop_incrementsTotalMinted() public {
+        vm.prank(token);
+        rewards.recordTierDrop(alice, 7, 1);
+        assertEq(rewards.totalMintedByPlayer(alice), 1);
+    }
+
+    function test_recordTierDrop_setsBountyWinner() public {
+        rewards.setTierBounty(1, 7, 0.01 ether);
+        vm.prank(token);
+        rewards.recordTierDrop(alice, 7, 1);
+        assertEq(rewards.tierBountyWinner(1, 1, 7), alice);
+    }
+
+    function test_recordTierDrop_secondPlayerDoesNotOverwrite() public {
+        rewards.setTierBounty(1, 7, 0.01 ether);
+        vm.prank(token);
+        rewards.recordTierDrop(alice, 7, 1);
+        vm.prank(token);
+        rewards.recordTierDrop(bob, 7, 1);
+        assertEq(rewards.tierBountyWinner(1, 1, 7), alice);
+    }
+
+    // ── claimBounty ─────────────────────────────────────────────────────────
+
+    function test_claimBounty() public {
+        rewards.fund{value: 1 ether}();
+        rewards.setTierBounty(1, 7, 0.01 ether);
+        vm.prank(token);
+        rewards.recordTierDrop(alice, 7, 1);
+
+        vm.prank(alice);
+        rewards.claimBounty(1, 7);
+        assertEq(alice.balance, 0.01 ether);
+        assertEq(rewards.vaultBalance(), 0.99 ether);
+    }
+
+    function test_claimBounty_nonWinner_reverts() public {
+        rewards.fund{value: 1 ether}();
+        rewards.setTierBounty(1, 7, 0.01 ether);
+        vm.prank(token);
+        rewards.recordTierDrop(alice, 7, 1);
+
+        vm.prank(bob);
+        vm.expectRevert(bytes("Not winner"));
+        rewards.claimBounty(1, 7);
+    }
+
+    function test_claimBounty_doubleClaim_reverts() public {
+        rewards.fund{value: 1 ether}();
+        rewards.setTierBounty(1, 7, 0.01 ether);
+        vm.prank(token);
+        rewards.recordTierDrop(alice, 7, 1);
+
+        vm.prank(alice);
+        rewards.claimBounty(1, 7);
+        vm.prank(alice);
+        vm.expectRevert(bytes("Already claimed"));
+        rewards.claimBounty(1, 7);
+    }
+
+    // ── claimStreak ─────────────────────────────────────────────────────────
+
+    function test_claimStreak() public {
+        rewards.setStreakMilestone(0, 3, 100, 10);
+
+        for (uint256 d = 0; d < 3; d++) {
+            if (d > 0) vm.warp(block.timestamp + 1 days);
+            vm.prank(token);
+            rewards.onMint(alice, 0.001 ether, 1);
+        }
+        assertEq(rewards.streakDay(1, alice), 3);
+
+        vm.prank(alice);
+        rewards.claimStreak(0);
+        assertEq(mockToken.t6Balance(alice), 10);
+    }
+
+    function test_claimStreak_insufficientDays_reverts() public {
+        rewards.setStreakMilestone(0, 3, 100, 10);
+        vm.prank(token);
+        rewards.onMint(alice, 0.001 ether, 1);
+
+        vm.prank(alice);
+        vm.expectRevert(bytes("Streak too short"));
+        rewards.claimStreak(0);
+    }
+
+    function test_claimStreak_slotsExhausted_reverts() public {
+        rewards.setStreakMilestone(0, 1, 1, 10);
+
+        vm.prank(token);
+        rewards.onMint(alice, 0.001 ether, 1);
+        vm.prank(alice);
+        rewards.claimStreak(0);
+
+        vm.prank(token);
+        rewards.onMint(bob, 0.001 ether, 1);
+        vm.prank(bob);
+        vm.expectRevert(bytes("Slots exhausted"));
+        rewards.claimStreak(0);
+    }
+
+    // ── Referral ────────────────────────────────────────────────────────────
+
+    function test_setReferrer() public {
+        rewards.setReferralsActive(true);
+        vm.prank(alice);
+        rewards.setReferrer(bob);
+        assertEq(rewards.referrerOf(alice), bob);
+    }
+
+    function test_setReferrer_selfReferral_reverts() public {
+        rewards.setReferralsActive(true);
+        vm.prank(alice);
+        vm.expectRevert(bytes("Self-referral"));
+        rewards.setReferrer(alice);
+    }
+
+    function test_setReferrer_duplicate_reverts() public {
+        rewards.setReferralsActive(true);
+        vm.prank(alice);
+        rewards.setReferrer(bob);
+        vm.prank(alice);
+        vm.expectRevert(bytes("Already set"));
+        rewards.setReferrer(carol);
+    }
+
+    function test_setReferrer_paused_reverts() public {
+        vm.prank(alice);
+        vm.expectRevert(bytes("Referrals paused"));
+        rewards.setReferrer(bob);
+    }
+
+    function test_claimReferral() public {
+        rewards.fund{value: 1 ether}();
+        rewards.setReferralsActive(true);
+        rewards.setReferralAmount(0.01 ether);
+
+        vm.prank(alice);
+        rewards.setReferrer(bob);
+
+        for (uint256 i = 0; i < 50; i++) {
+            vm.prank(token);
+            rewards.recordTierDrop(alice, 7, 1);
+            vm.prank(token);
+            rewards.onMint(alice, 0.001 ether, 1);
+        }
+
+        assertTrue(rewards.snapshotAmount(alice) > 0);
+
+        vm.prank(bob);
+        rewards.claimReferral(alice);
+        assertTrue(rewards.referralPaid(alice));
+    }
+
+    function test_claimReferral_softFreeze_works() public {
+        rewards.fund{value: 1 ether}();
+        rewards.setReferralsActive(true);
+        rewards.setReferralAmount(0.01 ether);
+
+        vm.prank(alice);
+        rewards.setReferrer(bob);
+
+        for (uint256 i = 0; i < 50; i++) {
+            vm.prank(token);
+            rewards.recordTierDrop(alice, 7, 1);
+            vm.prank(token);
+            rewards.onMint(alice, 0.001 ether, 1);
+        }
+
+        rewards.setReferralsActive(false);
+
+        vm.prank(bob);
+        rewards.claimReferral(alice);
+        assertTrue(rewards.referralPaid(alice));
+    }
+
+    // ── Distributions ───────────────────────────────────────────────────────
+
+    function test_distributeLottery() public {
+        rewards.fund{value: 1 ether}();
+
+        vm.prank(token);
+        rewards.onMint(alice, 0.001 ether, 1);
+
+        uint32 today = uint32(block.timestamp / 1 days);
+        rewards.distributeLottery(today, alice, 0.05 ether);
+        assertEq(alice.balance, 0.05 ether);
+        assertEq(rewards.vaultBalance(), 0.95 ether);
+    }
+
+    function test_distributeLottery_nonEligible_reverts() public {
+        rewards.fund{value: 1 ether}();
+        uint32 today = uint32(block.timestamp / 1 days);
+        vm.expectRevert(bytes("Winner not eligible"));
+        rewards.distributeLottery(today, alice, 0.05 ether);
+    }
+
+    function test_distributeLottery_duplicateDay_reverts() public {
+        rewards.fund{value: 1 ether}();
+        vm.prank(token);
+        rewards.onMint(alice, 0.001 ether, 1);
+        uint32 today = uint32(block.timestamp / 1 days);
+        rewards.distributeLottery(today, alice, 0.05 ether);
+        vm.expectRevert(bytes("Already distributed"));
+        rewards.distributeLottery(today, alice, 0.05 ether);
+    }
+
+    function test_distributeLeaderboard() public {
+        rewards.fund{value: 1 ether}();
+        rewards.setLeaderboardAmounts([uint256(0.05 ether), 0.03 ether, 0.01 ether]);
+
+        vm.prank(token);
+        rewards.onMint(alice, 0.001 ether, 1);
+        vm.prank(token);
+        rewards.onMint(bob, 0.001 ether, 1);
+        vm.prank(token);
+        rewards.onMint(carol, 0.001 ether, 1);
+
+        uint32 today = uint32(block.timestamp / 1 days);
+        rewards.distributeLeaderboard(today, [alice, bob, carol]);
+        assertEq(alice.balance, 0.05 ether);
+        assertEq(bob.balance, 0.03 ether);
+        assertEq(carol.balance, 0.01 ether);
+    }
+
+    function test_distributeLeaderboard_nonEligible_reverts() public {
+        rewards.fund{value: 1 ether}();
+        rewards.setLeaderboardAmounts([uint256(0.05 ether), 0.03 ether, 0.01 ether]);
+        uint32 today = uint32(block.timestamp / 1 days);
+        vm.expectRevert(bytes("Winner not eligible"));
+        rewards.distributeLeaderboard(today, [alice, bob, carol]);
+    }
+
+    // ── Season ──────────────────────────────────────────────────────────────
+
+    function test_advanceSeason_resetsStreak() public {
+        vm.prank(token);
+        rewards.onMint(alice, 0.001 ether, 1);
+        assertEq(rewards.streakDay(1, alice), 1);
+
+        rewards.advanceSeason();
+        assertEq(rewards.currentSeason(), 2);
+        assertEq(rewards.streakDay(2, alice), 0);
+    }
+
+    function test_advanceSeason_preservesReferral() public {
+        rewards.setReferralsActive(true);
+        vm.prank(alice);
+        rewards.setReferrer(bob);
+
+        rewards.advanceSeason();
+        assertEq(rewards.referrerOf(alice), bob);
+    }
+
+    // ── Vault invariant ─────────────────────────────────────────────────────
+
+    function test_vault_invariant() public {
+        rewards.fund{value: 1 ether}();
+        rewards.setTierBounty(1, 7, 0.01 ether);
+
+        vm.prank(token);
+        rewards.recordTierDrop(alice, 7, 1);
+        vm.prank(alice);
+        rewards.claimBounty(1, 7);
+
+        assertEq(rewards.vaultBalance(), 0.99 ether);
+        assertEq(address(rewards).balance, 0.99 ether);
+    }
 }
