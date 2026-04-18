@@ -39,7 +39,11 @@ interface IBlockHuntCountdown {
     function countdownDuration() external view returns (uint256);
 }
 
-// [NEW] Escrow handles all sacrifice fund distribution
+interface IBlockHuntRewards {
+    function onMint(address player, uint256 feeAmount, uint8 batch) external;
+    function recordTierDrop(address player, uint8 tier, uint8 batch) external;
+}
+
 interface IBlockHuntEscrow {
     function initiateSacrifice(address winner, uint256 amount) external;
 }
@@ -157,6 +161,8 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     event RecordProgressionFailed(address indexed player, uint32 quantity);
     event CountdownCheckFailed();
     event RewardMinted(address indexed to, uint32 quantity);
+    event RewardsOnMintFailed(address indexed player, uint128 amountPaid);
+    event RewardsTierDropFailed(address indexed player, uint8 tier);
     event LazyRevealThresholdUpdated(uint32 newThreshold);
 
     // ── Constructor ───────────────────────────────────────────────────────────
@@ -425,6 +431,19 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
             dailyMinterCount[today]++;
         }
 
+        if (rewardsContract != address(0)) {
+            uint8 currentBatch = uint8(IBlockHuntMint(mintWindowContract).currentBatch());
+            try IBlockHuntRewards(rewardsContract).onMint(req.player, req.amountPaid, currentBatch) {}
+            catch { emit RewardsOnMintFailed(req.player, uint128(req.amountPaid)); }
+
+            for (uint256 t = 2; t <= 7; t++) {
+                if (tierCounts[t] > 0) {
+                    try IBlockHuntRewards(rewardsContract).recordTierDrop(req.player, uint8(t), currentBatch) {}
+                    catch { emit RewardsTierDropFailed(req.player, uint8(t)); }
+                }
+            }
+        }
+
         emit BlockMinted(req.player, allocated);
         emit MintFulfilled(req.player, requestId, allocated);
 
@@ -509,6 +528,19 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         if (!dailyEligible[today][msg.sender]) {
             dailyEligible[today][msg.sender] = true;
             dailyMinterCount[today]++;
+        }
+
+        if (rewardsContract != address(0)) {
+            uint8 currentBatch = uint8(IBlockHuntMint(mintWindowContract).currentBatch());
+            try IBlockHuntRewards(rewardsContract).onMint(msg.sender, totalCost, currentBatch) {}
+            catch { emit RewardsOnMintFailed(msg.sender, uint128(totalCost)); }
+
+            for (uint256 t = 2; t <= 7; t++) {
+                if (tierCounts[t] > 0) {
+                    try IBlockHuntRewards(rewardsContract).recordTierDrop(msg.sender, uint8(t), currentBatch) {}
+                    catch { emit RewardsTierDropFailed(msg.sender, uint8(t)); }
+                }
+            }
         }
 
         emit BlockMinted(msg.sender, allocated);
