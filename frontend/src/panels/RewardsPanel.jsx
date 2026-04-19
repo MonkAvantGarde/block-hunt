@@ -1,7 +1,10 @@
 // RewardsPanel.jsx — Rewards V2: tabbed interface with 5 reward categories
 import { useState } from 'react'
+import { useReadContract } from 'wagmi'
 import { formatEther } from 'viem'
 import { useRewards } from '../hooks/useRewards'
+import { CONTRACTS } from '../config/wagmi'
+import { REWARDS_ABI } from '../abis'
 import TierBountyTab from '../components/rewards/TierBountyTab'
 import LotteryTab from '../components/rewards/LotteryTab'
 import StreakTab from '../components/rewards/StreakTab'
@@ -55,15 +58,21 @@ export default function RewardsPanel({ address, blocks, currentBatch }) {
     )
   }
 
-  // Calculate total available rewards (sum of claimable tier bounties)
-  const totalClaimableEth = tierBounties
-    .filter(b => b.winner && address && b.winner.toLowerCase() === address.toLowerCase() && !b.claimed)
-    .reduce((sum, b) => sum + Number(formatEther(b.amount)), 0)
+  // Total available: vault balance (all rewards pot)
+  const { data: vaultRaw } = useReadContract({
+    address: CONTRACTS.REWARDS,
+    abi: REWARDS_ABI,
+    chainId: 84532,
+    functionName: 'vaultBalance',
+    query: { staleTime: Infinity, refetchOnMount: true },
+  })
+  const vaultEth = vaultRaw ? Number(formatEther(vaultRaw)) : 0
 
-  // Also add leaderboard amounts for display
+  // Also sum up tier bounties + leaderboard for context
+  const tierBountyTotal = tierBounties.reduce((sum, b) => sum + Number(formatEther(b.amount)), 0)
   const leaderboardTotal = leaderboardAmounts.reduce((sum, a) => sum + Number(formatEther(a)), 0)
 
-  const totalDisplay = totalClaimableEth > 0 ? totalClaimableEth.toFixed(3) : '0.000'
+  const totalDisplay = vaultEth > 0 ? vaultEth.toFixed(3) : '0.000'
 
   return (
     <div>
