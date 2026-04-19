@@ -12,6 +12,7 @@ import "../src/BlockHuntMigration.sol";
 import "../src/BlockHuntSeasonRegistry.sol";
 import "../src/BlockHuntRewards.sol";
 import "../src/BlockHuntPseudoMint.sol";
+import "../src/BlockHuntMarketplace.sol";
 
 /**
  * @title  Block Hunt — Full Fresh Deployment (Season 1 Testnet)
@@ -127,6 +128,10 @@ contract Deploy is Script {
         BlockHuntRewards rewards = new BlockHuntRewards();
         console.log("9. Rewards deployed:     ", address(rewards));
 
+        // 11. Marketplace
+        BlockHuntMarketplace marketplace = new BlockHuntMarketplace(address(token), creatorWallet);
+        console.log("11. Marketplace deployed:", address(marketplace));
+
         console.log("-------------------------------------------------");
 
         // ── Step 2: Wire Token → all peripherals ───────────────────────────
@@ -237,6 +242,7 @@ contract Deploy is Script {
         console.log("  MIGRATION: ", address(migration));
         console.log("  REGISTRY:  ", address(registry));
         console.log("  REWARDS:   ", address(rewards));
+        console.log("  MARKETPLACE:", address(marketplace));
         console.log("");
         console.log("  SETTINGS:");
         console.log("  Countdown:     7 days (default)");
