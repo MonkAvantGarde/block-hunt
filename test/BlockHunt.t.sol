@@ -267,13 +267,13 @@ contract BlockHuntTest is Test {
 
     function test_mint_zeroQuantity() public {
         vm.prank(alice);
-        vm.expectRevert("Invalid quantity");
+        vm.expectRevert("Bad qty");
         token.mint{value: MINT_PRICE}(0);
     }
 
     function test_mint_over500() public {
         vm.prank(alice);
-        vm.expectRevert("Invalid quantity");
+        vm.expectRevert("Bad qty");
         token.mint{value: MINT_PRICE * 501}(501);
     }
 

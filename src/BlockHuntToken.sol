@@ -316,7 +316,8 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         require(mintWindowContract != address(0), "No window");
         require(IBlockHuntMint(mintWindowContract).isWindowOpen(), "Closed");
         require(IBlockHuntMint(mintWindowContract).canPlayerMint(msg.sender), "Cooldown");
-        require(quantity > 0 && quantity <= 500, "Invalid quantity");
+        require(quantity > 0 && quantity <= 500, "Bad qty");
+        IBlockHuntMint(mintWindowContract).recordMint(msg.sender, quantity);
         uint256 mintPrice = currentMintPrice();
         require(msg.value >= mintPrice * quantity, "Underpaid");
 
@@ -434,9 +435,6 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         IBlockHuntTreasury(treasuryContract).receiveMintFunds{value: req.amountPaid}();
 
         _mintBatch(req.player, ids, amounts, "");
-
-        try IBlockHuntMint(mintWindowContract).recordMint(req.player, allocated) {}
-        catch { emit RecordMintFailed(req.player, uint32(allocated)); }
 
         if (countdownContract != address(0)) {
             try IBlockHuntCountdown(countdownContract).recordProgression(req.player, allocated) {}
