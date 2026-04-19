@@ -177,12 +177,24 @@ function savePending(items) {
 
 const TARGET_CHAIN_ID = 84532 // Base Sepolia
 
-export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatus, slots, prizePool, address, refetchAll, blocks, mintPrice, mintPriceWei, currentBatch, userCapReached, userMintsRemaining, userMintedThisWindow, perUserCap }) {
+export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatus, slots, prizePool, address, refetchAll, blocks, mintPrice, mintPriceWei, currentBatch, userCapReached, userMintsRemaining, userMintedThisWindow, perUserCap, seasonWon }) {
   const { isConnected: walletConnected } = useAccount()
   const { connectors, connect } = useConnect()
   const chainId = useChainId()
   const { switchChain } = useSwitchChain()
   const wrongNetwork = chainId !== TARGET_CHAIN_ID
+
+  if (seasonWon) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 300, gap: 16 }}>
+        <div style={{ fontFamily: "'Press Start 2P', monospace", fontSize: 12, color: '#f0d868', letterSpacing: 2, textShadow: '0 0 12px rgba(240,216,104,0.4)' }}>SEASON ENDED</div>
+        <div style={{ fontFamily: "'VT323', monospace", fontSize: 24, color: 'rgba(240,234,214,0.6)', textAlign: 'center', maxWidth: 400 }}>
+          A champion has claimed the prize pool. Minting is closed for this season.
+          You can still combine and forge your existing blocks.
+        </div>
+      </div>
+    )
+  }
 
   // Referral detection: if a ?ref= was captured, prompt user to link before first mint
   const { pendingReferrer, isLinked, linkReferrer, isLinking, linkSuccess } = useReferral()

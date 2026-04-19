@@ -91,6 +91,17 @@ export function useGameState() {
     query: { refetchInterval: 10_000 },
   })
 
+  // ── SEASON WON ──────────────────────────────────────────────────────────────
+  const {
+    data: seasonWonRaw,
+    refetch: refetchSeasonWon,
+  } = useReadContract({
+    address: CONTRACTS.TOKEN,
+    abi: TOKEN_ABI,
+    functionName: 'seasonWon',
+  })
+  const seasonWon = seasonWonRaw || false
+
   // ── PRIZE POOL (was "treasury balance") ────────────────────────────────────
   const {
     data: treasuryRaw,
@@ -231,6 +242,7 @@ export function useGameState() {
     refetchMintPrice()
     refetchPlayerMint()
     refetchEscrow()
+    refetchSeasonWon()
   }
 
   return {
@@ -243,6 +255,7 @@ export function useGameState() {
     tiersHeld,
     windowInfo,
     countdownInfo,
+    seasonWon,
     prizePool,              // renamed from treasuryBalance
     treasuryBalance: prizePool,  // backwards compat — remove after all screens updated
     currentBatch,

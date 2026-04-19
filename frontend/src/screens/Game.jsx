@@ -127,6 +127,7 @@ export default function GameScreen({ onOpenModal, onNavigate, dismissedSpectator
     perUserCap,
     refetchAll,
     isLoading,
+    seasonWon,
   } = useGameState()
 
   const blocks = useMemo(() => ({
@@ -795,7 +796,7 @@ const { data: countdownHolder } = useReadContract({
                 display:"flex", flexDirection:"column",
               }}>
                 <div style={{ flex:1, display:"flex", flexDirection:"column", minHeight:0 }}>
-                  {p.id==="mint"  && <VRFMintPanel onMint={handleMint} windowOpen={windowOpen} windowInfo={windowInfo} mintStatus={mintStatus} slots={slots} prizePool={prizePool} address={address} refetchAll={refetchAll} blocks={blocks} mintPrice={mintPrice} mintPriceWei={mintPriceWei} currentBatch={currentBatch} userCapReached={userCapReached} userMintsRemaining={userMintsRemaining} userMintedThisWindow={userMintedThisWindow} perUserCap={perUserCap} />}
+                  {p.id==="mint"  && <VRFMintPanel onMint={handleMint} windowOpen={windowOpen} windowInfo={windowInfo} mintStatus={mintStatus} slots={slots} prizePool={prizePool} address={address} refetchAll={refetchAll} blocks={blocks} mintPrice={mintPrice} mintPriceWei={mintPriceWei} currentBatch={currentBatch} userCapReached={userCapReached} userMintsRemaining={userMintsRemaining} userMintedThisWindow={userMintedThisWindow} perUserCap={perUserCap} seasonWon={seasonWon} />}
                   {p.id==="forge" && <ForgePanel blocks={blocks} onForge={handleForge} address={address} />}
                   {p.id==="trade" && <TradePanel refetchAll={refetchAll} onRevealTier={(tier) => setRevealTier(tier)} />}
                   {p.id==="rewards" && <RewardsPanel address={address} blocks={blocks} currentBatch={currentBatch} />}

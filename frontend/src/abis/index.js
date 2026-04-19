@@ -26,6 +26,8 @@ export const TOKEN_ABI = [
     outputs: [{ name: '', type: 'bool' }] },
   { name: 'countdownActive', type: 'function', stateMutability: 'view',
     inputs: [], outputs: [{ name: '', type: 'bool' }] },
+  { name: 'seasonWon', type: 'function', stateMutability: 'view',
+    inputs: [], outputs: [{ name: '', type: 'bool' }] },
   { name: 'countdownHolder', type: 'function', stateMutability: 'view',
     inputs: [], outputs: [{ name: '', type: 'address' }] },
   // v2.1: continuous rarity curve

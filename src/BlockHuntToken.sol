@@ -26,6 +26,7 @@ interface IBlockHuntTreasury {
 
 interface IBlockHuntMint {
     function isWindowOpen() external view returns (bool);
+    function canPlayerMint(address player) external view returns (bool);
     function recordMint(address minter, uint256 quantity) external;
     function currentBatch() external view returns (uint256);
     function windowCapForBatch(uint256 batch) external view returns (uint256);
@@ -309,6 +310,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         require(!seasonWon, "Season ended");
         require(mintWindowContract != address(0), "Mint not configured");
         require(IBlockHuntMint(mintWindowContract).isWindowOpen(), "Window closed");
+        require(IBlockHuntMint(mintWindowContract).canPlayerMint(msg.sender), "Mint cooldown active");
         require(quantity > 0 && quantity <= 500, "Invalid quantity");
         uint256 mintPrice = currentMintPrice();
         require(msg.value >= mintPrice * quantity, "Underpaid");
