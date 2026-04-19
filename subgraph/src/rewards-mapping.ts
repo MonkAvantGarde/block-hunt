@@ -1,14 +1,13 @@
 import { BigInt, Bytes } from "@graphprotocol/graph-ts"
 import {
-  DailyDrawResolved,
-  DailyPrizeClaimed,
-  BatchFirstAwarded,
-  BatchFirstClaimed,
-  BatchBountySet,
-  BatchBountyClaimed,
-  BatchFunded,
+  TierBountyWon,
+  TierBountyClaimed,
+  LotteryDistributed,
+  StreakClaimed,
+  ReferrerLinked,
+  ReferralClaimed,
 } from "../generated/BlockHuntRewards/BlockHuntRewards"
-import { DailyDraw, BatchFirst, BatchBounty, BatchRewardConfig, Player } from "../generated/schema"
+import { TierBounty, LotteryDraw, StreakClaim, ReferralClaim, ReferralLink, Player } from "../generated/schema"
 
 const ZERO = BigInt.fromI32(0)
 
@@ -36,96 +35,107 @@ function getOrCreatePlayer(address: string): Player {
   return player as Player
 }
 
-// ── Daily Lottery ──────────────────────────────────────────────────────────
+// ── Tier Bounty ──────────────────────────────────────────────────────────
 
-export function handleDailyDrawResolved(event: DailyDrawResolved): void {
-  let id = "draw-" + event.params.day.toString()
-  let draw = new DailyDraw(id)
+export function handleTierBountyWon(event: TierBountyWon): void {
+  let season = event.params.season
+  let batch = event.params.batch
+  let tier = event.params.tier
+  let id = season.toString() + "-" + batch.toString() + "-" + tier.toString()
+
   let winnerAddr = event.params.winner.toHexString().toLowerCase()
-
   getOrCreatePlayer(winnerAddr)
 
-  draw.day        = event.params.day
-  draw.winner     = winnerAddr
-  draw.prize      = event.params.prize
-  draw.resolvedAt = event.block.timestamp
-  draw.claimed    = false
-  draw.save()
-}
-
-export function handleDailyPrizeClaimed(event: DailyPrizeClaimed): void {
-  let id = "draw-" + event.params.day.toString()
-  let draw = DailyDraw.load(id)
-  if (draw) {
-    draw.claimed       = true
-    draw.claimedAmount = event.params.amount
-    draw.save()
-  }
-}
-
-// ── Batch Firsts ──────────────────────────────────────────────────────────
-
-export function handleBatchFirstAwarded(event: BatchFirstAwarded): void {
-  let id = event.params.batch.toString() + "-" + event.params.achievementId.toString()
-  let bf = new BatchFirst(id)
-  let winnerAddr = event.params.winner.toHexString().toLowerCase()
-
-  getOrCreatePlayer(winnerAddr)
-
-  bf.batch         = event.params.batch.toI32()
-  bf.achievementId = event.params.achievementId.toI32()
-  bf.winner        = winnerAddr
-  bf.prize         = event.params.prize
-  bf.awardedAt     = event.block.timestamp
-  bf.claimed       = false
-  bf.save()
-}
-
-export function handleBatchFirstClaimed(event: BatchFirstClaimed): void {
-  let id = event.params.batch.toString() + "-" + event.params.achievementId.toString()
-  let bf = BatchFirst.load(id)
-  if (bf) {
-    bf.claimed       = true
-    bf.claimedAmount = event.params.amount
-    bf.save()
-  }
-}
-
-// ── Batch Bounty ──────────────────────────────────────────────────────────
-
-export function handleBatchBountySet(event: BatchBountySet): void {
-  let id = "bounty-" + event.params.batch.toString()
-  let bounty = new BatchBounty(id)
-  bounty.batch           = event.params.batch.toI32()
-  bounty.totalRecipients = event.params.recipients
-  bounty.perWalletShare  = event.params.perWallet
-  bounty.setAt           = event.block.timestamp
-  bounty.distributed     = false
+  let bounty = new TierBounty(id)
+  bounty.season  = season
+  bounty.batch   = batch
+  bounty.tier    = tier
+  bounty.winner  = winnerAddr
+  bounty.amount  = ZERO
+  bounty.claimed = false
+  bounty.wonAt   = event.block.timestamp
   bounty.save()
 }
 
-export function handleBatchBountyClaimed(event: BatchBountyClaimed): void {
-  // Individual claim — we could track per-player claims but the entity
-  // is batch-level. Mark as distributed if we see any claim.
-  let id = "bounty-" + event.params.batch.toString()
-  let bounty = BatchBounty.load(id)
+export function handleTierBountyClaimed(event: TierBountyClaimed): void {
+  let season = event.params.season
+  let batch = event.params.batch
+  let tier = event.params.tier
+  let id = season.toString() + "-" + batch.toString() + "-" + tier.toString()
+
+  let bounty = TierBounty.load(id)
   if (bounty) {
-    bounty.distributed = true
+    bounty.claimed = true
+    bounty.amount  = event.params.amount
     bounty.save()
   }
 }
 
-// ── Batch Funding ─────────────────────────────────────────────────────────
+// ── Lottery ──────────────────────────────────────────────────────────────
 
-export function handleBatchFunded(event: BatchFunded): void {
-  let id = "config-" + event.params.batch.toString()
-  let config = BatchRewardConfig.load(id)
-  if (!config) {
-    config = new BatchRewardConfig(id)
-    config.batch        = event.params.batch.toI32()
-    config.totalDeposit = ZERO
-    config.active       = true
-  }
-  config.totalDeposit = config.totalDeposit.plus(event.params.amount)
-  config.save()
+export function handleLotteryDistributed(event: LotteryDistributed): void {
+  let season = event.params.season
+  let day = event.params.day
+  let id = "lottery-" + season.toString() + "-" + day.toString()
+
+  let winnerAddr = event.params.winner.toHexString().toLowerCase()
+  getOrCreatePlayer(winnerAddr)
+
+  let draw = new LotteryDraw(id)
+  draw.season        = season
+  draw.day           = day
+  draw.winner        = winnerAddr
+  draw.amount        = event.params.amount
+  draw.distributedAt = event.block.timestamp
+  draw.save()
+}
+
+// ── Streak ───────────────────────────────────────────────────────────────
+
+export function handleStreakClaimed(event: StreakClaimed): void {
+  let id = event.transaction.hash.toHexString() + "-" + event.logIndex.toString()
+
+  let playerAddr = event.params.player.toHexString().toLowerCase()
+  getOrCreatePlayer(playerAddr)
+
+  let claim = new StreakClaim(id)
+  claim.season         = event.params.season
+  claim.player         = playerAddr
+  claim.milestoneIndex = event.params.milestoneIndex
+  claim.blocksRewarded = event.params.blocks
+  claim.claimedAt      = event.block.timestamp
+  claim.save()
+}
+
+// ── Referral ─────────────────────────────────────────────────────────────
+
+export function handleReferrerLinked(event: ReferrerLinked): void {
+  let refereeAddr  = event.params.referee.toHexString().toLowerCase()
+  let referrerAddr = event.params.referrer.toHexString().toLowerCase()
+
+  getOrCreatePlayer(refereeAddr)
+  getOrCreatePlayer(referrerAddr)
+
+  let link = new ReferralLink(refereeAddr)
+  link.referee  = refereeAddr
+  link.referrer = referrerAddr
+  link.linkedAt = event.block.timestamp
+  link.save()
+}
+
+export function handleReferralClaimed(event: ReferralClaimed): void {
+  let id = event.transaction.hash.toHexString() + "-" + event.logIndex.toString()
+
+  let referrerAddr = event.params.referrer.toHexString().toLowerCase()
+  let refereeAddr  = event.params.referee.toHexString().toLowerCase()
+
+  getOrCreatePlayer(referrerAddr)
+  getOrCreatePlayer(refereeAddr)
+
+  let claim = new ReferralClaim(id)
+  claim.referrer  = referrerAddr
+  claim.referee   = refereeAddr
+  claim.amount    = event.params.amount
+  claim.claimedAt = event.block.timestamp
+  claim.save()
 }
