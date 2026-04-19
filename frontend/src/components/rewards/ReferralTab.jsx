@@ -83,16 +83,11 @@ export default function ReferralTab({ address, referralsActive, referralAmount, 
   const refAmountEth = referralAmount ? Number(formatEther(referralAmount)) : 0.002
   const thresholdNum = referralThreshold ? Number(referralThreshold) : 50
 
-  // TODO: In a future iteration, read the list of referees from events or a subgraph.
-  // For now, show placeholder UI. The contract does not have a view to enumerate referees.
-  const placeholderReferees = [
-    { addr: '0xBob5678901234567890123456789012345678901', minted: 47, threshold: thresholdNum, paid: false },
-    { addr: '0xCarol901234567890123456789012345678901234', minted: 62, threshold: thresholdNum, paid: false, claimable: true },
-    { addr: '0xDave3456789012345678901234567890123456789', minted: 12, threshold: thresholdNum, paid: false },
-  ]
-
-  const activeCount = placeholderReferees.length
-  const claimableCount = placeholderReferees.filter(r => r.claimable).length
+  // Referee list requires subgraph or event indexing — not available via contract views.
+  // Show the user's own referrer status instead.
+  const referees = []
+  const activeCount = 0
+  const claimableCount = 0
 
   const isSettingRef = setRefPending || setRefConfirming
 
@@ -152,44 +147,24 @@ export default function ReferralTab({ address, referralsActive, referralAmount, 
         </div>
       </div>
 
-      {/* Referee list */}
-      <div>
-        {placeholderReferees.map((ref, i) => {
-          const isClaiming = claimingReferee === ref.addr && (claimPending || claimConfirming)
+      {/* Referrer status */}
+      {isLinked && linkedReferrer && linkedReferrer !== ZERO_ADDR && (
+        <div style={{
+          background: 'rgba(0,0,0,0.35)', border: '1px solid rgba(110,224,216,0.15)',
+          padding: '14px 16px', marginBottom: 16,
+        }}>
+          <div style={{ ...fp, fontSize: 7, color: '#6ee0d8', marginBottom: 8 }}>YOUR REFERRER</div>
+          <div style={{ ...fv, fontSize: 22, color: 'rgba(240,234,214,0.75)' }}>{shortAddr(linkedReferrer)}</div>
+        </div>
+      )}
 
-          return (
-            <div key={i} style={{
-              display: 'flex', alignItems: 'center', gap: 14,
-              padding: '10px 0',
-              borderBottom: '1px solid rgba(255,255,255,0.05)',
-            }}>
-              <div style={{ ...fv, fontSize: 22, color: 'rgba(240,234,214,0.75)', flex: 1 }}>
-                {shortAddr(ref.addr)}
-              </div>
-              <div style={{ ...fv, fontSize: 22, color: 'rgba(240,234,214,0.55)' }}>
-                {ref.minted} / {ref.threshold} blocks
-              </div>
-              {ref.claimable ? (
-                <button
-                  onClick={() => handleClaimReferral(ref.addr)}
-                  disabled={isClaiming}
-                  style={{
-                    ...fp, fontSize: 7,
-                    background: '#e0c060',
-                    color: '#0a1a0f',
-                    border: '2px solid #0a1a0f',
-                    padding: '7px 12px',
-                    cursor: isClaiming ? 'default' : 'pointer',
-                    boxShadow: '2px 2px 0 #0a1a0f',
-                    opacity: isClaiming ? 0.6 : 1,
-                  }}
-                >{isClaiming ? 'CLAIMING...' : `CLAIM ${refAmountEth} ETH`}</button>
-              ) : (
-                <span style={{ ...fp, fontSize: 7, color: 'rgba(240,234,214,0.4)' }}>PENDING</span>
-              )}
-            </div>
-          )
-        })}
+      {/* Referee tracking info */}
+      <div style={{
+        ...fv, fontSize: 20, color: 'rgba(240,234,214,0.5)',
+        textAlign: 'center', padding: '16px 0',
+      }}>
+        Referral tracking is available once the subgraph indexes your referees.
+        Share your link to start earning!
       </div>
 
       {/* Manual referrer input — only show if not already linked */}

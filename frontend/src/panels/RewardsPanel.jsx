@@ -110,31 +110,33 @@ export default function RewardsPanel({ address, blocks, currentBatch }) {
         borderBottom: '2px solid rgba(255,255,255,0.08)',
         overflowX: 'auto',
       }}>
-        {TABS.map(tab => (
-          <button
-            key={tab.key}
-            onClick={() => handleTabSwitch(tab.key)}
-            style={{
-              ...fp, fontSize: 7,
-              color: activeTab === tab.key ? '#f0d868' : 'rgba(240,234,214,0.5)',
-              background: 'transparent',
-              border: 'none',
-              padding: '12px 14px',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-              letterSpacing: 0.5,
-              position: 'relative',
-              flexShrink: 0,
-              transition: 'color 0.2s',
-              borderBottom: activeTab === tab.key ? '2px solid #f0d868' : '2px solid transparent',
-              marginBottom: -2,
-            }}
-            onMouseEnter={e => { if (activeTab !== tab.key) e.target.style.color = 'rgba(240,234,214,0.85)' }}
-            onMouseLeave={e => { if (activeTab !== tab.key) e.target.style.color = 'rgba(240,234,214,0.5)' }}
-          >
-            {tab.label}
-          </button>
-        ))}
+        {TABS.map(tab => {
+          const isActive = activeTab === tab.key
+          return (
+            <button
+              key={tab.key}
+              onClick={() => handleTabSwitch(tab.key)}
+              style={{
+                ...fp, fontSize: 7,
+                color: isActive ? '#0a1a0f' : 'rgba(240,234,214,0.7)',
+                background: isActive ? '#f0d868' : 'rgba(240,234,214,0.06)',
+                border: isActive ? '1px solid #f0d868' : '1px solid rgba(240,234,214,0.12)',
+                borderBottom: isActive ? '1px solid #0e2a1a' : '1px solid rgba(240,234,214,0.12)',
+                padding: '10px 14px',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                letterSpacing: 0.5,
+                flexShrink: 0,
+                transition: 'all 0.15s',
+                marginBottom: -2,
+              }}
+              onMouseEnter={e => { if (!isActive) { e.target.style.background = 'rgba(240,234,214,0.12)'; e.target.style.color = 'rgba(240,234,214,0.9)' }}}
+              onMouseLeave={e => { if (!isActive) { e.target.style.background = 'rgba(240,234,214,0.06)'; e.target.style.color = 'rgba(240,234,214,0.7)' }}}
+            >
+              {tab.label}
+            </button>
+          )
+        })}
       </div>
 
       {/* Tab content */}
