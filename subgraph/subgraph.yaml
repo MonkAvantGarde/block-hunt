@@ -8,9 +8,9 @@ dataSources:
     name: BlockHuntToken
     network: base-sepolia
     source:
-      address: "0x1fC1eB28757BBD9B09F3E23628492359fA9B6400"
+      address: "0x522672cda4470D3cD3A85d019ed6CcF11DB84B87"
       abi: BlockHuntToken
-      startBlock: 40420000
+      startBlock: 40423625
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -40,9 +40,9 @@ dataSources:
     name: BlockHuntForge
     network: base-sepolia
     source:
-      address: "0xCF0D067E00bC58f02834f8fCF497694a9ffe158B"
+      address: "0x7673607547D678b421FbEA35A91506F8BcED36b9"
       abi: BlockHuntForge
-      startBlock: 40420000
+      startBlock: 40423625
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -65,9 +65,9 @@ dataSources:
     name: BlockHuntRewards
     network: base-sepolia
     source:
-      address: "0x4f04885785c3a9F13314a207eDfC403b2D430eb3"
+      address: "0x331F078154817945BF03846D1F2564f8F440fcC4"
       abi: BlockHuntRewards
-      startBlock: 40420000
+      startBlock: 40423625
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
