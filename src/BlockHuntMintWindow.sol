@@ -303,6 +303,16 @@ contract BlockHuntMintWindow is Ownable {
         _checkBatchAdvancement();
     }
 
+    function unreserveMint(address player, uint256 quantity) external {
+        require(msg.sender == tokenContract, "Only token contract");
+        PlayerMintState storage s = playerState[player];
+        s.cycleMints = s.cycleMints >= quantity ? s.cycleMints - quantity : 0;
+        s.dailyMints = s.dailyMints >= quantity ? s.dailyMints - quantity : 0;
+        if (s.cycleMints < perCycleCap && s.cooldownUntil > 0) {
+            s.cooldownUntil = 0;
+        }
+    }
+
     // ── Batch advancement ─────────────────────────────────────────────────
 
     function _checkBatchAdvancement() internal {

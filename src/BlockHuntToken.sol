@@ -28,6 +28,7 @@ interface IBlockHuntMint {
     function isWindowOpen() external view returns (bool);
     function canPlayerMint(address player) external view returns (bool);
     function recordMint(address minter, uint256 quantity) external;
+    function unreserveMint(address player, uint256 quantity) external;
     function currentBatch() external view returns (uint256);
     function windowCapForBatch(uint256 batch) external view returns (uint256);
     function batchPrice(uint256 batch) external view returns (uint256);
@@ -481,6 +482,8 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
 
         delete vrfMintRequests[requestId];
         _removePendingRequest(msg.sender, requestId);
+
+        try IBlockHuntMint(mintWindowContract).unreserveMint(msg.sender, req.quantity) {} catch {}
 
         (bool sent, ) = payable(msg.sender).call{value: req.amountPaid}("");
         require(sent, "Refund failed");
