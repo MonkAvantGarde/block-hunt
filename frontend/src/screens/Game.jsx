@@ -262,28 +262,72 @@ const { data: countdownHolder } = useReadContract({
     lastCombinedToTierRef.current = null
   }, [combineSuccess])
 
+  const MAX_COMBINE_BATCH = 50
+  const [combineQueue, setCombineQueue] = useState([])
+
   function handleCombine(fromTier, times = 1) {
     const ratio = COMBINE_RATIOS[fromTier]
     if ((blocks[fromTier] || 0) < ratio * times) return
     setCombiningTier(fromTier)
     lastCombinedToTierRef.current = fromTier - 1
-    const fnName = times > 1 ? 'combineMany' : 'combine'
-    const args = times > 1 ? [Array(times).fill(BigInt(fromTier))] : [BigInt(fromTier)]
-    const gas = times > 1 ? BigInt(200_000) + BigInt(times) * BigInt(120_000) : undefined
+
+    if (times <= 1) {
+      writeCombine({
+        address: CONTRACTS.TOKEN, chainId: 84532, abi: TOKEN_ABI,
+        functionName: 'combine', args: [BigInt(fromTier)],
+      }, {
+        onSuccess: (hash) => {
+          setCombineCollapseData({ fromTier, startCount: blocks[fromTier] || 0, combineRatio: ratio })
+          setCombineTxHash(hash)
+        },
+        onError: () => { setCombiningTier(null); lastCombinedToTierRef.current = null },
+      })
+      return
+    }
+
+    // Auto-batch: split into chunks of 50
+    const chunks = []
+    let remaining = times
+    while (remaining > 0) {
+      const chunk = Math.min(remaining, MAX_COMBINE_BATCH)
+      chunks.push(chunk)
+      remaining -= chunk
+    }
+
+    // Send first chunk, queue the rest
+    setCombineQueue(chunks.slice(1).map(c => ({ fromTier, count: c })))
+    const firstChunk = chunks[0]
     writeCombine({
-      address: CONTRACTS.TOKEN, chainId: 84532,
-      abi: TOKEN_ABI,
-      functionName: fnName,
-      args,
-      ...(gas ? { gas } : {}),
+      address: CONTRACTS.TOKEN, chainId: 84532, abi: TOKEN_ABI,
+      functionName: 'combineMany',
+      args: [Array(firstChunk).fill(BigInt(fromTier))],
+      gas: BigInt(200_000) + BigInt(firstChunk) * BigInt(120_000),
     }, {
       onSuccess: (hash) => {
         setCombineCollapseData({ fromTier, startCount: blocks[fromTier] || 0, combineRatio: ratio })
         setCombineTxHash(hash)
       },
-      onError:   ()     => { setCombiningTier(null); lastCombinedToTierRef.current = null },
+      onError: () => { setCombiningTier(null); setCombineQueue([]); lastCombinedToTierRef.current = null },
     })
   }
+
+  // Process remaining combine queue after each batch confirms
+  useEffect(() => {
+    if (combineSuccess && combineQueue.length > 0) {
+      const [next, ...rest] = combineQueue
+      setCombineQueue(rest)
+      setTimeout(() => {
+        writeCombine({
+          address: CONTRACTS.TOKEN, chainId: 84532, abi: TOKEN_ABI,
+          functionName: 'combineMany',
+          args: [Array(next.count).fill(BigInt(next.fromTier))],
+          gas: BigInt(200_000) + BigInt(next.count) * BigInt(120_000),
+        }, {
+          onError: () => { setCombiningTier(null); setCombineQueue([]) },
+        })
+      }, 500)
+    }
+  }, [combineSuccess, combineQueue])
 
   // Detect mint delivery by comparing before/after balances — trigger card flip
   useEffect(() => {
