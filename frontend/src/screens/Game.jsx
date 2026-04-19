@@ -260,10 +260,12 @@ const { data: countdownHolder } = useReadContract({
     setCombiningTier(null)
     setCombineTxHash(null)
     lastCombinedToTierRef.current = null
+    if (combineQueue.length === 0) setCombineBatchInfo(null)
   }, [combineSuccess])
 
   const MAX_COMBINE_BATCH = 50
   const [combineQueue, setCombineQueue] = useState([])
+  const [combineBatchInfo, setCombineBatchInfo] = useState(null) // { current, total }
 
   function handleCombine(fromTier, times = 1) {
     const ratio = COMBINE_RATIOS[fromTier]
@@ -294,6 +296,9 @@ const { data: countdownHolder } = useReadContract({
       remaining -= chunk
     }
 
+    const totalBatches = chunks.length
+    setCombineBatchInfo(totalBatches > 1 ? { current: 1, total: totalBatches } : null)
+
     // Send first chunk, queue the rest
     setCombineQueue(chunks.slice(1).map(c => ({ fromTier, count: c })))
     const firstChunk = chunks[0]
@@ -307,7 +312,7 @@ const { data: countdownHolder } = useReadContract({
         setCombineCollapseData({ fromTier, startCount: blocks[fromTier] || 0, combineRatio: ratio })
         setCombineTxHash(hash)
       },
-      onError: () => { setCombiningTier(null); setCombineQueue([]); lastCombinedToTierRef.current = null },
+      onError: () => { setCombiningTier(null); setCombineQueue([]); setCombineBatchInfo(null); lastCombinedToTierRef.current = null },
     })
   }
 
@@ -316,6 +321,7 @@ const { data: countdownHolder } = useReadContract({
     if (combineSuccess && combineQueue.length > 0) {
       const [next, ...rest] = combineQueue
       setCombineQueue(rest)
+      setCombineBatchInfo(prev => prev ? { ...prev, current: prev.current + 1 } : null)
       setTimeout(() => {
         writeCombine({
           address: CONTRACTS.TOKEN, chainId: 84532, abi: TOKEN_ABI,
@@ -323,7 +329,7 @@ const { data: countdownHolder } = useReadContract({
           args: [Array(next.count).fill(BigInt(next.fromTier))],
           gas: BigInt(200_000) + BigInt(next.count) * BigInt(120_000),
         }, {
-          onError: () => { setCombiningTier(null); setCombineQueue([]) },
+          onError: () => { setCombiningTier(null); setCombineQueue([]); setCombineBatchInfo(null) },
         })
       }, 500)
     }
@@ -480,8 +486,25 @@ const { data: countdownHolder } = useReadContract({
         background:"repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.012) 2px,rgba(0,0,0,0.012) 4px)",
       }} />
 
+      {/* Combine batch progress banner */}
+      {combineBatchInfo && (
+        <div style={{
+          position:"fixed", top:28, left:"50%",
+          transform:"translateX(-50%)",
+          zIndex:8001,
+          background:"linear-gradient(135deg,#1a3a4a,#0a2a3a)",
+          border:"2px solid #4ecdc4",
+          borderRadius:4, padding:"10px 24px",
+          fontFamily:"'Press Start 2P', monospace", fontSize:9,
+          color:"#6ee0d8", letterSpacing:1, whiteSpace:"nowrap",
+          boxShadow:"0 0 20px rgba(78,205,196,0.3)",
+        }}>
+          SIGNING {combineBatchInfo.current} OF {combineBatchInfo.total} TRANSACTIONS
+        </div>
+      )}
+
       {/* Combine success banner */}
-      {combineMsg && (
+      {!combineBatchInfo && combineMsg && (
         <div style={{
           position:"fixed", top:28, left:"50%",
           transform:"translateX(-50%)",
