@@ -11,6 +11,7 @@ import "../src/BlockHuntEscrow.sol";
 import "../src/BlockHuntMigration.sol";
 import "../src/BlockHuntSeasonRegistry.sol";
 import "../src/BlockHuntMarketplace.sol";
+import "../src/BlockHuntPseudoMint.sol";
 import "@chainlink/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
 import "@chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
 
@@ -158,6 +159,10 @@ contract BlockHuntTest is Test {
         mintWindow.setTokenContract(address(token));
         forge.setTokenContract(address(token));
         countdown.setTokenContract(address(token));
+
+        // PseudoMint
+        BlockHuntPseudoMint pseudoMint = new BlockHuntPseudoMint(address(token));
+        token.setPseudoMintContract(address(pseudoMint));
 
         // Migration
         migration = new BlockHuntMigration(address(token));
@@ -414,7 +419,7 @@ contract BlockHuntTest is Test {
         vm.stopPrank();
 
         vm.prank(alice);
-        vm.expectRevert("Mint not configured");
+        vm.expectRevert("No window");
         freshToken.mint{value: MINT_PRICE}(1);
     }
 
@@ -443,7 +448,7 @@ contract BlockHuntTest is Test {
         assertEq(_totalBlocks(alice), 500);
         // Next mint should fail (on cooldown now)
         vm.prank(alice);
-        vm.expectRevert("Player on cooldown");
+        vm.expectRevert("Cooldown");
         token.mint{value: MINT_PRICE * 1}(1);
     }
 

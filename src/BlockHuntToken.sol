@@ -91,6 +91,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     address public countdownContract;
     address public escrowContract;    // [NEW] holds sacrifice funds
     address public rewardsContract;
+    address public pseudoMintContract;
 
     uint256 public currentWindowDay;
     uint256[8] public tierTotalSupply;
@@ -253,6 +254,10 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         rewardsContract = addr;
     }
 
+    function setPseudoMintContract(address addr) external onlyOwner {
+        pseudoMintContract = addr;
+    }
+
     function resetSeasonWon() external onlyOwner {
         seasonWon = false;
     }
@@ -307,10 +312,10 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
     // ── CORE GAME ACTIONS ─────────────────────────────────────────────────────
 
     function mint(uint256 quantity) external payable nonReentrant whenNotPaused {
-        require(!seasonWon, "Season ended");
-        require(mintWindowContract != address(0), "Mint not configured");
-        require(IBlockHuntMint(mintWindowContract).isWindowOpen(), "Window closed");
-        require(IBlockHuntMint(mintWindowContract).canPlayerMint(msg.sender), "Mint cooldown active");
+        require(!seasonWon, "Season over");
+        require(mintWindowContract != address(0), "No window");
+        require(IBlockHuntMint(mintWindowContract).isWindowOpen(), "Closed");
+        require(IBlockHuntMint(mintWindowContract).canPlayerMint(msg.sender), "Cooldown");
         require(quantity > 0 && quantity <= 500, "Invalid quantity");
         uint256 mintPrice = currentMintPrice();
         require(msg.value >= mintPrice * quantity, "Underpaid");
@@ -326,7 +331,11 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         if (vrfEnabled) {
             _mintVRF(allocated, totalCost);
         } else {
-            _mintPseudoRandom(allocated, totalCost);
+            require(pseudoMintContract != address(0), "No pseudo");
+            (bool ok, ) = pseudoMintContract.call{value: totalCost}(
+                abi.encodeWithSignature("execute(address,uint256,uint256)", msg.sender, allocated, totalCost)
+            );
+            require(ok, "Pseudo mint failed");
         }
     }
 
@@ -489,71 +498,26 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
 
     // [FIX H5] Applied same tier-aggregation optimisation as VRF callback path.
     // Previous version created a 500-element array for a 500-block mint.
-    // Now tallies tiers into a [8] bucket array first, then builds a compact
-    // mintBatch with at most 6 entries. Cuts gas by ~70% on large mints.
-    function _mintPseudoRandom(uint256 allocated, uint256 totalCost) internal {
-        IBlockHuntTreasury(treasuryContract).receiveMintFunds{value: totalCost}();
+    function pseudoMintCallback(
+        address player,
+        uint256 seed,
+        uint256 totalCost,
+        uint256 allocated
+    ) external payable {
+        require(msg.sender == pseudoMintContract, "Only pseudo");
 
-        totalMinted += allocated;
-
-        // Step 1: roll tiers and tally into buckets (cached thresholds + single nonce write)
-        (uint256 t2T, uint256 t3T, uint256 t4T) = _getTierThresholds();
-        uint256 nonceStart = _nonce;
-        uint256[8] memory tierCounts;
-        for (uint256 i = 0; i < allocated; i++) {
-            uint256 rand = uint256(keccak256(abi.encodePacked(
-                block.prevrandao, block.timestamp, msg.sender, nonceStart + i + 1, i
-            )));
-            uint256 tier = _assignTierCached(rand, t2T, t3T, t4T);
-            tierCounts[tier]++;
-        }
-        _nonce = nonceStart + allocated;
-
-        // Step 2: update tierTotalSupply
-        for (uint256 t = 2; t <= 7; t++) {
-            if (tierCounts[t] > 0) tierTotalSupply[t] += tierCounts[t];
-        }
-
-        // Step 3: build compact mintBatch arrays (max 6 entries)
-        uint256 uniqueCount;
-        for (uint256 t = 2; t <= 7; t++) {
-            if (tierCounts[t] > 0) uniqueCount++;
-        }
-        uint256[] memory ids     = new uint256[](uniqueCount);
-        uint256[] memory amounts = new uint256[](uniqueCount);
-        uint256 idx;
-        for (uint256 t = 2; t <= 7; t++) {
-            if (tierCounts[t] > 0) {
-                ids[idx]     = t;
-                amounts[idx] = tierCounts[t];
-                idx++;
-            }
-        }
-
-        _mintBatch(msg.sender, ids, amounts, "");
-        IBlockHuntMint(mintWindowContract).recordMint(msg.sender, allocated);
-
-        uint256 today = block.timestamp / 86400;
-        if (!dailyEligible[today][msg.sender]) {
-            dailyEligible[today][msg.sender] = true;
-            dailyMinterCount[today]++;
-        }
-
-        if (rewardsContract != address(0)) {
-            uint8 currentBatch = uint8(IBlockHuntMint(mintWindowContract).currentBatch());
-            try IBlockHuntRewards(rewardsContract).onMint(msg.sender, totalCost, currentBatch) {}
-            catch { emit RewardsOnMintFailed(msg.sender, uint128(totalCost)); }
-
-            for (uint256 t = 2; t <= 7; t++) {
-                if (tierCounts[t] > 0) {
-                    try IBlockHuntRewards(rewardsContract).recordTierDrop(msg.sender, uint8(t), currentBatch) {}
-                    catch { emit RewardsTierDropFailed(msg.sender, uint8(t)); }
-                }
-            }
-        }
-
-        emit BlockMinted(msg.sender, allocated);
-        _checkCountdownTrigger(msg.sender);
+        // Store a temporary request and reuse _executeMint
+        uint256 fakeId = uint256(keccak256(abi.encodePacked(block.timestamp, player, seed)));
+        vrfMintRequests[fakeId] = MintRequest({
+            player: player,
+            quantity: uint32(allocated),
+            fulfilled: false,
+            claimed: false,
+            amountPaid: uint128(totalCost),
+            requestedAt: uint64(block.timestamp),
+            seed: 0
+        });
+        _executeMint(fakeId, seed);
     }
 
     // ── COMBINE ───────────────────────────────────────────────────────────────
@@ -738,7 +702,7 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
      *         countdown without needing to mint, combine, or forge first.
      */
     function claimHolderStatus() external {
-        require(!seasonWon, "Season ended");
+        require(!seasonWon, "Season over");
         require(!countdownActive, "Countdown already active");
         _checkCountdownTrigger(msg.sender);
         require(countdownActive, "Does not hold all 6 tiers");

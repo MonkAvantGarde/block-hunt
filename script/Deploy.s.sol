@@ -11,6 +11,7 @@ import "../src/BlockHuntEscrow.sol";
 import "../src/BlockHuntMigration.sol";
 import "../src/BlockHuntSeasonRegistry.sol";
 import "../src/BlockHuntRewards.sol";
+import "../src/BlockHuntPseudoMint.sol";
 
 /**
  * @title  Block Hunt — Full Fresh Deployment (Season 1 Testnet)
@@ -136,6 +137,12 @@ contract Deploy is Script {
         token.setCountdownContract(address(countdown));
         token.setEscrowContract(address(escrow));
         // migration wiring deferred to Season 2
+
+        // 10. PseudoMint (testnet pseudo-random path)
+        BlockHuntPseudoMint pseudoMint = new BlockHuntPseudoMint(address(token));
+        token.setPseudoMintContract(address(pseudoMint));
+        console.log("10. PseudoMint deployed: ", address(pseudoMint));
+
         console.log("Token wired to all peripherals.");
 
         // ── Step 3: Wire peripherals → Token ───────────────────────────────
