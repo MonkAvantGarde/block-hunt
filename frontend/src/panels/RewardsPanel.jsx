@@ -49,15 +49,6 @@ export default function RewardsPanel({ address, blocks, currentBatch }) {
     leaderboardAmounts, isLoading, refetchAll,
   } = rewards
 
-  if (isLoading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 300 }}>
-        <div style={{ ...fp, fontSize: 8, color: 'rgba(240,234,214,0.4)', letterSpacing: 2, animation: 'progressPulse 1.5s infinite' }}>LOADING REWARDS...</div>
-        <style>{REWARDS_CSS}</style>
-      </div>
-    )
-  }
-
   // Total available: vault balance (all rewards pot)
   const { data: vaultRaw } = useReadContract({
     address: CONTRACTS.REWARDS,
@@ -66,6 +57,15 @@ export default function RewardsPanel({ address, blocks, currentBatch }) {
     functionName: 'vaultBalance',
     query: { staleTime: Infinity, refetchOnMount: true },
   })
+
+  if (isLoading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 300 }}>
+        <div style={{ ...fp, fontSize: 8, color: 'rgba(240,234,214,0.4)', letterSpacing: 2, animation: 'progressPulse 1.5s infinite' }}>LOADING REWARDS...</div>
+        <style>{REWARDS_CSS}</style>
+      </div>
+    )
+  }
   const vaultEth = vaultRaw ? Number(formatEther(vaultRaw)) : 0
 
   // Also sum up tier bounties + leaderboard for context
