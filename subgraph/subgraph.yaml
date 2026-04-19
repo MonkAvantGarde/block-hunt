@@ -10,7 +10,7 @@ dataSources:
     source:
       address: "0x1fC1eB28757BBD9B09F3E23628492359fA9B6400"
       abi: BlockHuntToken
-      startBlock: 40510000
+      startBlock: 40420000
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -42,7 +42,7 @@ dataSources:
     source:
       address: "0xCF0D067E00bC58f02834f8fCF497694a9ffe158B"
       abi: BlockHuntForge
-      startBlock: 40510000
+      startBlock: 40420000
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -67,7 +67,7 @@ dataSources:
     source:
       address: "0x4f04885785c3a9F13314a207eDfC403b2D430eb3"
       abi: BlockHuntRewards
-      startBlock: 40510000
+      startBlock: 40420000
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
