@@ -155,12 +155,12 @@ export default function TierSlot({ tierId, count, onCombine, combining=false }) 
               transition:"width 0.4s",
             }} />
           </div>
-          <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:"rgba(255,255,255,0.45)", letterSpacing:0.5 }}>
+          <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:"rgba(255,255,255,0.55)", letterSpacing:0.5 }}>
             {count}/{ratio}
           </div>
           {count < ratio && (
             <div style={{
-              fontFamily:"'VT323', monospace", fontSize:18,
+              fontFamily:"'VT323', monospace", fontSize:20,
               color: count === 0 ? "rgba(255,255,255,0.2)" : `${t.accent}88`,
               textAlign:"center", lineHeight:1.2, marginTop:1,
             }}>
@@ -196,7 +196,7 @@ export default function TierSlot({ tierId, count, onCombine, combining=false }) 
               }}>+</button>
               <button onClick={() => setCombineCount(maxCombines)} style={{
                 width:30, height:20, background:"rgba(200,168,75,0.15)", border:`1px solid ${GOLD_DK}`,
-                color:GOLD, fontFamily:"'Press Start 2P', monospace", fontSize:6, cursor:"pointer",
+                color:GOLD, fontFamily:"'Press Start 2P', monospace", fontSize:7, cursor:"pointer",
               }}>MAX</button>
             </div>
           )}

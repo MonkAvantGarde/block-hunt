@@ -187,7 +187,7 @@ const detailStyle = {
   fontFamily: "'Press Start 2P', monospace",
   fontSize: 8,
   color: CREAM,
-  opacity: 0.45,
+  opacity: 0.55,
 }
 
 const dividerStyle = {

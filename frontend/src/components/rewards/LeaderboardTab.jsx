@@ -1,9 +1,14 @@
 // LeaderboardTab.jsx — Podium (prizes with glowing text) + yesterday's winners + top 10 table
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+import { useAccount, useReadContract } from 'wagmi'
 import { formatEther } from 'viem'
+import { CONTRACTS } from '../../config/wagmi'
+import { COUNTDOWN_ABI } from '../../abis'
 
 const fp = { fontFamily: "'Press Start 2P', monospace" }
 const fv = { fontFamily: "'VT323', monospace" }
+
+const CHAIN_ID = 84532
 
 const LEADERBOARD_CSS = `
   @keyframes goldGlow { 0%,100% { text-shadow: 0 0 12px rgba(240,216,104,0.6), 0 0 35px rgba(240,216,104,0.25); } 50% { text-shadow: 0 0 24px rgba(240,216,104,0.9), 0 0 60px rgba(240,216,104,0.45), 0 0 90px rgba(240,216,104,0.2); } }
@@ -38,34 +43,51 @@ function shortAddr(addr) {
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`
 }
 
-export default function LeaderboardTab({ leaderboardAmounts, address }) {
+export default function LeaderboardTab({ leaderboardAmounts }) {
   const countdown = useCountdown()
+  const { address } = useAccount()
 
   const prizes = leaderboardAmounts.map(a => Number(formatEther(a)))
 
-  // TODO: Wire real leaderboard data from Countdown contract's season-indexed scores.
-  // For now, using placeholder data. Replace with actual on-chain reads when available.
-  const placeholderEntries = [
-    { rank: 1, addr: '0xABC1234567890DEF1234567890ABCDEF12345678', score: 12450 },
-    { rank: 2, addr: '0xDEF3456789012345678901234567890123456789', score: 11200 },
-    { rank: 3, addr: '0xGHI7890123456789012345678901234567890123', score: 9800 },
-    { rank: 4, addr: '0xJKL2345678901234567890123456789012345678', score: 9600 },
-    { rank: 5, addr: address || '0x0000000000000000000000000000000000000000', score: 9480, isYou: true },
-    { rank: 6, addr: '0xMNO6789012345678901234567890123456789012', score: 8100 },
-    { rank: 7, addr: '0xPQR0123456789012345678901234567890123456', score: 7400 },
-    { rank: 8, addr: '0xSTU4567890123456789012345678901234567890', score: 6200 },
-    { rank: 9, addr: '0xVWX8901234567890123456789012345678901234', score: 5100 },
-    { rank: 10, addr: '0xYZA2345678901234567890123456789012345678', score: 4300 },
-  ]
+  // ── Read top 10 players from Countdown contract ──
+  const { data: playersData, isLoading } = useReadContract({
+    address: CONTRACTS.COUNTDOWN,
+    abi: COUNTDOWN_ABI,
+    chainId: CHAIN_ID,
+    functionName: 'getPlayers',
+    args: [0n, 10n],
+    query: { refetchOnMount: true, staleTime: Infinity },
+  })
 
-  const thirdScore = placeholderEntries[2]?.score || 0
+  // ── Build sorted entries from on-chain data ──
+  const entries = useMemo(() => {
+    if (!playersData) return []
+    const [addrs, scores] = playersData
+    const combined = addrs.map((addr, i) => ({
+      addr,
+      score: Number(scores[i]),
+    }))
+    // Sort descending by score
+    combined.sort((a, b) => b.score - a.score)
+    // Assign ranks and mark connected wallet
+    return combined.map((entry, i) => ({
+      ...entry,
+      rank: i + 1,
+      isYou: address && entry.addr.toLowerCase() === address.toLowerCase(),
+    }))
+  }, [playersData, address])
 
-  // Yesterday's winners placeholder
+  const thirdScore = entries[2]?.score || 0
+
+  // Yesterday's winners placeholder — no on-chain source for historical daily data yet
   const yesterdayWinners = [
-    { addr: '0xMNO6789012345678901234567890123456789012', prize: prizes[0] || 0.005 },
-    { addr: '0xPQR0123456789012345678901234567890123456', prize: prizes[1] || 0.003 },
-    { addr: '0xSTU4567890123456789012345678901234567890', prize: prizes[2] || 0.001 },
+    { addr: entries[0]?.addr, prize: prizes[0] || 0.005 },
+    { addr: entries[1]?.addr, prize: prizes[1] || 0.003 },
+    { addr: entries[2]?.addr, prize: prizes[2] || 0.001 },
   ]
+
+  // Connected wallet gap to #3
+  const myEntry = entries.find(e => e.isYou)
 
   // Podium config
   const podiumConfig = [
@@ -153,8 +175,8 @@ export default function LeaderboardTab({ leaderboardAmounts, address }) {
 
       {/* Yesterday's winners */}
       <div style={{
-        textAlign: 'center', ...fv, fontSize: 18,
-        color: 'rgba(240,234,214,0.45)',
+        textAlign: 'center', ...fv, fontSize: 20,
+        color: 'rgba(240,234,214,0.55)',
         marginBottom: 20, paddingBottom: 16,
         borderBottom: '1px solid rgba(255,255,255,0.07)',
       }}>
@@ -167,57 +189,84 @@ export default function LeaderboardTab({ leaderboardAmounts, address }) {
         ))}
       </div>
 
-      {/* Top 10 table */}
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-        <thead>
-          <tr>
-            {['RANK', 'PLAYER', 'SCORE', 'TO TOP 3'].map((h, i) => (
-              <th key={h} style={{
-                ...fp, fontSize: 7, color: 'rgba(240,234,214,0.5)',
-                textAlign: i === 3 ? 'right' : 'left',
-                padding: 10,
-                borderBottom: '1px solid rgba(255,255,255,0.1)',
-                letterSpacing: 1,
-              }}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {placeholderEntries.map((entry) => {
-            const isTop3 = entry.rank <= 3
-            const isYou = entry.isYou
-            const gap = entry.rank <= 3 ? '---' : `+${(thirdScore - entry.score).toLocaleString()}`
+      {/* Loading state */}
+      {isLoading && (
+        <div style={{ ...fp, fontSize: 8, color: 'rgba(240,234,214,0.55)', textAlign: 'center', padding: 20 }}>
+          Loading leaderboard...
+        </div>
+      )}
 
-            return (
-              <tr key={entry.rank} style={{
-                background: isYou ? 'rgba(110,224,216,0.08)' : 'transparent',
-              }}>
-                <td style={{
-                  ...fp, fontSize: 9, width: 36, padding: '11px 10px',
-                  borderBottom: '1px solid rgba(255,255,255,0.05)',
-                  color: isYou ? '#6ee0d8' : isTop3 ? 'rgba(240,216,104,0.8)' : 'rgba(240,234,214,0.5)',
-                }}>#{entry.rank}</td>
-                <td style={{
-                  ...fv, fontSize: 22, padding: '11px 10px',
-                  borderBottom: '1px solid rgba(255,255,255,0.05)',
-                  color: isYou ? '#6ee0d8' : isTop3 ? 'rgba(240,216,104,0.8)' : 'rgba(240,234,214,0.75)',
-                  fontWeight: isYou ? 'bold' : 'normal',
-                }}>{isYou ? 'YOU' : shortAddr(entry.addr)}</td>
-                <td style={{
-                  ...fv, fontSize: 22, textAlign: 'right', padding: '11px 10px',
-                  borderBottom: '1px solid rgba(255,255,255,0.05)',
-                  color: isYou ? '#6ee0d8' : isTop3 ? 'rgba(240,216,104,0.8)' : 'rgba(240,234,214,0.65)',
-                }}>{entry.score.toLocaleString()}</td>
-                <td style={{
-                  ...fp, fontSize: 8, textAlign: 'right', padding: '11px 10px',
-                  borderBottom: '1px solid rgba(255,255,255,0.05)',
-                  color: isYou ? '#6ee0d8' : '#ff8844',
-                }}>{gap}</td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
+      {/* Empty state */}
+      {!isLoading && entries.length === 0 && (
+        <div style={{ ...fp, fontSize: 8, color: 'rgba(240,234,214,0.55)', textAlign: 'center', padding: 20 }}>
+          No players yet this season
+        </div>
+      )}
+
+      {/* Top 10 table */}
+      {entries.length > 0 && (
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr>
+              {['RANK', 'PLAYER', 'SCORE', 'TO TOP 3'].map((h, i) => (
+                <th key={h} style={{
+                  ...fp, fontSize: 7, color: 'rgba(240,234,214,0.55)',
+                  textAlign: i === 3 ? 'right' : 'left',
+                  padding: 10,
+                  borderBottom: '1px solid rgba(255,255,255,0.1)',
+                  letterSpacing: 1,
+                }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map((entry) => {
+              const isTop3 = entry.rank <= 3
+              const isYou = entry.isYou
+              const gap = entry.rank <= 3 ? '---' : `+${(thirdScore - entry.score).toLocaleString()}`
+
+              return (
+                <tr key={entry.rank} style={{
+                  background: isYou ? 'rgba(110,224,216,0.08)' : 'transparent',
+                }}>
+                  <td style={{
+                    ...fp, fontSize: 9, width: 36, padding: '11px 10px',
+                    borderBottom: '1px solid rgba(255,255,255,0.05)',
+                    color: isYou ? '#6ee0d8' : isTop3 ? 'rgba(240,216,104,0.8)' : 'rgba(240,234,214,0.55)',
+                  }}>#{entry.rank}</td>
+                  <td style={{
+                    ...fv, fontSize: 22, padding: '11px 10px',
+                    borderBottom: '1px solid rgba(255,255,255,0.05)',
+                    color: isYou ? '#6ee0d8' : isTop3 ? 'rgba(240,216,104,0.8)' : 'rgba(240,234,214,0.75)',
+                    fontWeight: isYou ? 'bold' : 'normal',
+                  }}>{isYou ? 'YOU' : shortAddr(entry.addr)}</td>
+                  <td style={{
+                    ...fv, fontSize: 22, textAlign: 'right', padding: '11px 10px',
+                    borderBottom: '1px solid rgba(255,255,255,0.05)',
+                    color: isYou ? '#6ee0d8' : isTop3 ? 'rgba(240,216,104,0.8)' : 'rgba(240,234,214,0.65)',
+                  }}>{entry.score.toLocaleString()}</td>
+                  <td style={{
+                    ...fp, fontSize: 8, textAlign: 'right', padding: '11px 10px',
+                    borderBottom: '1px solid rgba(255,255,255,0.05)',
+                    color: isYou ? '#6ee0d8' : '#ff8844',
+                  }}>{gap}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      )}
+
+      {/* Connected wallet gap to #3 */}
+      {myEntry && myEntry.rank > 3 && (
+        <div style={{
+          ...fp, fontSize: 8, color: '#6ee0d8', textAlign: 'center',
+          marginTop: 12, padding: '8px 0',
+          borderTop: '1px solid rgba(255,255,255,0.07)',
+        }}>
+          YOUR GAP TO TOP 3: +{(thirdScore - myEntry.score).toLocaleString()} pts
+        </div>
+      )}
     </div>
   )
 }

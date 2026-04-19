@@ -30,7 +30,7 @@ export function Btn({ onClick, children, color="#c8a84b", disabled=false, danger
 export function StatBox({ label, value, accent }) {
   return (
     <div style={{ flex:1, background:"rgba(0,0,0,0.35)", border:"1px solid rgba(255,255,255,0.07)", padding:"6px 8px" }}>
-      <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:"rgba(255,255,255,0.35)", letterSpacing:1 }}>{label}</div>
+      <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:"rgba(255,255,255,0.55)", letterSpacing:1 }}>{label}</div>
       <div style={{ fontFamily:"'VT323', monospace", fontSize:24, color: accent || CREAM, marginTop:2 }}>{value}</div>
     </div>
   );

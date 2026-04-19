@@ -218,6 +218,18 @@ export const COUNTDOWN_ABI = [
   { name: 'countdownDuration', type: 'function', stateMutability: 'view',
     inputs: [], outputs: [{ name: '', type: 'uint256' }] },
 
+  // ── Leaderboard reads ──
+  { name: 'getPlayers', type: 'function', stateMutability: 'view',
+    inputs: [{ name: 'offset', type: 'uint256' }, { name: 'limit', type: 'uint256' }],
+    outputs: [{ name: 'addrs', type: 'address[]' }, { name: 'scores', type: 'uint256[]' }] },
+  { name: 'totalPlayers', type: 'function', stateMutability: 'view',
+    inputs: [], outputs: [{ name: '', type: 'uint256' }] },
+  { name: 'currentSeason', type: 'function', stateMutability: 'view',
+    inputs: [], outputs: [{ name: '', type: 'uint256' }] },
+  { name: 'seasonScore', type: 'function', stateMutability: 'view',
+    inputs: [{ name: 'season', type: 'uint256' }, { name: 'player', type: 'address' }],
+    outputs: [{ name: '', type: 'uint256' }] },
+
   // ── Events ──
   { name: 'CountdownStarted', type: 'event', inputs: [
     { name: 'holder', type: 'address', indexed: true },

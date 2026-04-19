@@ -675,7 +675,7 @@ const { data: countdownHolder } = useReadContract({
           display:"flex", alignItems:"center", gap:16, marginBottom:20,
           padding:"10px 16px", background:"rgba(0,0,0,0.2)", border:"1px solid rgba(255,255,255,0.05)",
         }}>
-          <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:"rgba(255,255,255,0.45)", whiteSpace:"nowrap" }}>COLLECTION</div>
+          <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:"rgba(255,255,255,0.55)", whiteSpace:"nowrap" }}>COLLECTION</div>
           <div style={{ flex:1, height:10, background:"rgba(0,0,0,0.45)", border:"1px solid rgba(0,0,0,0.4)", overflow:"hidden", position:"relative" }}>
             <div style={{
               height:"100%", width:`${(have6/6)*100}%`,
@@ -690,7 +690,7 @@ const { data: countdownHolder } = useReadContract({
             {[7,6,5,4,3,2].map(t => {
               const held = (blocks[t] ?? 0) > 0
               const tier = TMAP[t]
-              return <span key={t} style={{ fontFamily:"'VT323', monospace", fontSize:18, color: held ? tier.accent : "rgba(255,255,255,0.2)", lineHeight:1 }}>{held ? "■" : "◇"}</span>
+              return <span key={t} style={{ fontFamily:"'VT323', monospace", fontSize:20, color: held ? tier.accent : "rgba(255,255,255,0.2)", lineHeight:1 }}>{held ? "■" : "◇"}</span>
             })}
           </div>
           <div style={{ fontFamily:"'Press Start 2P', monospace", fontSize:8, color:GOLD, whiteSpace:"nowrap" }}>{have6} / 6 TIERS</div>
@@ -723,7 +723,7 @@ const { data: countdownHolder } = useReadContract({
             return (
               <div style={{
                 fontFamily:"'Press Start 2P', monospace", fontSize:8,
-                color:"rgba(255,255,255,0.45)", textAlign:"center",
+                color:"rgba(255,255,255,0.55)", textAlign:"center",
                 marginTop:10, letterSpacing:0.5,
                 textShadow:"0 0 8px rgba(200,168,75,0.3)",
               }}>
