@@ -83,11 +83,65 @@ export default function ReferralTab({ address, referralsActive, referralAmount, 
   const refAmountEth = referralAmount ? Number(formatEther(referralAmount)) : 0.002
   const thresholdNum = referralThreshold ? Number(referralThreshold) : 50
 
-  // Referee list requires subgraph or event indexing — not available via contract views.
-  // Show the user's own referrer status instead.
-  const referees = []
-  const activeCount = 0
-  const claimableCount = 0
+  // Fetch referees from subgraph
+  const [referees, setReferees] = useState([])
+  const [refereesLoading, setRefereesLoading] = useState(false)
+
+  useEffect(() => {
+    if (!address) return
+    setRefereesLoading(true)
+    const query = `{
+      referralLinks(where: { referrer: "${address.toLowerCase()}" }, first: 50) {
+        referee { id }
+        linkedAt
+      }
+    }`
+    fetch('https://api.studio.thegraph.com/query/1744131/blok-hunt/v2.0.1.', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        const links = data?.data?.referralLinks || []
+        setReferees(links.map(l => l.referee.id))
+        setRefereesLoading(false)
+      })
+      .catch(() => setRefereesLoading(false))
+  }, [address])
+
+  // Read on-chain status for each referee: totalMintedByPlayer, snapshotAmount, referralPaid
+  const refereeContracts = useMemo(() => {
+    if (!referees.length) return []
+    const calls = []
+    for (const ref of referees) {
+      calls.push(
+        { address: CONTRACTS.REWARDS, abi: REWARDS_ABI, chainId: CHAIN_ID, functionName: 'totalMintedByPlayer', args: [ref] },
+        { address: CONTRACTS.REWARDS, abi: REWARDS_ABI, chainId: CHAIN_ID, functionName: 'snapshotAmount', args: [ref] },
+        { address: CONTRACTS.REWARDS, abi: REWARDS_ABI, chainId: CHAIN_ID, functionName: 'referralPaid', args: [ref] },
+      )
+    }
+    return calls
+  }, [referees])
+
+  const { data: refereeData } = useReadContracts({
+    contracts: refereeContracts,
+    query: { enabled: refereeContracts.length > 0, staleTime: Infinity, refetchOnMount: true },
+  })
+
+  const refereeList = useMemo(() => {
+    if (!referees.length || !refereeData) return []
+    return referees.map((addr, i) => {
+      const minted = refereeData[i * 3]?.result != null ? Number(refereeData[i * 3].result) : 0
+      const snapshot = refereeData[i * 3 + 1]?.result || BigInt(0)
+      const paid = refereeData[i * 3 + 2]?.result || false
+      const claimable = snapshot > BigInt(0) && !paid
+      return { addr, minted, claimable, paid, snapshot }
+    })
+  }, [referees, refereeData])
+
+  const activeCount = refereeList.length
+  const claimableCount = refereeList.filter(r => r.claimable).length
 
   const isSettingRef = setRefPending || setRefConfirming
 
@@ -158,14 +212,58 @@ export default function ReferralTab({ address, referralsActive, referralAmount, 
         </div>
       )}
 
-      {/* Referee tracking info */}
-      <div style={{
-        ...fv, fontSize: 20, color: 'rgba(240,234,214,0.5)',
-        textAlign: 'center', padding: '16px 0',
-      }}>
-        Referral tracking is available once the subgraph indexes your referees.
-        Share your link to start earning!
-      </div>
+      {/* Referee list */}
+      {refereesLoading && (
+        <div style={{ ...fp, fontSize: 7, color: 'rgba(240,234,214,0.4)', textAlign: 'center', padding: '16px 0' }}>
+          LOADING REFERRALS...
+        </div>
+      )}
+
+      {!refereesLoading && refereeList.length === 0 && (
+        <div style={{ ...fv, fontSize: 22, color: 'rgba(240,234,214,0.5)', textAlign: 'center', padding: '16px 0' }}>
+          No referrals yet. Share your link to start earning!
+        </div>
+      )}
+
+      {!refereesLoading && refereeList.length > 0 && (
+        <div>
+          {refereeList.map((ref, i) => {
+            const isClaiming = claimingReferee === ref.addr && (claimPending || claimConfirming)
+            return (
+              <div key={i} style={{
+                display: 'flex', alignItems: 'center', gap: 14,
+                padding: '10px 0',
+                borderBottom: '1px solid rgba(255,255,255,0.05)',
+              }}>
+                <div style={{ ...fv, fontSize: 22, color: 'rgba(240,234,214,0.75)', flex: 1 }}>
+                  {shortAddr(ref.addr)}
+                </div>
+                <div style={{ ...fv, fontSize: 22, color: 'rgba(240,234,214,0.55)' }}>
+                  {ref.minted} / {thresholdNum} blocks
+                </div>
+                {ref.paid ? (
+                  <span style={{ ...fp, fontSize: 7, color: '#6ee0d8', border: '1px solid rgba(110,224,216,0.3)', padding: '5px 10px' }}>CLAIMED</span>
+                ) : ref.claimable ? (
+                  <button
+                    onClick={() => handleClaimReferral(ref.addr)}
+                    disabled={isClaiming}
+                    style={{
+                      ...fp, fontSize: 7,
+                      background: '#e0c060', color: '#0a1a0f',
+                      border: '2px solid #0a1a0f', padding: '7px 12px',
+                      cursor: isClaiming ? 'default' : 'pointer',
+                      boxShadow: '2px 2px 0 #0a1a0f',
+                      opacity: isClaiming ? 0.6 : 1,
+                    }}
+                  >{isClaiming ? 'CLAIMING...' : `CLAIM ${refAmountEth} ETH`}</button>
+                ) : (
+                  <span style={{ ...fp, fontSize: 7, color: 'rgba(240,234,214,0.4)' }}>PENDING</span>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {/* Manual referrer input — only show if not already linked */}
       {!isLinked && (
