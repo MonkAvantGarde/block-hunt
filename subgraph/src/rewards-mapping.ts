@@ -83,7 +83,7 @@ export function handleLotteryDistributed(event: LotteryDistributed): void {
 
   let draw = new LotteryDraw(id)
   draw.season        = season
-  draw.day           = day
+  draw.day           = day.toI32()
   draw.winner        = winnerAddr
   draw.amount        = event.params.amount
   draw.distributedAt = event.block.timestamp
