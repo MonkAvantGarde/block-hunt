@@ -182,6 +182,7 @@ export default function TradePanel({ refetchAll: gameRefetch, onRevealTier }) {
       address: CONTRACTS.MARKETPLACE, chainId: 84532, abi: MARKETPLACE_ABI,
       functionName: 'createListing',
       args: [BigInt(createTier), BigInt(createQty), parseEther(createPrice), BigInt(7 * 86400)],
+      gas: BigInt(300_000),
     }, { onError: (e) => setError(e.shortMessage || 'Create listing failed') })
   }
 

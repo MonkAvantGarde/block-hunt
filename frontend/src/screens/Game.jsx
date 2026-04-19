@@ -522,6 +522,28 @@ const { data: countdownHolder } = useReadContract({
         </div>
       )}
 
+      {/* Countdown active banner — tap to view spectator */}
+      {countdownActive === true && !isActiveHolder && (
+        <div
+          onClick={() => onNavigate('countdown-spectator')}
+          style={{
+            position:"fixed", bottom:80, left:"50%",
+            transform:"translateX(-50%)",
+            zIndex:7999,
+            background:"linear-gradient(135deg,#1a2a4a,#0a1a3a)",
+            border:"2px solid #f0d868",
+            borderRadius:4, padding:"10px 20px",
+            fontFamily:"'Press Start 2P', monospace", fontSize:8,
+            color:"#f0d868", letterSpacing:1, whiteSpace:"nowrap",
+            boxShadow:"0 0 16px rgba(240,216,104,0.3)",
+            cursor:"pointer",
+            animation:"goldPulse 2s infinite",
+          }}
+        >
+          COUNTDOWN ACTIVE — TAP TO VIEW
+        </div>
+      )}
+
       {/* Rank change toast */}
       {rankToast && (
         <div
