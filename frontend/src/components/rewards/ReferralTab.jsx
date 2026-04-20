@@ -96,7 +96,7 @@ export default function ReferralTab({ address, referralsActive, referralAmount, 
         linkedAt
       }
     }`
-    fetch('https://api.studio.thegraph.com/query/1744131/blok-hunt/v2.0.1.', {
+    fetch('/api/subgraph', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query }),
