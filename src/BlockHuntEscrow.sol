@@ -148,6 +148,7 @@ contract BlockHuntEscrow is Ownable, ReentrancyGuard {
         for (uint256 i = 0; i < players.length; i++) {
             require(players[i] != sacrificeWinner, "Winner excluded from leaderboard");
             if (amounts[i] > 0) {
+                require(leaderboardEntitlement[players[i]] == 0, "Duplicate player");
                 leaderboardEntitlement[players[i]] = amounts[i];
                 _entitlementList.push(players[i]);
             }

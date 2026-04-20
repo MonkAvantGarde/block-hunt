@@ -60,6 +60,8 @@ export const TOKEN_ABI = [
     inputs: [{ name: 'quantity', type: 'uint256' }], outputs: [] },
   { name: 'cancelMintRequest', type: 'function', stateMutability: 'nonpayable',
     inputs: [{ name: 'requestId', type: 'uint256' }], outputs: [] },
+  { name: 'mintRequestTTL', type: 'function', stateMutability: 'view',
+    inputs: [], outputs: [{ name: '', type: 'uint256' }] },
   { name: 'combine', type: 'function', stateMutability: 'nonpayable',
     inputs: [{ name: 'fromTier', type: 'uint256' }], outputs: [] },
   { name: 'combineMany', type: 'function', stateMutability: 'nonpayable',
@@ -256,7 +258,7 @@ export const COUNTDOWN_ABI = [
 // ── FORGE CONTRACT (BlockHuntForge) ───────────────────────────────────────────
 
 export const FORGE_ABI = [
-  { name: 'forge', type: 'function', stateMutability: 'nonpayable',
+  { name: 'forge', type: 'function', stateMutability: 'payable',
     inputs: [
       { name: 'fromTier', type: 'uint256' },
       { name: 'burnCount', type: 'uint256' },
@@ -266,6 +268,30 @@ export const FORGE_ABI = [
       { name: 'fromTiers', type: 'uint256[]' },
       { name: 'burnCounts', type: 'uint256[]' },
     ], outputs: [] },
+  { name: 'cancelForgeRequest', type: 'function', stateMutability: 'nonpayable',
+    inputs: [{ name: 'requestId', type: 'uint256' }], outputs: [] },
+  { name: 'cancelBatchForgeRequest', type: 'function', stateMutability: 'nonpayable',
+    inputs: [{ name: 'requestId', type: 'uint256' }], outputs: [] },
+  { name: 'forgeRequestTTL', type: 'function', stateMutability: 'view',
+    inputs: [], outputs: [{ name: '', type: 'uint256' }] },
+  { name: 'vrfForgeRequests', type: 'function', stateMutability: 'view',
+    inputs: [{ name: 'requestId', type: 'uint256' }],
+    outputs: [
+      { name: 'player', type: 'address' },
+      { name: 'fromTier', type: 'uint8' },
+      { name: 'burnCount', type: 'uint16' },
+      { name: 'resolved', type: 'bool' },
+      { name: 'success', type: 'bool' },
+      { name: 'requestedAt', type: 'uint40' },
+    ] },
+  { name: 'vrfBatchRequests', type: 'function', stateMutability: 'view',
+    inputs: [{ name: 'requestId', type: 'uint256' }],
+    outputs: [
+      { name: 'player', type: 'address' },
+      { name: 'attemptCount', type: 'uint256' },
+      { name: 'resolved', type: 'bool' },
+      { name: 'requestedAt', type: 'uint40' },
+    ] },
   // Events
   { name: 'ForgeRequested', type: 'event', inputs: [
     { name: 'requestId', type: 'uint256', indexed: true },
@@ -277,6 +303,18 @@ export const FORGE_ABI = [
     { name: 'player', type: 'address', indexed: true },
     { name: 'fromTier', type: 'uint256', indexed: false },
     { name: 'success', type: 'bool', indexed: false }] },
+  { name: 'BatchForgeRequested', type: 'event', inputs: [
+    { name: 'requestId', type: 'uint256', indexed: true },
+    { name: 'player', type: 'address', indexed: true },
+    { name: 'attemptCount', type: 'uint256', indexed: false }] },
+  { name: 'BatchForgeResolved', type: 'event', inputs: [
+    { name: 'requestId', type: 'uint256', indexed: true },
+    { name: 'player', type: 'address', indexed: true },
+    { name: 'successes', type: 'uint256', indexed: false },
+    { name: 'failures', type: 'uint256', indexed: false }] },
+  { name: 'ForgeCancelled', type: 'event', inputs: [
+    { name: 'requestId', type: 'uint256', indexed: true },
+    { name: 'player', type: 'address', indexed: true }] },
 ];
 
 

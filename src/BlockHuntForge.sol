@@ -79,6 +79,7 @@ contract BlockHuntForge is VRFConsumerBaseV2Plus, ReentrancyGuard {
         address player;
         uint256 attemptCount;
         bool    resolved;
+        uint40  requestedAt;
     }
 
     // [NEW] Individual attempt within a batch — stored separately for gas efficiency
@@ -311,7 +312,8 @@ contract BlockHuntForge is VRFConsumerBaseV2Plus, ReentrancyGuard {
         vrfBatchRequests[requestId] = BatchForgeRequest({
             player:       msg.sender,
             attemptCount: count,
-            resolved:     false
+            resolved:     false,
+            requestedAt:  uint40(block.timestamp)
         });
 
         // Store individual attempts + notify countdown
@@ -341,7 +343,8 @@ contract BlockHuntForge is VRFConsumerBaseV2Plus, ReentrancyGuard {
         batchRequests[nonce] = BatchForgeRequest({
             player:       msg.sender,
             attemptCount: count,
-            resolved:     false
+            resolved:     false,
+            requestedAt:  uint40(block.timestamp)
         });
 
         uint256 successes;
@@ -397,6 +400,28 @@ contract BlockHuntForge is VRFConsumerBaseV2Plus, ReentrancyGuard {
 
         emit ForgeCancelled(requestId, msg.sender);
         delete vrfForgeRequests[requestId];
+    }
+
+    function cancelBatchForgeRequest(uint256 requestId) external nonReentrant {
+        BatchForgeRequest storage r = vrfBatchRequests[requestId];
+        require(r.player == msg.sender, "Not requester");
+        require(!r.resolved, "Already resolved");
+        require(block.timestamp >= uint256(r.requestedAt) + forgeRequestTTL, "TTL not reached");
+
+        uint256 count = r.attemptCount;
+        for (uint256 i = 0; i < count; i++) {
+            ForgeAttempt memory a = batchAttempts[requestId][i];
+            IBlockHuntTokenForge(tokenContract).forgeRefund(msg.sender, a.fromTier, a.burnCount);
+            if (countdownContract != address(0)) {
+                IBlockHuntCountdownForge(countdownContract).clearPendingForgeBurns(
+                    msg.sender, a.fromTier, a.burnCount
+                );
+            }
+            delete batchAttempts[requestId][i];
+        }
+
+        emit ForgeCancelled(requestId, msg.sender);
+        delete vrfBatchRequests[requestId];
     }
 
     // ═════════════════════════════════════════════════════════════════════════

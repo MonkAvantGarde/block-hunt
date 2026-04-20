@@ -18,7 +18,10 @@ import { injected, walletConnect } from 'wagmi/connectors'
 // Base Sepolia testnet. Chain ID 84532.
 // Public RPC for now — replace with a dedicated Alchemy/Infura key before mainnet.
 
-export const BASE_SEPOLIA_RPC = 'https://base-sepolia.g.alchemy.com/v2/gEjkk1lRRfOpVr2RCtTzl'
+// Prefer env-injected RPC (Vercel: set VITE_RPC_URL to your Alchemy/Infura URL).
+// Falls back to Base's public RPC — rate-limited, fine for dev/preview.
+export const BASE_SEPOLIA_RPC =
+  import.meta.env.VITE_RPC_URL || 'https://sepolia.base.org'
 
 // ── WALLETCONNECT ─────────────────────────────────────────────────────────────
 // Needed for mobile wallets (Rainbow, MetaMask mobile, etc.)
@@ -45,14 +48,14 @@ export const config = createConfig({
 // Never hardcode addresses anywhere else in the app.
 
 export const CONTRACTS = {
-  TOKEN:     '0x522672cda4470D3cD3A85d019ed6CcF11DB84B87',
-  TREASURY:  '0xb94EB990e21b9c8144bc02Fe7CF2aa19cB8Fa684',
-  WINDOW:    '0x1d1bA5Aef207144fD4acd2019a7ed47A7051B24F',
-  FORGE:     '0x7673607547D678b421FbEA35A91506F8BcED36b9',
-  COUNTDOWN: '0xcc94552173EEeAEa08875e256E178828C26199cB',
-  ESCROW:    '0xeAE24483e1F8c5a6bB6714e536b6eCF74673189F',
-  REWARDS:   '0x331F078154817945BF03846D1F2564f8F440fcC4',
-  MARKETPLACE: '0x84A05C49378A2A85A7D2894DAecbC4b824F66672',
+  TOKEN:     '0x7e04Dd24447f3504678085B85C5ee2F0c517eB1c',
+  TREASURY:  '0x36E206F954bFb363A7BD136f8716e7bC0628e01F',
+  WINDOW:    '0xC9c3ed2ed975AAC0cC4e87520aA8629045e4c209',
+  FORGE:     '0x8DD3B7ADdEe9e48afD389f10E18C40e88537dFe7',
+  COUNTDOWN: '0x6f50775F6684626a8D1aEEee7D33D132e276888E',
+  ESCROW:    '0xD15033654D367d2CDbEfff0348B27ff01B3D35f8',
+  REWARDS:   '0xd2c48004C2209248980c921CEBEEA9daAbCca349',
+  MARKETPLACE: '0xCf0F10801dA69f0770000E2085C1f7601F3b8476',
 }
 
 // ── GAME CONSTANTS ────────────────────────────────────────────────────────────

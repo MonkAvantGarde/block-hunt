@@ -1,6 +1,7 @@
 import { useSafeWrite } from '../hooks/useSafeWrite'
 import { useState, useEffect, useRef } from "react";
-import { useWriteContract, useWaitForTransactionReceipt, useChainId, useSwitchChain, useAccount, useConnect } from 'wagmi';
+import { useWriteContract, useWaitForTransactionReceipt, useChainId, useSwitchChain, useAccount, useConnect, useReadContracts } from 'wagmi';
+import { decodeEventLog } from 'viem';
 import { CONTRACTS } from '../config/wagmi';
 import { FORGE_ABI } from '../abis';
 import { GOLD, INK, CREAM, TMAP, COMBINE_RATIOS } from '../config/design-tokens';
@@ -27,10 +28,18 @@ export default function ForgePanel({ blocks, onForge, address }) {
   const [forgeError, setForgeError]   = useState(null)
   const [batchMode, setBatchMode]   = useState(false)
   const [batchAttempts, setBatchAttempts] = useState([])
+  const [forgeRequestId, setForgeRequestId] = useState(null)
+  const [isBatchRequest, setIsBatchRequest] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
   const intervalRef = useRef(null)
   const autoRef     = useRef(null)
   const pollRef     = useRef(null)
   const forgeBlockRef = useRef(null)
+
+  const { data: forgeTTLRaw } = useReadContracts({
+    contracts: [{ address: CONTRACTS.FORGE, chainId: 84532, abi: FORGE_ABI, functionName: 'forgeRequestTTL' }],
+  })
+  const forgeTTLSeconds = forgeTTLRaw?.[0]?.status === 'success' ? Number(forgeTTLRaw[0].result) : 600
 
   const { writeContract } = useSafeWrite()
 
@@ -100,6 +109,22 @@ export default function ForgePanel({ blocks, onForge, address }) {
   useEffect(() => {
     if (forgeReceipt?.blockNumber) {
       forgeBlockRef.current = forgeReceipt.blockNumber
+    }
+    if (!forgeReceipt || forgeRequestId) return
+    for (const log of forgeReceipt.logs) {
+      try {
+        const decoded = decodeEventLog({ abi: FORGE_ABI, data: log.data, topics: log.topics })
+        if (decoded.eventName === 'ForgeRequested') {
+          setForgeRequestId(decoded.args.requestId.toString())
+          setIsBatchRequest(false)
+          return
+        }
+        if (decoded.eventName === 'BatchForgeRequested') {
+          setForgeRequestId(decoded.args.requestId.toString())
+          setIsBatchRequest(true)
+          return
+        }
+      } catch {}
     }
   }, [forgeReceipt])
 
@@ -186,7 +211,27 @@ export default function ForgePanel({ blocks, onForge, address }) {
     setForgeTxHash(null)
     setForgeError(null)
     setBatchAttempts([])
+    setForgeRequestId(null)
+    setIsBatchRequest(false)
+    setCancelling(false)
   }
+
+  function doCancelForge() {
+    if (!forgeRequestId || cancelling) return
+    setCancelling(true)
+    writeContract({
+      address: CONTRACTS.FORGE, chainId: 84532,
+      abi: FORGE_ABI,
+      functionName: isBatchRequest ? 'cancelBatchForgeRequest' : 'cancelForgeRequest',
+      args: [BigInt(forgeRequestId)],
+      gas: BigInt(300_000),
+    }, {
+      onSuccess: () => { reset(); onForge() },
+      onError: (err) => { setCancelling(false); setForgeError(err) },
+    })
+  }
+
+  const canCancelForge = !!forgeRequestId && elapsed >= forgeTTLSeconds
 
   if (vrfState === VRF.PENDING || vrfState === VRF.DELAYED) {
     return (
@@ -226,6 +271,20 @@ export default function ForgePanel({ blocks, onForge, address }) {
             Taking longer than usual. VRF result is still incoming.
           </div>
         )}
+        {canCancelForge && (
+          <button
+            onClick={doCancelForge}
+            disabled={cancelling}
+            style={{
+              marginTop:8,
+              fontFamily:"'Press Start 2P', monospace", fontSize:8, letterSpacing:1,
+              background:'rgba(255,80,80,0.12)', color:'#ff6666',
+              border:'1px solid rgba(255,80,80,0.35)', padding:'10px', cursor:'pointer',
+            }}
+          >
+            {cancelling ? 'CANCELLING…' : '✕ CANCEL & REFUND BLOCKS'}
+          </button>
+        )}
       </div>
     )
   }
@@ -241,9 +300,24 @@ export default function ForgePanel({ blocks, onForge, address }) {
         }}>
           VRF RESPONSE TIMED OUT<br/>
           <span style={{color:'rgba(255,255,255,0.55)', fontFamily:"'Courier Prime', monospace", fontSize:11}}>
-            Your blocks are burned. Contact support if this persists.
+            {forgeRequestId
+              ? 'Cancel below to refund your burned blocks.'
+              : 'Your blocks are burned. Contact support if this persists.'}
           </span>
         </div>
+        {forgeRequestId && (
+          <button
+            onClick={doCancelForge}
+            disabled={cancelling}
+            style={{
+              fontFamily:"'Press Start 2P', monospace", fontSize:8, letterSpacing:1,
+              background:'rgba(255,80,80,0.12)', color:'#ff6666',
+              border:'1px solid rgba(255,80,80,0.35)', padding:'10px', cursor:'pointer',
+            }}
+          >
+            {cancelling ? 'CANCELLING…' : '✕ CANCEL & REFUND BLOCKS'}
+          </button>
+        )}
         <button onClick={reset} style={{
           marginTop:'auto',
           fontFamily:"'Press Start 2P', monospace", fontSize:8, letterSpacing:1,

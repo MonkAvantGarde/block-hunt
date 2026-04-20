@@ -24,8 +24,10 @@ type Player @entity(immutable: false) {
   # Reverse lookups
   activities: [PlayerActivity!]! @derivedFrom(field: "player")
   forgeRequests: [ForgeRequest!]! @derivedFrom(field: "player")
-  dailyDrawWins: [DailyDraw!]! @derivedFrom(field: "winner")
-  batchFirstWins: [BatchFirst!]! @derivedFrom(field: "winner")
+  tierBountyWins: [TierBounty!]! @derivedFrom(field: "winner")
+  lotteryWins: [LotteryDraw!]! @derivedFrom(field: "winner")
+  streakClaims: [StreakClaim!]! @derivedFrom(field: "player")
+  referralsClaimed: [ReferralClaim!]! @derivedFrom(field: "referrer")
 }
 
 # One entity per player per UTC day — used for streak calculation
@@ -61,41 +63,48 @@ type ForgeRequest @entity(immutable: false) {
   resolvedAt: BigInt
 }
 
-# ── Rewards tracking ──────────────────────────────────────────────────────
+# ── Rewards v2 tracking ───────────────────────────────────────────────────
 
-type DailyDraw @entity(immutable: false) {
-  id: ID!                    # "draw-{day}"
-  day: BigInt!
+type TierBounty @entity(immutable: false) {
+  id: ID!                    # "{season}-{batch}-{tier}"
+  season: BigInt!
+  batch: Int!
+  tier: Int!
   winner: Player!
-  prize: BigInt!
-  resolvedAt: BigInt!
+  amount: BigInt!
   claimed: Boolean!
-  claimedAmount: BigInt
+  wonAt: BigInt!
 }
 
-type BatchFirst @entity(immutable: false) {
-  id: ID!                    # "{batch}-{achievementId}"
-  batch: Int!
-  achievementId: Int!
+type LotteryDraw @entity(immutable: false) {
+  id: ID!                    # "lottery-{season}-{day}"
+  season: BigInt!
+  day: Int!
   winner: Player!
-  prize: BigInt!
-  awardedAt: BigInt!
-  claimed: Boolean!
-  claimedAmount: BigInt
+  amount: BigInt!
+  distributedAt: BigInt!
 }
 
-type BatchBounty @entity(immutable: false) {
-  id: ID!                    # "bounty-{batch}"
-  batch: Int!
-  totalRecipients: BigInt!
-  perWalletShare: BigInt!
-  setAt: BigInt!
-  distributed: Boolean!
+type StreakClaim @entity(immutable: true) {
+  id: ID!                    # "{tx}-{logIndex}"
+  season: BigInt!
+  player: Player!
+  milestoneIndex: Int!
+  blocksRewarded: Int!
+  claimedAt: BigInt!
 }
 
-type BatchRewardConfig @entity(immutable: false) {
-  id: ID!                    # "config-{batch}"
-  batch: Int!
-  totalDeposit: BigInt!
-  active: Boolean!
+type ReferralClaim @entity(immutable: true) {
+  id: ID!                    # "{tx}-{logIndex}"
+  referrer: Player!
+  referee: Player!
+  amount: BigInt!
+  claimedAt: BigInt!
+}
+
+type ReferralLink @entity(immutable: true) {
+  id: ID!                    # referee address
+  referee: Player!
+  referrer: Player!
+  linkedAt: BigInt!
 }

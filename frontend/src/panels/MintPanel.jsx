@@ -13,7 +13,7 @@ import PrizePoolDisplay from '../components/PrizePoolDisplay';
 import VRFDrumRoll from '../components/VRFDrumRoll';
 import { useReferral } from '../hooks/useReferral';
 
-function PendingMintItem({ item, onDelivered, onRequestId }) {
+function PendingMintItem({ item, onDelivered, onRequestId, ttlSeconds = 3600 }) {
   const [elapsed, setElapsed] = useState(Math.floor((Date.now() - item.startTime) / 1000))
   const [cancelling, setCancelling] = useState(false)
 
@@ -87,9 +87,9 @@ function PendingMintItem({ item, onDelivered, onRequestId }) {
     return () => clearTimeout(t)
   }, [isDelivered])
 
-  const canCancel = !isDelivered && elapsed >= 3600 && !!item.requestId
-  const missingRequestId = !isDelivered && elapsed >= 3600 && !item.requestId
-  const cancelLabel = cancelling ? "…" : elapsed >= 3600 ? "CANCEL" : fmt(3600 - elapsed)
+  const canCancel = !isDelivered && elapsed >= ttlSeconds && !!item.requestId
+  const missingRequestId = !isDelivered && elapsed >= ttlSeconds && !item.requestId
+  const cancelLabel = cancelling ? "…" : elapsed >= ttlSeconds ? "CANCEL" : fmt(ttlSeconds - elapsed)
 
   return (
     <div style={{
@@ -216,6 +216,12 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatu
       if (r.status === 'success') batchMinted[i + 1] = Number(r.result[2])
     })
   }
+
+  // On-chain mint cancel TTL — default 600s, cap UI wait at 1h.
+  const { data: mintTTLRaw } = useReadContracts({
+    contracts: [{ address: CONTRACTS.TOKEN, chainId: 84532, abi: TOKEN_ABI, functionName: 'mintRequestTTL' }],
+  })
+  const mintTTLSeconds = mintTTLRaw?.[0]?.status === 'success' ? Number(mintTTLRaw[0].result) : 600
 
   // VRF callback gas cap: actual gas ~28k/block, not the 3k in the contract constant.
   // (2,500,000 - 150,000) / 28,000 ≈ 83 — use 80 as safe max until contract redeploy.
@@ -786,7 +792,8 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatu
               const isNext = b === currentBatch + 1;
               const minted = batchMinted[b] || 0;
               const supply = BATCH_SUPPLY[b] || 0;
-              const pct = supply > 0 ? Math.min(Math.round((minted / supply) * 100), 100) : 0;
+              const pctRaw = supply > 0 ? Math.min((minted / supply) * 100, 100) : 0;
+              const pct = pctRaw >= 99.5 && pctRaw < 100 ? pctRaw.toFixed(2) : Math.round(pctRaw);
               const priceIncrease = isNext && BATCH_PRICES_ETH[b] && BATCH_PRICES_ETH[currentBatch]
                 ? Math.round(((BATCH_PRICES_ETH[b] - BATCH_PRICES_ETH[currentBatch]) / BATCH_PRICES_ETH[currentBatch]) * 100)
                 : 0;
@@ -876,7 +883,7 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatu
               IN-FLIGHT MINTS
             </div>
             {pendingMints.map(item => (
-              <PendingMintItem key={item.id} item={item} onDelivered={dismissItem} onRequestId={storeRequestId} />
+              <PendingMintItem key={item.id} item={item} onDelivered={dismissItem} onRequestId={storeRequestId} ttlSeconds={mintTTLSeconds} />
             ))}
           </div>
         )}

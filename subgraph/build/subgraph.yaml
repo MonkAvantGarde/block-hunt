@@ -6,9 +6,9 @@ dataSources:
     name: BlockHuntToken
     network: base-sepolia
     source:
-      address: "0x541a85733d98F720A3b7C15f2fdc2f157599B9dc"
+      address: "0x522672cda4470D3cD3A85d019ed6CcF11DB84B87"
       abi: BlockHuntToken
-      startBlock: 39171240
+      startBlock: 40423625
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -36,9 +36,9 @@ dataSources:
     name: BlockHuntForge
     network: base-sepolia
     source:
-      address: "0xCCFcadA80ba90fe305DD60A1b6374F8b53e86c55"
+      address: "0x7673607547D678b421FbEA35A91506F8BcED36b9"
       abi: BlockHuntForge
-      startBlock: 39171240
+      startBlock: 40423625
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -59,35 +59,33 @@ dataSources:
     name: BlockHuntRewards
     network: base-sepolia
     source:
-      address: "0x834CEf549b311233b99D1a1fc46CDa2C87C0317B"
+      address: "0x331F078154817945BF03846D1F2564f8F440fcC4"
       abi: BlockHuntRewards
-      startBlock: 39171240
+      startBlock: 40423625
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
       language: wasm/assemblyscript
       entities:
-        - DailyDraw
-        - BatchFirst
-        - BatchBounty
-        - BatchRewardConfig
+        - TierBounty
+        - LotteryDraw
+        - StreakClaim
+        - ReferralClaim
         - Player
       abis:
         - name: BlockHuntRewards
           file: BlockHuntRewards/BlockHuntRewards.json
       eventHandlers:
-        - event: DailyDrawResolved(indexed uint256,indexed address,uint256)
-          handler: handleDailyDrawResolved
-        - event: DailyPrizeClaimed(indexed uint256,indexed address,uint256)
-          handler: handleDailyPrizeClaimed
-        - event: BatchFirstAwarded(indexed uint256,indexed uint256,indexed address,uint256)
-          handler: handleBatchFirstAwarded
-        - event: BatchFirstClaimed(indexed uint256,indexed uint256,indexed address,uint256)
-          handler: handleBatchFirstClaimed
-        - event: BatchBountySet(indexed uint256,uint256,uint256)
-          handler: handleBatchBountySet
-        - event: BatchBountyClaimed(indexed uint256,indexed address,uint256)
-          handler: handleBatchBountyClaimed
-        - event: BatchFunded(indexed uint256,uint256)
-          handler: handleBatchFunded
+        - event: TierBountyWon(uint256,uint8,uint8,indexed address)
+          handler: handleTierBountyWon
+        - event: TierBountyClaimed(uint256,uint8,uint8,indexed address,uint256)
+          handler: handleTierBountyClaimed
+        - event: LotteryDistributed(uint256,uint32,indexed address,uint256)
+          handler: handleLotteryDistributed
+        - event: StreakClaimed(uint256,indexed address,uint8,uint16)
+          handler: handleStreakClaimed
+        - event: ReferrerLinked(indexed address,indexed address)
+          handler: handleReferrerLinked
+        - event: ReferralClaimed(indexed address,indexed address,uint256)
+          handler: handleReferralClaimed
       file: BlockHuntRewards/BlockHuntRewards.wasm

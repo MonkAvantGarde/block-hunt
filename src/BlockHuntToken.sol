@@ -318,9 +318,9 @@ contract BlockHuntToken is ERC1155, ERC2981, VRFConsumerBaseV2Plus, ReentrancyGu
         require(IBlockHuntMint(mintWindowContract).isWindowOpen(), "Closed");
         require(IBlockHuntMint(mintWindowContract).canPlayerMint(msg.sender), "Cooldown");
         require(quantity > 0 && quantity <= 500, "Bad qty");
-        IBlockHuntMint(mintWindowContract).recordMint(msg.sender, quantity);
         uint256 mintPrice = currentMintPrice();
         require(msg.value >= mintPrice * quantity, "Underpaid");
+        IBlockHuntMint(mintWindowContract).recordMint(msg.sender, quantity);
 
         uint256 allocated = quantity;
         uint256 totalCost = mintPrice * allocated;

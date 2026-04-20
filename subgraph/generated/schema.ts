@@ -9,6 +9,7 @@ import {
   Bytes,
   BigInt,
   BigDecimal,
+  Int8,
 } from "@graphprotocol/graph-ts";
 
 export class Player extends Entity {
@@ -261,19 +262,35 @@ export class Player extends Entity {
     );
   }
 
-  get dailyDrawWins(): DailyDrawLoader {
-    return new DailyDrawLoader(
+  get tierBountyWins(): TierBountyLoader {
+    return new TierBountyLoader(
       "Player",
       this.get("id")!.toString(),
-      "dailyDrawWins",
+      "tierBountyWins",
     );
   }
 
-  get batchFirstWins(): BatchFirstLoader {
-    return new BatchFirstLoader(
+  get lotteryWins(): LotteryDrawLoader {
+    return new LotteryDrawLoader(
       "Player",
       this.get("id")!.toString(),
-      "batchFirstWins",
+      "lotteryWins",
+    );
+  }
+
+  get streakClaims(): StreakClaimLoader {
+    return new StreakClaimLoader(
+      "Player",
+      this.get("id")!.toString(),
+      "streakClaims",
+    );
+  }
+
+  get referralsClaimed(): ReferralClaimLoader {
+    return new ReferralClaimLoader(
+      "Player",
+      this.get("id")!.toString(),
+      "referralsClaimed",
     );
   }
 }
@@ -627,7 +644,7 @@ export class ForgeRequest extends Entity {
   }
 }
 
-export class DailyDraw extends Entity {
+export class TierBounty extends Entity {
   constructor(id: string) {
     super();
     this.set("id", Value.fromString(id));
@@ -635,22 +652,22 @@ export class DailyDraw extends Entity {
 
   save(): void {
     let id = this.get("id");
-    assert(id != null, "Cannot save DailyDraw entity without an ID");
+    assert(id != null, "Cannot save TierBounty entity without an ID");
     if (id) {
       assert(
         id.kind == ValueKind.STRING,
-        `Entities of type DailyDraw must have an ID of type String but the id '${id.displayData()}' is of type ${id.displayKind()}`,
+        `Entities of type TierBounty must have an ID of type String but the id '${id.displayData()}' is of type ${id.displayKind()}`,
       );
-      store.set("DailyDraw", id.toString(), this);
+      store.set("TierBounty", id.toString(), this);
     }
   }
 
-  static loadInBlock(id: string): DailyDraw | null {
-    return changetype<DailyDraw | null>(store.get_in_block("DailyDraw", id));
+  static loadInBlock(id: string): TierBounty | null {
+    return changetype<TierBounty | null>(store.get_in_block("TierBounty", id));
   }
 
-  static load(id: string): DailyDraw | null {
-    return changetype<DailyDraw | null>(store.get("DailyDraw", id));
+  static load(id: string): TierBounty | null {
+    return changetype<TierBounty | null>(store.get("TierBounty", id));
   }
 
   get id(): string {
@@ -666,17 +683,163 @@ export class DailyDraw extends Entity {
     this.set("id", Value.fromString(value));
   }
 
-  get day(): BigInt {
+  get season(): BigInt {
+    let value = this.get("season");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toBigInt();
+    }
+  }
+
+  set season(value: BigInt) {
+    this.set("season", Value.fromBigInt(value));
+  }
+
+  get batch(): i32 {
+    let value = this.get("batch");
+    if (!value || value.kind == ValueKind.NULL) {
+      return 0;
+    } else {
+      return value.toI32();
+    }
+  }
+
+  set batch(value: i32) {
+    this.set("batch", Value.fromI32(value));
+  }
+
+  get tier(): i32 {
+    let value = this.get("tier");
+    if (!value || value.kind == ValueKind.NULL) {
+      return 0;
+    } else {
+      return value.toI32();
+    }
+  }
+
+  set tier(value: i32) {
+    this.set("tier", Value.fromI32(value));
+  }
+
+  get winner(): string {
+    let value = this.get("winner");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toString();
+    }
+  }
+
+  set winner(value: string) {
+    this.set("winner", Value.fromString(value));
+  }
+
+  get amount(): BigInt {
+    let value = this.get("amount");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toBigInt();
+    }
+  }
+
+  set amount(value: BigInt) {
+    this.set("amount", Value.fromBigInt(value));
+  }
+
+  get claimed(): boolean {
+    let value = this.get("claimed");
+    if (!value || value.kind == ValueKind.NULL) {
+      return false;
+    } else {
+      return value.toBoolean();
+    }
+  }
+
+  set claimed(value: boolean) {
+    this.set("claimed", Value.fromBoolean(value));
+  }
+
+  get wonAt(): BigInt {
+    let value = this.get("wonAt");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toBigInt();
+    }
+  }
+
+  set wonAt(value: BigInt) {
+    this.set("wonAt", Value.fromBigInt(value));
+  }
+}
+
+export class LotteryDraw extends Entity {
+  constructor(id: string) {
+    super();
+    this.set("id", Value.fromString(id));
+  }
+
+  save(): void {
+    let id = this.get("id");
+    assert(id != null, "Cannot save LotteryDraw entity without an ID");
+    if (id) {
+      assert(
+        id.kind == ValueKind.STRING,
+        `Entities of type LotteryDraw must have an ID of type String but the id '${id.displayData()}' is of type ${id.displayKind()}`,
+      );
+      store.set("LotteryDraw", id.toString(), this);
+    }
+  }
+
+  static loadInBlock(id: string): LotteryDraw | null {
+    return changetype<LotteryDraw | null>(
+      store.get_in_block("LotteryDraw", id),
+    );
+  }
+
+  static load(id: string): LotteryDraw | null {
+    return changetype<LotteryDraw | null>(store.get("LotteryDraw", id));
+  }
+
+  get id(): string {
+    let value = this.get("id");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toString();
+    }
+  }
+
+  set id(value: string) {
+    this.set("id", Value.fromString(value));
+  }
+
+  get season(): BigInt {
+    let value = this.get("season");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toBigInt();
+    }
+  }
+
+  set season(value: BigInt) {
+    this.set("season", Value.fromBigInt(value));
+  }
+
+  get day(): i32 {
     let value = this.get("day");
     if (!value || value.kind == ValueKind.NULL) {
-      throw new Error("Cannot return null for a required field.");
+      return 0;
     } else {
-      return value.toBigInt();
+      return value.toI32();
     }
   }
 
-  set day(value: BigInt) {
-    this.set("day", Value.fromBigInt(value));
+  set day(value: i32) {
+    this.set("day", Value.fromI32(value));
   }
 
   get winner(): string {
@@ -692,8 +855,8 @@ export class DailyDraw extends Entity {
     this.set("winner", Value.fromString(value));
   }
 
-  get prize(): BigInt {
-    let value = this.get("prize");
+  get amount(): BigInt {
+    let value = this.get("amount");
     if (!value || value.kind == ValueKind.NULL) {
       throw new Error("Cannot return null for a required field.");
     } else {
@@ -701,12 +864,12 @@ export class DailyDraw extends Entity {
     }
   }
 
-  set prize(value: BigInt) {
-    this.set("prize", Value.fromBigInt(value));
+  set amount(value: BigInt) {
+    this.set("amount", Value.fromBigInt(value));
   }
 
-  get resolvedAt(): BigInt {
-    let value = this.get("resolvedAt");
+  get distributedAt(): BigInt {
+    let value = this.get("distributedAt");
     if (!value || value.kind == ValueKind.NULL) {
       throw new Error("Cannot return null for a required field.");
     } else {
@@ -714,42 +877,12 @@ export class DailyDraw extends Entity {
     }
   }
 
-  set resolvedAt(value: BigInt) {
-    this.set("resolvedAt", Value.fromBigInt(value));
-  }
-
-  get claimed(): boolean {
-    let value = this.get("claimed");
-    if (!value || value.kind == ValueKind.NULL) {
-      return false;
-    } else {
-      return value.toBoolean();
-    }
-  }
-
-  set claimed(value: boolean) {
-    this.set("claimed", Value.fromBoolean(value));
-  }
-
-  get claimedAmount(): BigInt | null {
-    let value = this.get("claimedAmount");
-    if (!value || value.kind == ValueKind.NULL) {
-      return null;
-    } else {
-      return value.toBigInt();
-    }
-  }
-
-  set claimedAmount(value: BigInt | null) {
-    if (!value) {
-      this.unset("claimedAmount");
-    } else {
-      this.set("claimedAmount", Value.fromBigInt(<BigInt>value));
-    }
+  set distributedAt(value: BigInt) {
+    this.set("distributedAt", Value.fromBigInt(value));
   }
 }
 
-export class BatchFirst extends Entity {
+export class StreakClaim extends Entity {
   constructor(id: string) {
     super();
     this.set("id", Value.fromString(id));
@@ -757,22 +890,24 @@ export class BatchFirst extends Entity {
 
   save(): void {
     let id = this.get("id");
-    assert(id != null, "Cannot save BatchFirst entity without an ID");
+    assert(id != null, "Cannot save StreakClaim entity without an ID");
     if (id) {
       assert(
         id.kind == ValueKind.STRING,
-        `Entities of type BatchFirst must have an ID of type String but the id '${id.displayData()}' is of type ${id.displayKind()}`,
+        `Entities of type StreakClaim must have an ID of type String but the id '${id.displayData()}' is of type ${id.displayKind()}`,
       );
-      store.set("BatchFirst", id.toString(), this);
+      store.set("StreakClaim", id.toString(), this);
     }
   }
 
-  static loadInBlock(id: string): BatchFirst | null {
-    return changetype<BatchFirst | null>(store.get_in_block("BatchFirst", id));
+  static loadInBlock(id: string): StreakClaim | null {
+    return changetype<StreakClaim | null>(
+      store.get_in_block("StreakClaim", id),
+    );
   }
 
-  static load(id: string): BatchFirst | null {
-    return changetype<BatchFirst | null>(store.get("BatchFirst", id));
+  static load(id: string): StreakClaim | null {
+    return changetype<StreakClaim | null>(store.get("StreakClaim", id));
   }
 
   get id(): string {
@@ -788,34 +923,21 @@ export class BatchFirst extends Entity {
     this.set("id", Value.fromString(value));
   }
 
-  get batch(): i32 {
-    let value = this.get("batch");
+  get season(): BigInt {
+    let value = this.get("season");
     if (!value || value.kind == ValueKind.NULL) {
-      return 0;
+      throw new Error("Cannot return null for a required field.");
     } else {
-      return value.toI32();
+      return value.toBigInt();
     }
   }
 
-  set batch(value: i32) {
-    this.set("batch", Value.fromI32(value));
+  set season(value: BigInt) {
+    this.set("season", Value.fromBigInt(value));
   }
 
-  get achievementId(): i32 {
-    let value = this.get("achievementId");
-    if (!value || value.kind == ValueKind.NULL) {
-      return 0;
-    } else {
-      return value.toI32();
-    }
-  }
-
-  set achievementId(value: i32) {
-    this.set("achievementId", Value.fromI32(value));
-  }
-
-  get winner(): string {
-    let value = this.get("winner");
+  get player(): string {
+    let value = this.get("player");
     if (!value || value.kind == ValueKind.NULL) {
       throw new Error("Cannot return null for a required field.");
     } else {
@@ -823,12 +945,38 @@ export class BatchFirst extends Entity {
     }
   }
 
-  set winner(value: string) {
-    this.set("winner", Value.fromString(value));
+  set player(value: string) {
+    this.set("player", Value.fromString(value));
   }
 
-  get prize(): BigInt {
-    let value = this.get("prize");
+  get milestoneIndex(): i32 {
+    let value = this.get("milestoneIndex");
+    if (!value || value.kind == ValueKind.NULL) {
+      return 0;
+    } else {
+      return value.toI32();
+    }
+  }
+
+  set milestoneIndex(value: i32) {
+    this.set("milestoneIndex", Value.fromI32(value));
+  }
+
+  get blocksRewarded(): i32 {
+    let value = this.get("blocksRewarded");
+    if (!value || value.kind == ValueKind.NULL) {
+      return 0;
+    } else {
+      return value.toI32();
+    }
+  }
+
+  set blocksRewarded(value: i32) {
+    this.set("blocksRewarded", Value.fromI32(value));
+  }
+
+  get claimedAt(): BigInt {
+    let value = this.get("claimedAt");
     if (!value || value.kind == ValueKind.NULL) {
       throw new Error("Cannot return null for a required field.");
     } else {
@@ -836,55 +984,12 @@ export class BatchFirst extends Entity {
     }
   }
 
-  set prize(value: BigInt) {
-    this.set("prize", Value.fromBigInt(value));
-  }
-
-  get awardedAt(): BigInt {
-    let value = this.get("awardedAt");
-    if (!value || value.kind == ValueKind.NULL) {
-      throw new Error("Cannot return null for a required field.");
-    } else {
-      return value.toBigInt();
-    }
-  }
-
-  set awardedAt(value: BigInt) {
-    this.set("awardedAt", Value.fromBigInt(value));
-  }
-
-  get claimed(): boolean {
-    let value = this.get("claimed");
-    if (!value || value.kind == ValueKind.NULL) {
-      return false;
-    } else {
-      return value.toBoolean();
-    }
-  }
-
-  set claimed(value: boolean) {
-    this.set("claimed", Value.fromBoolean(value));
-  }
-
-  get claimedAmount(): BigInt | null {
-    let value = this.get("claimedAmount");
-    if (!value || value.kind == ValueKind.NULL) {
-      return null;
-    } else {
-      return value.toBigInt();
-    }
-  }
-
-  set claimedAmount(value: BigInt | null) {
-    if (!value) {
-      this.unset("claimedAmount");
-    } else {
-      this.set("claimedAmount", Value.fromBigInt(<BigInt>value));
-    }
+  set claimedAt(value: BigInt) {
+    this.set("claimedAt", Value.fromBigInt(value));
   }
 }
 
-export class BatchBounty extends Entity {
+export class ReferralClaim extends Entity {
   constructor(id: string) {
     super();
     this.set("id", Value.fromString(id));
@@ -892,24 +997,24 @@ export class BatchBounty extends Entity {
 
   save(): void {
     let id = this.get("id");
-    assert(id != null, "Cannot save BatchBounty entity without an ID");
+    assert(id != null, "Cannot save ReferralClaim entity without an ID");
     if (id) {
       assert(
         id.kind == ValueKind.STRING,
-        `Entities of type BatchBounty must have an ID of type String but the id '${id.displayData()}' is of type ${id.displayKind()}`,
+        `Entities of type ReferralClaim must have an ID of type String but the id '${id.displayData()}' is of type ${id.displayKind()}`,
       );
-      store.set("BatchBounty", id.toString(), this);
+      store.set("ReferralClaim", id.toString(), this);
     }
   }
 
-  static loadInBlock(id: string): BatchBounty | null {
-    return changetype<BatchBounty | null>(
-      store.get_in_block("BatchBounty", id),
+  static loadInBlock(id: string): ReferralClaim | null {
+    return changetype<ReferralClaim | null>(
+      store.get_in_block("ReferralClaim", id),
     );
   }
 
-  static load(id: string): BatchBounty | null {
-    return changetype<BatchBounty | null>(store.get("BatchBounty", id));
+  static load(id: string): ReferralClaim | null {
+    return changetype<ReferralClaim | null>(store.get("ReferralClaim", id));
   }
 
   get id(): string {
@@ -925,21 +1030,34 @@ export class BatchBounty extends Entity {
     this.set("id", Value.fromString(value));
   }
 
-  get batch(): i32 {
-    let value = this.get("batch");
+  get referrer(): string {
+    let value = this.get("referrer");
     if (!value || value.kind == ValueKind.NULL) {
-      return 0;
+      throw new Error("Cannot return null for a required field.");
     } else {
-      return value.toI32();
+      return value.toString();
     }
   }
 
-  set batch(value: i32) {
-    this.set("batch", Value.fromI32(value));
+  set referrer(value: string) {
+    this.set("referrer", Value.fromString(value));
   }
 
-  get totalRecipients(): BigInt {
-    let value = this.get("totalRecipients");
+  get referee(): string {
+    let value = this.get("referee");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toString();
+    }
+  }
+
+  set referee(value: string) {
+    this.set("referee", Value.fromString(value));
+  }
+
+  get amount(): BigInt {
+    let value = this.get("amount");
     if (!value || value.kind == ValueKind.NULL) {
       throw new Error("Cannot return null for a required field.");
     } else {
@@ -947,12 +1065,12 @@ export class BatchBounty extends Entity {
     }
   }
 
-  set totalRecipients(value: BigInt) {
-    this.set("totalRecipients", Value.fromBigInt(value));
+  set amount(value: BigInt) {
+    this.set("amount", Value.fromBigInt(value));
   }
 
-  get perWalletShare(): BigInt {
-    let value = this.get("perWalletShare");
+  get claimedAt(): BigInt {
+    let value = this.get("claimedAt");
     if (!value || value.kind == ValueKind.NULL) {
       throw new Error("Cannot return null for a required field.");
     } else {
@@ -960,38 +1078,12 @@ export class BatchBounty extends Entity {
     }
   }
 
-  set perWalletShare(value: BigInt) {
-    this.set("perWalletShare", Value.fromBigInt(value));
-  }
-
-  get setAt(): BigInt {
-    let value = this.get("setAt");
-    if (!value || value.kind == ValueKind.NULL) {
-      throw new Error("Cannot return null for a required field.");
-    } else {
-      return value.toBigInt();
-    }
-  }
-
-  set setAt(value: BigInt) {
-    this.set("setAt", Value.fromBigInt(value));
-  }
-
-  get distributed(): boolean {
-    let value = this.get("distributed");
-    if (!value || value.kind == ValueKind.NULL) {
-      return false;
-    } else {
-      return value.toBoolean();
-    }
-  }
-
-  set distributed(value: boolean) {
-    this.set("distributed", Value.fromBoolean(value));
+  set claimedAt(value: BigInt) {
+    this.set("claimedAt", Value.fromBigInt(value));
   }
 }
 
-export class BatchRewardConfig extends Entity {
+export class ReferralLink extends Entity {
   constructor(id: string) {
     super();
     this.set("id", Value.fromString(id));
@@ -999,26 +1091,24 @@ export class BatchRewardConfig extends Entity {
 
   save(): void {
     let id = this.get("id");
-    assert(id != null, "Cannot save BatchRewardConfig entity without an ID");
+    assert(id != null, "Cannot save ReferralLink entity without an ID");
     if (id) {
       assert(
         id.kind == ValueKind.STRING,
-        `Entities of type BatchRewardConfig must have an ID of type String but the id '${id.displayData()}' is of type ${id.displayKind()}`,
+        `Entities of type ReferralLink must have an ID of type String but the id '${id.displayData()}' is of type ${id.displayKind()}`,
       );
-      store.set("BatchRewardConfig", id.toString(), this);
+      store.set("ReferralLink", id.toString(), this);
     }
   }
 
-  static loadInBlock(id: string): BatchRewardConfig | null {
-    return changetype<BatchRewardConfig | null>(
-      store.get_in_block("BatchRewardConfig", id),
+  static loadInBlock(id: string): ReferralLink | null {
+    return changetype<ReferralLink | null>(
+      store.get_in_block("ReferralLink", id),
     );
   }
 
-  static load(id: string): BatchRewardConfig | null {
-    return changetype<BatchRewardConfig | null>(
-      store.get("BatchRewardConfig", id),
-    );
+  static load(id: string): ReferralLink | null {
+    return changetype<ReferralLink | null>(store.get("ReferralLink", id));
   }
 
   get id(): string {
@@ -1034,21 +1124,34 @@ export class BatchRewardConfig extends Entity {
     this.set("id", Value.fromString(value));
   }
 
-  get batch(): i32 {
-    let value = this.get("batch");
+  get referee(): string {
+    let value = this.get("referee");
     if (!value || value.kind == ValueKind.NULL) {
-      return 0;
+      throw new Error("Cannot return null for a required field.");
     } else {
-      return value.toI32();
+      return value.toString();
     }
   }
 
-  set batch(value: i32) {
-    this.set("batch", Value.fromI32(value));
+  set referee(value: string) {
+    this.set("referee", Value.fromString(value));
   }
 
-  get totalDeposit(): BigInt {
-    let value = this.get("totalDeposit");
+  get referrer(): string {
+    let value = this.get("referrer");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toString();
+    }
+  }
+
+  set referrer(value: string) {
+    this.set("referrer", Value.fromString(value));
+  }
+
+  get linkedAt(): BigInt {
+    let value = this.get("linkedAt");
     if (!value || value.kind == ValueKind.NULL) {
       throw new Error("Cannot return null for a required field.");
     } else {
@@ -1056,21 +1159,8 @@ export class BatchRewardConfig extends Entity {
     }
   }
 
-  set totalDeposit(value: BigInt) {
-    this.set("totalDeposit", Value.fromBigInt(value));
-  }
-
-  get active(): boolean {
-    let value = this.get("active");
-    if (!value || value.kind == ValueKind.NULL) {
-      return false;
-    } else {
-      return value.toBoolean();
-    }
-  }
-
-  set active(value: boolean) {
-    this.set("active", Value.fromBoolean(value));
+  set linkedAt(value: BigInt) {
+    this.set("linkedAt", Value.fromBigInt(value));
   }
 }
 
@@ -1110,7 +1200,7 @@ export class ForgeRequestLoader extends Entity {
   }
 }
 
-export class DailyDrawLoader extends Entity {
+export class TierBountyLoader extends Entity {
   _entity: string;
   _field: string;
   _id: string;
@@ -1122,13 +1212,13 @@ export class DailyDrawLoader extends Entity {
     this._field = field;
   }
 
-  load(): DailyDraw[] {
+  load(): TierBounty[] {
     let value = store.loadRelated(this._entity, this._id, this._field);
-    return changetype<DailyDraw[]>(value);
+    return changetype<TierBounty[]>(value);
   }
 }
 
-export class BatchFirstLoader extends Entity {
+export class LotteryDrawLoader extends Entity {
   _entity: string;
   _field: string;
   _id: string;
@@ -1140,8 +1230,44 @@ export class BatchFirstLoader extends Entity {
     this._field = field;
   }
 
-  load(): BatchFirst[] {
+  load(): LotteryDraw[] {
     let value = store.loadRelated(this._entity, this._id, this._field);
-    return changetype<BatchFirst[]>(value);
+    return changetype<LotteryDraw[]>(value);
+  }
+}
+
+export class StreakClaimLoader extends Entity {
+  _entity: string;
+  _field: string;
+  _id: string;
+
+  constructor(entity: string, id: string, field: string) {
+    super();
+    this._entity = entity;
+    this._id = id;
+    this._field = field;
+  }
+
+  load(): StreakClaim[] {
+    let value = store.loadRelated(this._entity, this._id, this._field);
+    return changetype<StreakClaim[]>(value);
+  }
+}
+
+export class ReferralClaimLoader extends Entity {
+  _entity: string;
+  _field: string;
+  _id: string;
+
+  constructor(entity: string, id: string, field: string) {
+    super();
+    this._entity = entity;
+    this._id = id;
+    this._field = field;
+  }
+
+  load(): ReferralClaim[] {
+    let value = store.loadRelated(this._entity, this._id, this._field);
+    return changetype<ReferralClaim[]>(value);
   }
 }
