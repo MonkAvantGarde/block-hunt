@@ -7,3 +7,11 @@
   }
 }
 
+                                                                                                                                              
+  {                                                                                                                                             
+    "git.autorefresh": false,                                                                                                                   
+    "git.autofetch": false,                                                                                                                     
+    "gitlens.advanced.blame.customArguments": [],                                                                                               
+    "gitlens.views.repositories.autoRefresh": false            
+  }                                           
+    

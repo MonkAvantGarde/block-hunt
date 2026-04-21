@@ -277,6 +277,7 @@ const { data: countdownHolder } = useReadContract({
       writeCombine({
         address: CONTRACTS.TOKEN, chainId: 84532, abi: TOKEN_ABI,
         functionName: 'combine', args: [BigInt(fromTier)],
+        gas: BigInt(200_000),
       }, {
         onSuccess: (hash) => {
           setCombineCollapseData({ fromTier, startCount: blocks[fromTier] || 0, combineRatio: ratio })

@@ -67,6 +67,7 @@ export function useReferral() {
       chainId: CHAIN_ID,
       functionName: 'setReferrer',
       args: [pendingReferrer],
+      gas: BigInt(150_000),
     })
   }
 

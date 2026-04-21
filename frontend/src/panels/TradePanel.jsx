@@ -173,6 +173,7 @@ export default function TradePanel({ refetchAll: gameRefetch, onRevealTier }) {
       address: CONTRACTS.TOKEN, chainId: 84532, abi: TOKEN_ABI,
       functionName: 'setApprovalForAll',
       args: [CONTRACTS.MARKETPLACE, true],
+      gas: BigInt(100_000),
     }, { onError: (e) => setError(e.shortMessage || 'Approval failed') })
   }
 
@@ -194,6 +195,7 @@ export default function TradePanel({ refetchAll: gameRefetch, onRevealTier }) {
       functionName: 'createOffer',
       args: [BigInt(createTier), BigInt(createQty), parseEther(createPrice), BigInt(7 * 86400)],
       value: totalWei,
+      gas: BigInt(300_000),
     }, { onError: (e) => setError(e.shortMessage || 'Create offer failed') })
   }
 
@@ -205,6 +207,7 @@ export default function TradePanel({ refetchAll: gameRefetch, onRevealTier }) {
       functionName: 'buyListing',
       args: [BigInt(item.id), BigInt(qty)],
       value: item.pricePerBlockWei * BigInt(qty),
+      gas: BigInt(300_000),
     }, { onError: (e) => setError(e.shortMessage || 'Buy failed') })
   }
 
@@ -214,6 +217,7 @@ export default function TradePanel({ refetchAll: gameRefetch, onRevealTier }) {
       address: CONTRACTS.MARKETPLACE, chainId: 84532, abi: MARKETPLACE_ABI,
       functionName: 'fillOffer',
       args: [BigInt(item.id), BigInt(qty)],
+      gas: BigInt(300_000),
     }, { onError: (e) => setError(e.shortMessage || 'Fill offer failed') })
   }
 
@@ -222,6 +226,7 @@ export default function TradePanel({ refetchAll: gameRefetch, onRevealTier }) {
     writeContract({
       address: CONTRACTS.MARKETPLACE, chainId: 84532, abi: MARKETPLACE_ABI,
       functionName: 'cancelListing', args: [BigInt(id)],
+      gas: BigInt(150_000),
     }, { onError: (e) => setError(e.shortMessage || 'Cancel failed') })
   }
 
@@ -230,6 +235,7 @@ export default function TradePanel({ refetchAll: gameRefetch, onRevealTier }) {
     writeContract({
       address: CONTRACTS.MARKETPLACE, chainId: 84532, abi: MARKETPLACE_ABI,
       functionName: 'cancelOffer', args: [BigInt(id)],
+      gas: BigInt(150_000),
     }, { onError: (e) => setError(e.shortMessage || 'Cancel failed') })
   }
 

@@ -92,7 +92,7 @@ export default function ReferralTab({ address, referralsActive, referralAmount, 
     setRefereesLoading(true)
     const query = `{
       referralLinks(where: { referrer: "${address.toLowerCase()}" }, first: 50) {
-        referee { id }
+        referee { id totalMints }
         linkedAt
       }
     }`
@@ -104,21 +104,20 @@ export default function ReferralTab({ address, referralsActive, referralAmount, 
       .then(r => r.json())
       .then(data => {
         const links = data?.data?.referralLinks || []
-        setReferees(links.map(l => l.referee.id))
+        setReferees(links.map(l => ({ id: l.referee.id, totalMints: Number(l.referee.totalMints || 0) })))
         setRefereesLoading(false)
       })
       .catch(() => setRefereesLoading(false))
   }, [address])
 
-  // Read on-chain status for each referee: totalMintedByPlayer, snapshotAmount, referralPaid
+  // Read on-chain snapshot + claim state per referee (mint count comes from subgraph).
   const refereeContracts = useMemo(() => {
     if (!referees.length) return []
     const calls = []
     for (const ref of referees) {
       calls.push(
-        { address: CONTRACTS.REWARDS, abi: REWARDS_ABI, chainId: CHAIN_ID, functionName: 'totalMintedByPlayer', args: [ref] },
-        { address: CONTRACTS.REWARDS, abi: REWARDS_ABI, chainId: CHAIN_ID, functionName: 'snapshotAmount', args: [ref] },
-        { address: CONTRACTS.REWARDS, abi: REWARDS_ABI, chainId: CHAIN_ID, functionName: 'referralPaid', args: [ref] },
+        { address: CONTRACTS.REWARDS, abi: REWARDS_ABI, chainId: CHAIN_ID, functionName: 'snapshotAmount', args: [ref.id] },
+        { address: CONTRACTS.REWARDS, abi: REWARDS_ABI, chainId: CHAIN_ID, functionName: 'referralPaid', args: [ref.id] },
       )
     }
     return calls
@@ -130,13 +129,13 @@ export default function ReferralTab({ address, referralsActive, referralAmount, 
   })
 
   const refereeList = useMemo(() => {
-    if (!referees.length || !refereeData) return []
-    return referees.map((addr, i) => {
-      const minted = refereeData[i * 3]?.result != null ? Number(refereeData[i * 3].result) : 0
-      const snapshot = refereeData[i * 3 + 1]?.result || BigInt(0)
-      const paid = refereeData[i * 3 + 2]?.result || false
+    if (!referees.length) return []
+    return referees.map((ref, i) => {
+      const minted = ref.totalMints
+      const snapshot = refereeData?.[i * 2]?.result || BigInt(0)
+      const paid = refereeData?.[i * 2 + 1]?.result || false
       const claimable = snapshot > BigInt(0) && !paid
-      return { addr, minted, claimable, paid, snapshot }
+      return { addr: ref.id, minted, claimable, paid, snapshot }
     })
   }, [referees, refereeData])
 
