@@ -392,7 +392,7 @@ function ChallengeSection({ holderAddress }) {
 // ═══════════════════════════════════════════════════════════════
 // TICKER — live data
 // ═══════════════════════════════════════════════════════════════
-function Ticker({ holderShort, eth, claimPct, secondsRemaining = 999999 }) {
+function Ticker({ holderShort, eth, secondsRemaining = 999999 }) {
   const urgent = secondsRemaining < 86400;
   const items = urgent
     ? [
@@ -400,15 +400,12 @@ function Ticker({ holderShort, eth, claimPct, secondsRemaining = 999999 }) {
         `HOLDER: ${holderShort || "—"}`,
         `PRIZE POOL: Ξ ${eth.toFixed(4)}`,
         "TIME IS RUNNING OUT",
-        `COMMUNITY VOTE: ${claimPct}% CLAIM`,
         "ACT NOW OR LOSE EVERYTHING",
         "TRADING STILL OPEN",
       ]
     : [
-        "YOUR WINDOW IS CLOSING",
         `HOLDER: ${holderShort || "—"}`,
         `PRIZE POOL: Ξ ${eth.toFixed(4)}`,
-        `COMMUNITY VOTE: ${claimPct}% CLAIM`,
         "SEASON 1",
         "MINTING CONTINUES",
         "TRADING STILL OPEN",
@@ -658,7 +655,7 @@ export default function CountdownSpectator({ onBack }) {
         </div>
 
         <div style={{ margin: "24px 0" }}>
-          <Ticker holderShort={holderShort} eth={eth} claimPct={claimPct} secondsRemaining={secondsRemaining} />
+          <Ticker holderShort={holderShort} eth={eth} secondsRemaining={secondsRemaining} />
         </div>
 
         <PrizeDisplay eth={eth} />

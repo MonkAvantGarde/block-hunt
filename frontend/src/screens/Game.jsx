@@ -277,7 +277,7 @@ const { data: countdownHolder } = useReadContract({
       writeCombine({
         address: CONTRACTS.TOKEN, chainId: 84532, abi: TOKEN_ABI,
         functionName: 'combine', args: [BigInt(fromTier)],
-        gas: BigInt(200_000),
+        gas: BigInt(400_000),
       }, {
         onSuccess: (hash) => {
           setCombineCollapseData({ fromTier, startCount: blocks[fromTier] || 0, combineRatio: ratio })
@@ -307,7 +307,7 @@ const { data: countdownHolder } = useReadContract({
       address: CONTRACTS.TOKEN, chainId: 84532, abi: TOKEN_ABI,
       functionName: 'combineMany',
       args: [Array(firstChunk).fill(BigInt(fromTier))],
-      gas: BigInt(200_000) + BigInt(firstChunk) * BigInt(120_000),
+      gas: BigInt(400_000) + BigInt(firstChunk) * BigInt(120_000),
     }, {
       onSuccess: (hash) => {
         setCombineCollapseData({ fromTier, startCount: blocks[fromTier] || 0, combineRatio: ratio })
@@ -328,7 +328,7 @@ const { data: countdownHolder } = useReadContract({
           address: CONTRACTS.TOKEN, chainId: 84532, abi: TOKEN_ABI,
           functionName: 'combineMany',
           args: [Array(next.count).fill(BigInt(next.fromTier))],
-          gas: BigInt(200_000) + BigInt(next.count) * BigInt(120_000),
+          gas: BigInt(400_000) + BigInt(next.count) * BigInt(120_000),
         }, {
           onError: () => { setCombiningTier(null); setCombineQueue([]); setCombineBatchInfo(null) },
         })
