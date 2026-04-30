@@ -223,11 +223,18 @@ export default function VRFMintPanel({ onMint, windowOpen, windowInfo, mintStatu
   })
   const mintTTLSeconds = mintTTLRaw?.[0]?.status === 'success' ? Number(mintTTLRaw[0].result) : 600
 
-  // VRF callback gas cap: actual gas ~28k/block, not the 3k in the contract constant.
-  // (2,500,000 - 150,000) / 28,000 ≈ 83 — use 80 as safe max until contract redeploy.
-  const VRF_SAFE_MAX = 80
+  // VRF callback gas cap: measured 80-mint callbacks use ~410k gas (~2-5k/block).
+  // 2.5M cap supports well over 200 blocks/tx with margin — 100 is conservative.
+  const VRF_SAFE_MAX = 100
   const maxMintable = userMintsRemaining != null ? Math.min(VRF_SAFE_MAX, userMintsRemaining) : VRF_SAFE_MAX
   const [qty, setQty] = useState(Math.min(10, maxMintable))
+
+  // Clamp qty whenever the user's cycle remaining drops below current qty —
+  // otherwise minting "MAX" once leaves qty stuck at 100 even when only 20 are left,
+  // and the next mint reverts on MintWindow's "Cycle mint cap reached" check.
+  useEffect(() => {
+    setQty(prev => Math.min(prev, maxMintable))
+  }, [maxMintable])
   const [pendingMints, setPendingMints] = useState(() => loadPending())
   const [mintError, setMintError] = useState(null)
   const [, setTick] = useState(0)
